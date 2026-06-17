@@ -1,0 +1,13 @@
+export { Anime } from './anime.entity';
+export { AnimeEpisode } from './anime-episode.entity';
+export { AnimeGenre } from './anime-genre.entity';
+export { AnimeGenreLink } from './anime-genre-link.entity';
+export { AnimeSeries } from './anime-series.entity';
+export { AnimeSeriesMember } from './anime-series-member.entity';
+export { AnimeStudio } from './anime-studio.entity';
+export { AnimeStudioLink } from './anime-studio-link.entity';
+export { AnimeSubtitle } from './anime-subtitle.entity';
+export { AnimeSubtitlePack } from './anime-subtitle-pack.entity';
+export { AnimeTranslator } from './anime-translator.entity';
+export { AnimeTranslatorLink } from './anime-translator-link.entity';
+export { UserAnimeListEntry } from './user-anime-list-entry.entity';
