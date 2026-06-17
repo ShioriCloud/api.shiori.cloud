@@ -1,0 +1,55 @@
+import { Column, Entity, PrimaryColumn } from 'typeorm';
+
+@Entity('telegram_users')
+export class TelegramUser {
+  @PrimaryColumn({ type: 'bigint', name: 'telegram_user_id' })
+  telegramUserId: string;
+
+  @Column({ type: 'text', name: 'first_name', default: '' })
+  firstName: string;
+
+  @Column({ type: 'text', name: 'last_name', nullable: true })
+  lastName: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  username: string | null;
+
+  @Column({ type: 'text', name: 'language_code', nullable: true })
+  languageCode: string | null;
+
+  @Column({ type: 'text', name: 'photo_url', nullable: true })
+  photoUrl: string | null;
+
+  @Column({ type: 'boolean', name: 'is_premium', default: false })
+  isPremium: boolean;
+
+  @Column({ type: 'text', name: 'app_role', default: 'user' })
+  appRole: string;
+
+  @Column({ type: 'text', name: 'admin_notes', nullable: true })
+  adminNotes: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  email: string | null;
+
+  @Column({ type: 'text', name: 'password_hash', nullable: true })
+  passwordHash: string | null;
+
+  @Column({ type: 'boolean', name: 'portal_login_enabled', default: true })
+  portalLoginEnabled: boolean;
+
+  @Column({ type: 'timestamptz', name: 'first_seen_at', default: () => 'now()' })
+  firstSeenAt: Date;
+
+  @Column({ type: 'timestamptz', name: 'last_seen_at', default: () => 'now()' })
+  lastSeenAt: Date;
+
+  @Column({ type: 'int', name: 'visit_count', default: 1 })
+  visitCount: number;
+
+  @Column({ type: 'boolean', name: 'notify_new_episode', default: true })
+  notifyNewEpisode: boolean;
+
+  @Column({ type: 'boolean', name: 'notify_telegram_dm', default: true })
+  notifyTelegramDm: boolean;
+}

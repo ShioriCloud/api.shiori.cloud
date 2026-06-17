@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+.git
+.env
+.env.*
+!.env.example
+*.md
+docker-compose.yml
+docker-compose.prod.yml

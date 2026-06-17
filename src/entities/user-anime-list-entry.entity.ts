@@ -32,6 +32,12 @@ export class UserAnimeListEntry {
   })
   userRating: string | null;
 
+  @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
+  createdAt: Date;
+
+  @Column({ type: 'timestamptz', name: 'updated_at', default: () => 'now()' })
+  updatedAt: Date;
+
   @ManyToOne(() => Anime, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'anime_id' })
   anime: Anime;

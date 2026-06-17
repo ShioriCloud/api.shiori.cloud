@@ -8,6 +8,7 @@ import {
   AnimeGenreLink,
   AnimeSeriesMember,
   AnimeStudio,
+  AnimeStudioLink,
   AnimeSubtitle,
   AnimeSubtitlePack,
   AnimeTranslator,
@@ -16,6 +17,21 @@ import {
 } from '../../entities';
 
 export type AnimeGenreDto = { slug: string; name_en?: string; name_fa?: string };
+
+export type AnimeSearchParams = {
+  query?: string;
+  year?: number | null;
+  season?: string | null;
+  genreSlug?: string | null;
+  limit?: number;
+  offset?: number;
+};
+
+export type AnimeSearchResult = {
+  items: AnimeCardDto[];
+  total: number;
+  hasMore: boolean;
+};
 
 export type AnimeCardDto = {
   id: string;
@@ -55,6 +71,8 @@ export class AnimeCatalogService {
     private readonly genreLinkRepo: Repository<AnimeGenreLink>,
     @InjectRepository(AnimeStudio)
     private readonly studioRepo: Repository<AnimeStudio>,
+    @InjectRepository(AnimeStudioLink)
+    private readonly studioLinkRepo: Repository<AnimeStudioLink>,
     @InjectRepository(AnimeEpisode)
     private readonly episodeRepo: Repository<AnimeEpisode>,
     @InjectRepository(AnimeSubtitle)
@@ -134,6 +152,14 @@ export class AnimeCatalogService {
     };
   }
 
+  async listAll(): Promise<AnimeCardDto[]> {
+    const rows = await this.animeRepo.find({
+      order: { createdAt: 'DESC' },
+    });
+    const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
+    return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
+  }
+
   async listFeatured(limit = 10): Promise<AnimeCardDto[]> {
     const rows = await this.animeRepo.find({
       where: { isFeatured: true },
@@ -185,22 +211,125 @@ export class AnimeCatalogService {
     return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
   }
 
-  async search(query: string, limit = 30): Promise<AnimeCardDto[]> {
-    const q = query.trim();
-    if (!q) return [];
+  async search(params: AnimeSearchParams): Promise<AnimeSearchResult> {
+    const limit =
+      Number.isFinite(params.limit) && (params.limit ?? 0) > 0
+        ? params.limit!
+        : 48;
+    const offset =
+      Number.isFinite(params.offset) && (params.offset ?? 0) >= 0
+        ? params.offset!
+        : 0;
 
-    const rows = await this.animeRepo
-      .createQueryBuilder('anime')
-      .where(
-        'anime.title ILIKE :q OR anime.title_romaji ILIKE :q OR anime.synopsis ILIKE :q',
-        { q: `%${q}%` },
-      )
-      .orderBy('anime.created_at', 'DESC')
-      .take(limit)
-      .getMany();
+    const genreSlug = params.genreSlug
+      ? String(params.genreSlug).trim().toLowerCase()
+      : '';
+    const season =
+      params.season && String(params.season).trim()
+        ? String(params.season).trim().toUpperCase()
+        : '';
+    const year =
+      params.year !== null &&
+      params.year !== undefined &&
+      Number.isFinite(params.year)
+        ? params.year
+        : null;
+
+    let qb = this.animeRepo.createQueryBuilder('anime');
+
+    if (genreSlug) {
+      qb = qb
+        .innerJoin('anime_genres', 'ag', 'ag.anime_id = anime.id')
+        .innerJoin('genres', 'g', 'g.id = ag.genre_id')
+        .andWhere('g.slug = :genreSlug', { genreSlug });
+    }
+
+    if (year !== null) {
+      qb = qb.andWhere('anime.year = :year', { year });
+    }
+
+    if (season) {
+      qb = qb.andWhere('anime.season = :season', { season });
+    }
+
+    const tokens = String(params.query ?? '')
+      .trim()
+      .split(/\s+/)
+      .map((t) => t.replace(/,/g, ' ').trim())
+      .filter((t) => t.length > 0);
+
+    for (let i = 0; i < tokens.length; i++) {
+      qb = qb.andWhere(
+        `(anime.title ILIKE :token${i} OR anime.title_romaji ILIKE :token${i})`,
+        { [`token${i}`]: `%${tokens[i]}%` },
+      );
+    }
+
+    qb = qb.orderBy('anime.created_at', 'DESC');
+
+    const total = await qb.clone().select('anime.id').distinct(true).getCount();
+    const rows = await qb.skip(offset).take(limit).getMany();
 
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
-    return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
+    const items = rows.map((row) =>
+      this.toCard(row, genreMap.get(row.id) ?? []),
+    );
+
+    return {
+      items,
+      total,
+      hasMore: offset + items.length < total,
+    };
+  }
+
+  async getSimilar(
+    animeId: string,
+    genreSlugs: string[],
+    limit = 12,
+  ): Promise<AnimeCardDto[]> {
+    const slugs = [
+      ...new Set(
+        genreSlugs.map((s) => String(s).trim().toLowerCase()).filter(Boolean),
+      ),
+    ];
+    if (slugs.length === 0) return [];
+
+    const genres = await this.genreRepo.find({ where: { slug: In(slugs) } });
+    if (genres.length === 0) return [];
+
+    const links = await this.genreLinkRepo.find({
+      where: { genreId: In(genres.map((g) => g.id)) },
+    });
+
+    const counts = new Map<string, number>();
+    for (const link of links) {
+      if (link.animeId === animeId) continue;
+      counts.set(link.animeId, (counts.get(link.animeId) ?? 0) + 1);
+    }
+
+    const topIds = [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([id]) => id);
+
+    if (topIds.length === 0) return [];
+
+    const rows = await this.animeRepo.find({ where: { id: In(topIds) } });
+    const rowMap = new Map(rows.map((r) => [r.id, r]));
+    const genreMap = await this.loadGenresForAnimeIds(topIds);
+
+    return topIds
+      .map((id) => {
+        const anime = rowMap.get(id);
+        if (!anime) return null;
+        return this.toCard(anime, genreMap.get(id) ?? []);
+      })
+      .filter((x): x is AnimeCardDto => x != null);
+  }
+
+  async searchLegacy(query: string, limit = 30): Promise<AnimeCardDto[]> {
+    const result = await this.search({ query, limit, offset: 0 });
+    return result.items;
   }
 
   async getById(id: string) {
@@ -222,6 +351,10 @@ export class AnimeCatalogService {
     const translatorLinks = await this.translatorLinkRepo.find({
       where: { animeId: id },
       relations: { translator: true },
+    });
+    const studioLinks = await this.studioLinkRepo.find({
+      where: { animeId: id },
+      relations: { studio: true },
     });
     const seriesMember = await this.seriesMemberRepo.findOne({
       where: { animeId: id },
@@ -287,10 +420,24 @@ export class AnimeCatalogService {
         subtitle_link: p.subtitleLink,
       })),
       translators: translatorLinks.map((l) => ({
-        id: l.translator.id,
-        slug: l.translator.slug,
-        name: l.translator.name,
+        id: l.id,
+        anime_id: l.animeId,
+        translator_id: l.translatorId,
         role: l.role,
+        translator: {
+          id: l.translator.id,
+          slug: l.translator.slug,
+          name: l.translator.name,
+          avatar_url: l.translator.avatarUrl,
+          cover_url: l.translator.coverUrl,
+          bio: l.translator.bio,
+          experience: l.translator.experience,
+          is_active: l.translator.isActive,
+        },
+      })),
+      studio_links: studioLinks.map((l) => ({
+        slug: l.studio.slug,
+        name: l.studio.name,
       })),
       series,
     };
@@ -305,10 +452,53 @@ export class AnimeCatalogService {
     return this.genreRepo.find({ order: { slug: 'ASC' } });
   }
 
+  async getGenreBySlug(slug: string) {
+    const genre = await this.genreRepo.findOne({
+      where: { slug: slug.trim().toLowerCase() },
+    });
+    if (!genre) throw new NotFoundException('Genre not found');
+    return genre;
+  }
+
+  async resolveAnilistIdsBatch(anilistIds: number[]): Promise<Record<string, string>> {
+    const unique = [
+      ...new Set(anilistIds.filter((id) => Number.isFinite(id) && id > 0)),
+    ];
+    if (unique.length === 0) return {};
+
+    const rows = await this.animeRepo.find({
+      where: { anilistId: In(unique) },
+    });
+
+    const result: Record<string, string> = {};
+    for (const row of rows) {
+      if (row.anilistId) result[String(row.anilistId)] = row.id;
+    }
+    return result;
+  }
+
   async getStudioBySlug(slug: string) {
     const studio = await this.studioRepo.findOne({ where: { slug } });
     if (!studio) throw new NotFoundException('Studio not found');
     return studio;
+  }
+
+  async listAnimeByStudioSlug(slug: string): Promise<AnimeCardDto[]> {
+    const studio = await this.studioRepo.findOne({ where: { slug } });
+    if (!studio) throw new NotFoundException('Studio not found');
+
+    const links = await this.studioLinkRepo.find({
+      where: { studioId: studio.id },
+      relations: { anime: true },
+    });
+
+    const animes = links
+      .map((l) => l.anime)
+      .filter((a): a is Anime => Boolean(a))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+
+    const genreMap = await this.loadGenresForAnimeIds(animes.map((a) => a.id));
+    return animes.map((a) => this.toCard(a, genreMap.get(a.id) ?? []));
   }
 
   async getTranslatorBySlug(slug: string) {
@@ -330,5 +520,24 @@ export class AnimeCatalogService {
         this.toCard(l.anime, genreMap.get(l.animeId) ?? []),
       ),
     };
+  }
+
+  async listFavoriteCounts(): Promise<Record<string, number>> {
+    const rows = await this.userListRepo
+      .createQueryBuilder('list')
+      .select('list.anime_id', 'animeId')
+      .addSelect('COUNT(*)', 'count')
+      .groupBy('list.anime_id')
+      .getRawMany<{ animeId: string; count: string }>();
+
+    const result: Record<string, number> = {};
+    for (const row of rows) {
+      result[row.animeId] = Number(row.count) || 0;
+    }
+    return result;
+  }
+
+  async getFavoriteCount(animeId: string): Promise<number> {
+    return this.userListRepo.count({ where: { animeId } });
   }
 }

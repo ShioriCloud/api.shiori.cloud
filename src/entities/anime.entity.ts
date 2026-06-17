@@ -1,6 +1,8 @@
 import {
   Column,
   Entity,
+  JoinColumn,
+  ManyToOne,
   OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
@@ -10,6 +12,7 @@ import { AnimeStudioLink } from './anime-studio-link.entity';
 import { AnimeSubtitle } from './anime-subtitle.entity';
 import { AnimeSubtitlePack } from './anime-subtitle-pack.entity';
 import { AnimeTranslatorLink } from './anime-translator-link.entity';
+import { TelegramUser } from './telegram-user.entity';
 
 @Entity('anime')
 export class Anime {
@@ -120,6 +123,21 @@ export class Anime {
 
   @Column({ type: 'timestamptz', name: 'updated_at', default: () => 'now()' })
   updatedAt: Date;
+
+  @Column({ type: 'bigint', name: 'last_edited_by', nullable: true })
+  lastEditedById: string | null;
+
+  @ManyToOne(() => TelegramUser, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'last_edited_by' })
+  lastEditedBy: TelegramUser | null;
+
+  @ManyToOne(() => Anime, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'prev_anime_id' })
+  prevAnime: Anime | null;
+
+  @ManyToOne(() => Anime, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'next_anime_id' })
+  nextAnime: Anime | null;
 
   @OneToMany(() => AnimeGenreLink, (link) => link.anime)
   genreLinks: AnimeGenreLink[];

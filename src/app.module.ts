@@ -15,10 +15,31 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
+  FilePack,
+  FilePackItem,
+  NotificationCampaign,
+  MediaAsset,
+  TelegramLinkToken,
+  TelegramUser,
   UserAnimeListEntry,
+  UserNotification,
+  UserPortalSession,
 } from './entities';
 import { AnimeCatalogModule } from './modules/anime-catalog/anime-catalog.module';
+import { AnimeNotificationsModule } from './modules/anime-notifications/anime-notifications.module';
+import { AppAuthModule } from './modules/app-auth/app-auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { TelegramUsersModule } from './modules/telegram-users/telegram-users.module';
+import { UserAnimeListModule } from './modules/user-anime-list/user-anime-list.module';
+import { AnimeAdminModule } from './modules/anime-admin/anime-admin.module';
+import { PortalAuthModule } from './modules/portal-auth/portal-auth.module';
+import { FilesAdminModule } from './modules/files-admin/files-admin.module';
+import { ExternalScoresModule } from './modules/external-scores/external-scores.module';
+import { NotificationsAdminModule } from './modules/notifications-admin/notifications-admin.module';
+import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
+import { MediaAdminModule } from './modules/media-admin/media-admin.module';
+import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
   imports: [
@@ -46,11 +67,32 @@ import { HealthModule } from './modules/health/health.module';
           AnimeSeries,
           AnimeSeriesMember,
           UserAnimeListEntry,
+          TelegramUser,
+          UserNotification,
+          UserPortalSession,
+          BotFile,
+          FilePack,
+          FilePackItem,
+          NotificationCampaign,
+          TelegramLinkToken,
+          MediaAsset,
         ],
       }),
     }),
+    TelegramModule,
     HealthModule,
     AnimeCatalogModule,
+    TelegramUsersModule,
+    UserAnimeListModule,
+    AnimeNotificationsModule,
+    AppAuthModule,
+    PortalAuthModule,
+    AnimeAdminModule,
+    TelegramUsersAdminModule,
+    FilesAdminModule,
+    ExternalScoresModule,
+    NotificationsAdminModule,
+    MediaAdminModule,
   ],
 })
 export class AppModule {}

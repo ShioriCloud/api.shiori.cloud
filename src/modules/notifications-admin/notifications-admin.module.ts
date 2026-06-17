@@ -1,0 +1,30 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import {
+  Anime,
+  AnimeEpisode,
+  NotificationCampaign,
+  TelegramUser,
+  UserAnimeListEntry,
+  UserNotification,
+} from '../../entities';
+import { PortalAuthModule } from '../portal-auth/portal-auth.module';
+import { NotificationsAdminController } from './notifications-admin.controller';
+import { NotificationsAdminService } from './notifications-admin.service';
+
+@Module({
+  imports: [
+    PortalAuthModule,
+    TypeOrmModule.forFeature([
+      NotificationCampaign,
+      Anime,
+      AnimeEpisode,
+      UserAnimeListEntry,
+      UserNotification,
+      TelegramUser,
+    ]),
+  ],
+  controllers: [NotificationsAdminController],
+  providers: [NotificationsAdminService],
+})
+export class NotificationsAdminModule {}
