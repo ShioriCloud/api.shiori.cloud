@@ -24,7 +24,24 @@ Never set `DATABASE_SYNC=true` against a live database.
 
 ## 2. Build & run
 
-### Docker (recommended)
+### Pull from GHCR (CI)
+
+On push to `main` / tag `v*`, GitHub Actions publishes:
+
+```text
+ghcr.io/<owner>/shiori-api:latest
+ghcr.io/<owner>/shiori-admin:latest
+ghcr.io/<owner>/shiori-mini-app:latest
+```
+
+Set repository **Variables** for frontend builds: `VITE_SHIORI_API_URL` (required), `VITE_TELEGRAM_BOT_USERNAME` (optional).
+
+```bash
+docker pull ghcr.io/<owner>/shiori-api:latest
+docker run --rm -p 4001:4001 --env-file .env ghcr.io/<owner>/shiori-api:latest
+```
+
+### Docker (local build)
 
 ```bash
 # with bundled Postgres
