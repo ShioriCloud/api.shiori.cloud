@@ -34,7 +34,10 @@ ghcr.io/<owner>/shiori-admin:latest
 ghcr.io/<owner>/shiori-mini-app:latest
 ```
 
-Set repository **Variables** for frontend builds: `VITE_SHIORI_API_URL` (required), `VITE_TELEGRAM_BOT_USERNAME` (optional).
+Set repository **Variables** for frontend builds (optional — defaults to `https://api.shiori.dev`):
+
+- `VITE_SHIORI_API_URL` — public API URL baked into SPA builds
+- `VITE_TELEGRAM_BOT_USERNAME` — optional, defaults to `ShioriUploadBot`
 
 ```bash
 docker pull ghcr.io/<owner>/shiori-api:latest
