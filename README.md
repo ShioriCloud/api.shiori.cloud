@@ -1,6 +1,6 @@
 # Shiori API
 
-NestJS backend for **shiori-mini-app** and **shiori-admin**. Primary data layer — Supabase client is no longer required in the frontends when `VITE_SHIORI_API_URL` is set.
+NestJS backend for **shiori** and **shiori-admin**. Primary data layer — Supabase client is no longer required in the frontends when `VITE_SHIORI_API_URL` is set.
 
 ## Stack
 
@@ -69,7 +69,7 @@ Paginate with `offset` until `hasMore` is false. Schedule weekly (system cron, G
 
 ## Related repos
 
-- `shiori-mini-app` — Telegram Mini App (+ web profile)
+- `shiori` — Telegram Mini App (+ web profile)
 - `shiori-admin` — Admin panel
 
 See [DEPLOY.md](./DEPLOY.md) for production checklist.

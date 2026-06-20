@@ -31,7 +31,7 @@ On push to `main` / tag `v*`, GitHub Actions publishes:
 ```text
 ghcr.io/<owner>/shiori-api:latest
 ghcr.io/<owner>/shiori-admin:latest
-ghcr.io/<owner>/shiori-mini-app:latest
+ghcr.io/<owner>/shiori:latest
 ```
 
 Set repository **Variables** for frontend builds (optional — defaults to `https://api.shiori.dev`):
@@ -70,8 +70,8 @@ Or use PM2 / systemd / Docker with `node dist/main.js`.
 Build with API URL set (drops `@supabase/supabase-js` from bundle):
 
 ```bash
-# mini-app
-cd ../shiori-mini-app
+# shiori (mini-app frontend)
+cd ../shiori
 VITE_SHIORI_API_URL=https://api.example.com npm run build:api
 
 # admin
@@ -83,14 +83,14 @@ Serve `dist/` with nginx, Caddy, or static hosting. Example nginx snippet:
 
 ```nginx
 location / {
-  root /var/www/shiori-mini-app/dist;
+  root /var/www/shiori/dist;
   try_files $uri $uri/ /index.html;
 }
 ```
 
 | App | Env |
 |-----|-----|
-| `shiori-mini-app` | `VITE_SHIORI_API_URL=https://api.example.com` |
+| `shiori` | `VITE_SHIORI_API_URL=https://api.example.com` |
 | `shiori-admin` | `VITE_SHIORI_API_URL=https://api.example.com` |
 
 Supabase env vars are **optional** — only needed if API URL is unset (legacy fallback).

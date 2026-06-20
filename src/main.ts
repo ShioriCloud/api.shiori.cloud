@@ -52,7 +52,7 @@ async function bootstrap() {
 
   const swagger = new DocumentBuilder()
     .setTitle('Shiori API')
-    .setDescription('Backend for shiori-mini-app and shiori-admin')
+    .setDescription('Backend for shiori and shiori-admin')
     .setVersion('0.1.0')
     .build();
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
