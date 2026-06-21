@@ -159,11 +159,12 @@ export class AnimeAdminController {
   }
 
   @Put('anime/:animeId/studios')
-  replaceStudios(
+  async replaceStudios(
     @Param('animeId') animeId: string,
     @Body() body: { studio_slugs?: string[] },
   ) {
-    return this.animeAdminService.replaceAnimeStudios(animeId, body.studio_slugs ?? []);
+    await this.animeAdminService.replaceAnimeStudios(animeId, body.studio_slugs ?? []);
+    return { ok: true };
   }
 
   @Get('translators')
