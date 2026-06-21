@@ -71,7 +71,7 @@ ghcr.io/<owner>/shiori-admin:latest
 ghcr.io/<owner>/shiori:latest
 ```
 
-Set repository **Variables** for frontend builds (optional — defaults to `https://api.shiori.dev`):
+Set repository **Variables** for frontend builds (optional — defaults to `https://api.shiori.cloud`):
 
 - `VITE_SHIORI_API_URL` — public API URL baked into SPA builds
 - `VITE_TELEGRAM_BOT_USERNAME` — optional, defaults to `ShioriUploadBot`

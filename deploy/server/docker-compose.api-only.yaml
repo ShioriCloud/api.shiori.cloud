@@ -1,0 +1,25 @@
+# API only — Node on APP_PORT (default 3000). No nginx.
+# Postgres: set DATABASE_URL in .env (host = postgres service name, host IP, or managed DB).
+#
+# cd /opt/api.shiori.cloud
+# docker compose -f deploy/server/docker-compose.api-only.yaml up -d
+
+services:
+  api:
+    image: ghcr.io/mrhasanzadeh/shiori-api:latest
+    container_name: api.shiori.cloud
+    restart: unless-stopped
+    ports:
+      - '${APP_PORT:-3000}:${APP_PORT:-3000}'
+    env_file:
+      - .env
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: ${APP_PORT:-3000}
+      MEDIA_STORAGE_PATH: /app/data/uploads
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.shiori.cloud}
+    volumes:
+      - shiori_uploads:/app/data/uploads
+
+volumes:
+  shiori_uploads:

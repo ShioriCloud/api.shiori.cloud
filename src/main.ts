@@ -7,7 +7,7 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
-  const port = config.get<number>('app.port', 3001);
+  const port = config.get<number>('app.port', 3000);
   const host = config.get<string>('app.host', '0.0.0.0');
   const allowOrigins = config.get<string[]>('app.allowOrigins', []);
 
