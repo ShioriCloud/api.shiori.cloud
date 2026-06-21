@@ -6,7 +6,7 @@
 
 services:
   api:
-    image: ghcr.io/mrhasanzadeh/shiori-api:latest
+    image: ghcr.io/shioricloud/api.shiori.cloud:latest
     container_name: api.shiori.cloud
     restart: unless-stopped
     ports:

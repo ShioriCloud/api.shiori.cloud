@@ -50,5 +50,5 @@ docker run -d --name api.shiori.cloud --restart unless-stopped \
   -e APP_HOST=0.0.0.0 \
   -e MEDIA_STORAGE_PATH=/app/data/uploads \
   -v shiori_uploads:/app/data/uploads \
-  ghcr.io/mrhasanzadeh/shiori-api:latest
+  ghcr.io/shioricloud/api.shiori.cloud:latest
 ```
