@@ -39,7 +39,7 @@ export class MediaStorageService implements OnModuleInit {
       this.config.get<string>('media.storagePath') ?? './data/uploads';
     this.storageRoot = resolve(process.cwd(), configuredPath);
     this.publicBaseUrl = (
-      this.config.get<string>('media.publicBaseUrl') ?? 'http://localhost:4001'
+      this.config.get<string>('media.publicBaseUrl') ?? 'http://localhost:3001'
     ).replace(/\/$/, '');
     this.maxUploadBytes = this.config.get<number>('media.maxUploadBytes', 10 * 1024 * 1024);
   }
