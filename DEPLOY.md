@@ -22,6 +22,43 @@ Recommended:
 
 Never set `DATABASE_SYNC=true` against a live database.
 
+## 1b. Server troubleshooting (`ECONNREFUSED` on database)
+
+If API logs show `Unable to connect to the database` / `ECONNREFUSED`:
+
+1. **`localhost` inside Docker is wrong** — the API container cannot reach Postgres on the host via `localhost:5433`. Use the compose stack below, or set `DATABASE_URL` to the Postgres **service name** / host IP (never `127.0.0.1` from inside a container).
+
+2. **Recommended on server** (`/opt/api.shiori.cloud`):
+
+```bash
+cd /opt/api.shiori.cloud
+cp .env.example .env   # set TELEGRAM_BOT_TOKEN, POSTGRES_PASSWORD, APP_ALLOW_ORIGINS, …
+# Do NOT set DATABASE_URL to localhost when using compose prod
+
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+docker logs api.shiori.cloud -f
+```
+
+3. **Postgres must be running** on the same Docker network:
+
+```bash
+docker ps | grep postgres
+docker exec shiori-postgres pg_isready -U shiori -d shiori
+```
+
+4. **API-only container** (no compose postgres): point `DATABASE_URL` at a reachable host, e.g. managed DB hostname or `172.17.0.1` (Docker bridge to host) — not `localhost`.
+
+Example `.env` for production compose:
+
+```env
+POSTGRES_PASSWORD=strong-secret
+TELEGRAM_BOT_TOKEN=...
+APP_ALLOW_ORIGINS=https://shiori.cloud,https://dash.shiori.cloud
+MEDIA_PUBLIC_BASE_URL=https://api.shiori.cloud
+MINI_APP_URL=https://shiori.cloud
+```
+
 ## 2. Build & run
 
 ### Pull from GHCR (CI)

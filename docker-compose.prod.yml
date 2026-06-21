@@ -1,9 +1,14 @@
-# Production stack — API + optional local Postgres.
-# For managed Postgres, remove the postgres service and set DATABASE_URL in .env.
+# Production stack — API + Postgres on one Docker network.
+# Run from /opt/api.shiori.cloud:
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# IMPORTANT: Inside the API container, Postgres host must be "postgres" (service name),
+# NOT localhost. This compose overrides DATABASE_URL so .env localhost values are ignored.
 
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: shiori-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: shiori
@@ -18,7 +23,9 @@ services:
       retries: 5
 
   api:
+    image: ${API_IMAGE:-shiori-api:local}
     build: .
+    container_name: api.shiori.cloud
     restart: unless-stopped
     ports:
       - '${APP_PORT:-4001}:4001'
@@ -27,10 +34,15 @@ services:
     environment:
       APP_HOST: 0.0.0.0
       APP_PORT: 4001
-      DATABASE_URL: ${DATABASE_URL:-postgresql://shiori:${POSTGRES_PASSWORD:-shiori}@postgres:5432/shiori}
+      DATABASE_URL: postgresql://shiori:${POSTGRES_PASSWORD:-shiori}@postgres:5432/shiori
+      MEDIA_STORAGE_PATH: /app/data/uploads
+      MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.shiori.cloud}
+    volumes:
+      - shiori_uploads:/app/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   shiori_pgdata:
+  shiori_uploads:
