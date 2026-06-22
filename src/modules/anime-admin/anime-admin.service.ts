@@ -269,7 +269,7 @@ export class AnimeAdminService {
     const featured = await this.animeRepo.count({ where: { isFeatured: true } });
     const withEpisodesRaw = await this.episodeRepo
       .createQueryBuilder('e')
-      .select('COUNT(DISTINCT e.anime_id)', 'count')
+      .select('COUNT(DISTINCT e.animeId)', 'count')
       .getRawOne<{ count: string }>();
     const withEpisodes = Number(withEpisodesRaw?.count ?? 0);
     return {

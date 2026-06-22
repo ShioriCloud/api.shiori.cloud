@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
@@ -23,6 +24,12 @@ export class AnimeAdminController {
     private readonly animeAdminService: AnimeAdminService,
     private readonly externalScoresService: ExternalScoresService,
   ) {}
+
+  @Get('list-stats')
+  @ApiOperation({ summary: 'Anime list aggregate stats (admin)' })
+  getListStats() {
+    return this.animeAdminService.getAnimeListStats();
+  }
 
   @Get('anime/ids-with-episodes')
   @ApiOperation({ summary: 'Anime IDs with at least one episode' })
@@ -53,17 +60,17 @@ export class AnimeAdminController {
   }
 
   @Get('anime/:id/genre-slugs')
-  getAnimeGenreSlugs(@Param('id') id: string) {
+  getAnimeGenreSlugs(@Param('id', ParseUUIDPipe) id: string) {
     return this.animeAdminService.getAnimeGenreSlugs(id);
   }
 
   @Get('anime/:id/studio-slugs')
-  getAnimeStudioSlugs(@Param('id') id: string) {
+  getAnimeStudioSlugs(@Param('id', ParseUUIDPipe) id: string) {
     return this.animeAdminService.getAnimeStudioSlugs(id);
   }
 
   @Get('anime/:id')
-  getAnime(@Param('id') id: string) {
+  getAnime(@Param('id', ParseUUIDPipe) id: string) {
     return this.animeAdminService.getAnimeAdmin(id);
   }
 
