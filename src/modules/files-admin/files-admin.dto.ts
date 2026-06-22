@@ -63,7 +63,7 @@ export class FilePickerSearchBodyDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(100)
   limit?: number;
 
   @IsOptional()
@@ -91,7 +91,7 @@ export class FilePickerSearchQueryDto extends FilePickerSearchBodyDto {
   @Transform(({ value }) => Number.parseInt(String(value ?? '20'), 10))
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(100)
   override limit?: number;
 
   @IsOptional()
@@ -108,7 +108,7 @@ export class FilePickerRecentQueryDto {
   @Transform(({ value }) => Number.parseInt(String(value ?? '30'), 10))
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(100)
   limit?: number;
 
   @IsOptional()
