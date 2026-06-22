@@ -6,6 +6,15 @@ export class BotFile {
   @PrimaryColumn({ type: 'text' })
   key: string;
 
+  @Column({ type: 'bigint', name: 'message_id', nullable: true })
+  messageId: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  type: string | null;
+
+  @Column({ type: 'text', name: 'file_id', nullable: true })
+  fileId: string | null;
+
   @Column({ type: 'text', name: 'file_name', nullable: true })
   fileName: string | null;
 
