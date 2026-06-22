@@ -30,17 +30,25 @@ export class AnimeAdminController {
     return this.animeAdminService.getAnimeIdsWithEpisodes();
   }
 
+  @Get('anime/stats')
+  @ApiOperation({ summary: 'Anime list aggregate stats (admin)' })
+  getAnimeListStats() {
+    return this.animeAdminService.getAnimeListStats();
+  }
+
   @Get('anime')
   @ApiOperation({ summary: 'List anime (admin)' })
   listAnime(
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('filter') filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured',
   ) {
     return this.animeAdminService.listAnime({
       search,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
+      filter,
     });
   }
 

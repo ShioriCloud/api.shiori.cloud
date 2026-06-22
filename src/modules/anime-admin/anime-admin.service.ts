@@ -228,20 +228,66 @@ export class AnimeAdminService {
     return rows.map((r) => r.animeId);
   }
 
-  async listAnime(params?: { search?: string; page?: number; limit?: number }) {
+  async listAnime(params?: {
+    search?: string;
+    page?: number;
+    limit?: number;
+    filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured';
+  }) {
     const page = Math.max(1, params?.page ?? 1);
-    const limit = Math.min(5000, Math.max(1, params?.limit ?? 5000));
+    const limit = Math.min(100, Math.max(1, params?.limit ?? 50));
     const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.created_at', 'DESC');
     if (params?.search?.trim()) {
       const q = `%${params.search.trim()}%`;
       qb.andWhere('(a.title ILIKE :q OR a.title_romaji ILIKE :q)', { q });
     }
+    const filter = params?.filter ?? 'all';
+    if (filter === 'featured') {
+      qb.andWhere('a.is_featured = true');
+    } else if (filter === 'has-episodes') {
+      qb.andWhere('EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
+    } else if (filter === 'no-episodes') {
+      qb.andWhere('NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
+    }
     const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
     const genreMap = await this.loadGenresByAnimeIds(rows.map((r) => r.id));
+    const hasEpisodeIds = await this.loadAnimeIdsWithEpisodes(rows.map((r) => r.id));
     return {
-      items: rows.map((row) => this.toAnimeCard(row, genreMap.get(row.id) ?? [])),
+      items: rows.map((row) => ({
+        ...this.toAnimeCard(row, genreMap.get(row.id) ?? []),
+        has_episodes: hasEpisodeIds.has(row.id),
+      })),
       total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
     };
+  }
+
+  async getAnimeListStats() {
+    const total = await this.animeRepo.count();
+    const featured = await this.animeRepo.count({ where: { isFeatured: true } });
+    const withEpisodesRaw = await this.episodeRepo
+      .createQueryBuilder('e')
+      .select('COUNT(DISTINCT e.anime_id)', 'count')
+      .getRawOne<{ count: string }>();
+    const withEpisodes = Number(withEpisodesRaw?.count ?? 0);
+    return {
+      total,
+      featured,
+      withEpisodes,
+      withoutEpisodes: Math.max(0, total - withEpisodes),
+    };
+  }
+
+  private async loadAnimeIdsWithEpisodes(animeIds: string[]): Promise<Set<string>> {
+    if (animeIds.length === 0) return new Set();
+    const rows = await this.episodeRepo
+      .createQueryBuilder('e')
+      .select('DISTINCT e.anime_id', 'animeId')
+      .where('e.anime_id IN (:...animeIds)', { animeIds })
+      .getRawMany<{ animeId: string }>();
+    return new Set(rows.map((r) => r.animeId));
   }
 
   async getAnimeAdmin(id: string) {

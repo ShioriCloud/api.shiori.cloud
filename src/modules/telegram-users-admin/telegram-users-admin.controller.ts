@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard } from '../portal-auth/portal-auth.guard';
+import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import {
   ListTelegramUsersQueryDto,
   UpdateTelegramUserAdminDto,
@@ -17,7 +18,7 @@ import { TelegramUsersAdminService } from './telegram-users-admin.service';
 
 @ApiTags('Telegram Users Admin')
 @Controller('telegram-users-admin')
-@UseGuards(PortalAuthGuard)
+@UseGuards(PortalAuthGuard, PortalFullAdminGuard)
 export class TelegramUsersAdminController {
   constructor(private readonly adminService: TelegramUsersAdminService) {}
 
