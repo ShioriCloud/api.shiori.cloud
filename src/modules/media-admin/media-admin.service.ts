@@ -42,8 +42,8 @@ export class MediaAdminService {
       caption: asset.caption,
       size: asset.size != null ? Number(asset.size) : 0,
       uploaded_by: asset.uploadedBy,
-      created_at: asset.createdAt.toISOString(),
-      updated_at: asset.updatedAt.toISOString(),
+      created_at: asset.createdAt?.toISOString?.() ?? new Date(0).toISOString(),
+      updated_at: asset.updatedAt?.toISOString?.() ?? new Date(0).toISOString(),
     };
   }
 

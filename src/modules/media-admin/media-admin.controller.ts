@@ -18,6 +18,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { memoryStorage } from 'multer';
 import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
 import { ListMediaQueryDto, UpdateMediaDto } from './media-admin.dto';
 import { MediaAdminService } from './media-admin.service';
@@ -44,7 +45,7 @@ export class MediaAdminController {
   @Post()
   @ApiOperation({ summary: 'Upload image to media library' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   upload(
     @UploadedFile() file: Express.Multer.File,
     @Req() req: PortalAuthedRequest,
