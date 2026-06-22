@@ -8,6 +8,7 @@ import { BotFile, FilePack, FilePackItem } from '../../entities';
 import {
   AddFilePackItemDto,
   FilePickerRecentQueryDto,
+  FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
   ReorderFilePackItemsDto,
@@ -190,7 +191,9 @@ export class FilesAdminService {
     };
   }
 
-  async searchPicker(query: FilePickerSearchQueryDto): Promise<FilePickerItemRow[]> {
+  async searchPicker(
+    query: FilePickerSearchQueryDto | FilePickerSearchBodyDto,
+  ): Promise<FilePickerItemRow[]> {
     const limit = query.limit && query.limit > 0 ? query.limit : 20;
     const searchText = String(query.query ?? '').trim();
     const extraTerms = [

@@ -50,11 +50,32 @@ export class ListFilesStatsQueryDto {
   activeOnly?: boolean;
 }
 
-export class FilePickerSearchQueryDto {
+export class FilePickerSearchBodyDto {
   @IsOptional()
   @IsString()
   query?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  matchAnyTerms?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  activeOnly?: boolean;
+
+  @IsOptional()
+  @IsString()
+  fileExtension?: string;
+}
+
+export class FilePickerSearchQueryDto extends FilePickerSearchBodyDto {
   @IsOptional()
   @Transform(({ value }) =>
     String(value ?? '')
@@ -64,23 +85,19 @@ export class FilePickerSearchQueryDto {
   )
   @IsArray()
   @IsString({ each: true })
-  matchAnyTerms?: string[];
+  override matchAnyTerms?: string[];
 
   @IsOptional()
   @Transform(({ value }) => Number.parseInt(String(value ?? '20'), 10))
   @IsInt()
   @Min(1)
   @Max(200)
-  limit?: number;
+  override limit?: number;
 
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
-  activeOnly?: boolean;
-
-  @IsOptional()
-  @IsString()
-  fileExtension?: string;
+  override activeOnly?: boolean;
 }
 
 export class FilePickerRecentQueryDto {

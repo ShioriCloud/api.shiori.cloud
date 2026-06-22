@@ -15,6 +15,7 @@ import {
   AddFilePackItemDto,
   FilePickerKeysQueryDto,
   FilePickerRecentQueryDto,
+  FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
   ReorderFilePackItemsDto,
@@ -44,6 +45,12 @@ export class FilesAdminController {
   @Get('picker/search')
   pickerSearch(@Query() query: FilePickerSearchQueryDto) {
     return this.filesAdminService.searchPicker(query);
+  }
+
+  @Post('picker/search')
+  @ApiOperation({ summary: 'Search files for picker (POST — use when matchAnyTerms is large)' })
+  pickerSearchPost(@Body() body: FilePickerSearchBodyDto) {
+    return this.filesAdminService.searchPicker(body);
   }
 
   @Get('picker/recent')
