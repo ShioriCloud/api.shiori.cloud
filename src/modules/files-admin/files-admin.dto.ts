@@ -70,7 +70,7 @@ export class FilePickerSearchQueryDto {
   @Transform(({ value }) => Number.parseInt(String(value ?? '20'), 10))
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(200)
   limit?: number;
 
   @IsOptional()
@@ -91,7 +91,7 @@ export class FilePickerRecentQueryDto {
   @Transform(({ value }) => Number.parseInt(String(value ?? '30'), 10))
   @IsInt()
   @Min(1)
-  @Max(100)
+  @Max(200)
   limit?: number;
 
   @IsOptional()
