@@ -763,6 +763,12 @@ export class AnimeAdminService {
     if (!link) throw new NotFoundException('Translator link not found');
     const role = this.pick<string | null>(body, 'role', 'role');
     if (role !== undefined) link.role = role;
+    const translatorId = this.pick<string>(body, 'translator_id', 'translatorId');
+    if (translatorId !== undefined) {
+      const trimmed = String(translatorId).trim();
+      if (!trimmed) throw new BadRequestException('translator_id is required');
+      link.translatorId = trimmed;
+    }
     await this.translatorLinkRepo.save(link);
   }
 
