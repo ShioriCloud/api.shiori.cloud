@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS media_assets (
 );
 
 -- Backfill columns when table was created from an older/partial script
+ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS file_name text;
+ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS mimetype text;
+ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS url text;
+ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS storage_path text;
 ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS original_name text;
 ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS size bigint;
 ALTER TABLE media_assets ADD COLUMN IF NOT EXISTS alt_text text;

@@ -19,7 +19,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "db:copy-from-supabase": "bash scripts/copy-from-supabase.sh",
-    "db:migrate-media": "node scripts/migrate-media.mjs"
+    "db:migrate-media": "node scripts/migrate-media.mjs",
+    "db:migrate-media:docker": "docker compose -f docker-compose.prod.yml exec -T postgres psql -U shiori -d shiori -f - < scripts/sql/media_assets.sql"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
