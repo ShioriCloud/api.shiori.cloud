@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { normalizeSlug } from '../../common/slug.util';
 import {
   Anime,
   AnimeEpisode,
@@ -118,6 +119,7 @@ export class AnimeAdminService {
       id: anime.id,
       title: anime.title,
       title_romaji: anime.titleRomaji,
+      slug: anime.slug,
       synopsis: anime.synopsis,
       format: anime.format,
       season: anime.season,
@@ -160,6 +162,16 @@ export class AnimeAdminService {
 
     assign('title', this.pick<string>(body, 'title', 'title'));
     assign('titleRomaji', this.pick<string | null>(body, 'title_romaji', 'titleRomaji'));
+
+    const slugRaw = this.pick<string | null>(body, 'slug', 'slug');
+    if (slugRaw !== undefined) {
+      const normalized = slugRaw ? normalizeSlug(slugRaw) : null;
+      if (slugRaw && !normalized) {
+        throw new BadRequestException('invalid slug');
+      }
+      assign('slug', normalized);
+    }
+
     assign('coverImage', this.pick<string | null>(body, 'cover_image', 'coverImage'));
     assign('featuredImage', this.pick<string | null>(body, 'featured_image', 'featuredImage'));
     assign('synopsis', this.pick<string | null>(body, 'synopsis', 'synopsis'));
@@ -188,6 +200,55 @@ export class AnimeAdminService {
     if (averageScore !== undefined) anime.averageScore = averageScore == null ? null : String(averageScore);
 
     return anime;
+  }
+
+  private async assertAnimeSlugAvailable(
+    slug: string | null | undefined,
+    excludeAnimeId?: string,
+  ): Promise<void> {
+    if (!slug) return;
+
+    const existing = await this.animeRepo.findOne({
+      where: { slug },
+      select: { id: true, slug: true },
+    });
+
+    if (existing && existing.id !== excludeAnimeId) {
+      throw new BadRequestException('slug already exists');
+    }
+  }
+
+  async checkAnimeSlugAvailability(
+    slugInput: string,
+    excludeAnimeId?: string,
+  ): Promise<{ available: boolean; slug: string; message: string }> {
+    const slug = normalizeSlug(slugInput);
+    if (!slug) {
+      return {
+        available: false,
+        slug: '',
+        message: 'slug is required',
+      };
+    }
+
+    const existing = await this.animeRepo.findOne({
+      where: { slug },
+      select: { id: true, slug: true },
+    });
+
+    if (!existing || (excludeAnimeId && existing.id === excludeAnimeId)) {
+      return {
+        available: true,
+        slug,
+        message: 'slug is available',
+      };
+    }
+
+    return {
+      available: false,
+      slug,
+      message: 'slug already exists',
+    };
   }
 
   private async loadGenresByAnimeIds(animeIds: string[]): Promise<Map<string, AnimeGenre[]>> {
@@ -313,6 +374,7 @@ export class AnimeAdminService {
       this.animeRepo.create({ title: title.trim(), isFeatured: false }),
       body,
     );
+    await this.assertAnimeSlugAvailable(anime.slug);
     if (editorId) {
       anime.lastEditedById = editorId;
       anime.updatedAt = new Date();
@@ -328,6 +390,7 @@ export class AnimeAdminService {
   async updateAnime(id: string, body: Payload, editorId?: string) {
     const anime = await this.requireAnime(id);
     this.applyAnimeFields(anime, body);
+    await this.assertAnimeSlugAvailable(anime.slug, id);
     if (editorId) {
       anime.lastEditedById = editorId;
       anime.updatedAt = new Date();

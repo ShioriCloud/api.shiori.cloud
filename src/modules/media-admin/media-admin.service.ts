@@ -116,18 +116,42 @@ export class MediaAdminService {
   async upload(
     file: Express.Multer.File,
     uploadedBy: string,
+    preferredName?: string,
   ): Promise<MediaAssetRow> {
-    const saved = await this.storage.saveImage(file);
+    const trimmedName = preferredName?.trim() || undefined;
+    const saved = await this.storage.saveImage(file, trimmedName);
+
+    const existing = trimmedName
+      ? await this.mediaRepo.findOne({ where: { fileName: saved.fileName } })
+      : null;
+
+    if (existing) {
+      if (
+        existing.storagePath !== saved.storagePath &&
+        this.storage.fileExists(existing.storagePath)
+      ) {
+        await this.storage.deleteFile(existing.storagePath);
+      }
+
+      existing.mimetype = saved.mimetype;
+      existing.size = String(saved.size);
+      existing.originalName = trimmedName ? saved.fileName : file.originalname?.trim() || null;
+      existing.uploadedBy = uploadedBy;
+
+      const updated = await this.mediaRepo.save(existing);
+      return this.mapRow(updated);
+    }
+
     const id = randomUUID();
 
     const asset = this.mediaRepo.create({
       id,
       fileName: saved.fileName,
-      originalName: file.originalname?.trim() || null,
-      mimetype: file.mimetype,
+      originalName: trimmedName ? saved.fileName : file.originalname?.trim() || null,
+      mimetype: saved.mimetype,
       url: this.storage.getPublicUrl(id),
       storagePath: saved.storagePath,
-      size: String(file.size),
+      size: String(saved.size),
       uploadedBy,
       altText: null,
       caption: null,

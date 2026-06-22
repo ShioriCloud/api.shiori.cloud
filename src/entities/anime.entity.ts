@@ -25,6 +25,9 @@ export class Anime {
   @Column({ type: 'text', name: 'title_romaji', nullable: true })
   titleRomaji: string | null;
 
+  @Column({ type: 'text', nullable: true, unique: true })
+  slug: string | null;
+
   @Column({ type: 'text', name: 'cover_image', nullable: true })
   coverImage: string | null;
 

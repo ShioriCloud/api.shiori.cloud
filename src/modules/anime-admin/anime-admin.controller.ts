@@ -69,6 +69,15 @@ export class AnimeAdminController {
     return this.animeAdminService.getAnimeStudioSlugs(id);
   }
 
+  @Get('anime/slug-available/:slug')
+  @ApiOperation({ summary: 'Check if anime slug is available' })
+  checkAnimeSlugAvailable(
+    @Param('slug') slug: string,
+    @Query('excludeAnimeId') excludeAnimeId?: string,
+  ) {
+    return this.animeAdminService.checkAnimeSlugAvailability(slug, excludeAnimeId);
+  }
+
   @Get('anime/:id')
   getAnime(@Param('id', ParseUUIDPipe) id: string) {
     return this.animeAdminService.getAnimeAdmin(id);

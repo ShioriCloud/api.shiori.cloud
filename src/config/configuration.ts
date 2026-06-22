@@ -1,6 +1,9 @@
-export default () => ({
+export default () => {
+  const appPort = parseInt(process.env.APP_PORT ?? '3000', 10);
+
+  return {
   app: {
-    port: parseInt(process.env.APP_PORT ?? '3000', 10),
+    port: appPort,
     host: process.env.APP_HOST ?? '0.0.0.0',
     allowOrigins: (process.env.APP_ALLOW_ORIGINS ?? 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3001')
       .split(',')
@@ -26,7 +29,13 @@ export default () => ({
   },
   media: {
     storagePath: process.env.MEDIA_STORAGE_PATH ?? './data/uploads',
-    publicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL ?? 'http://localhost:3000',
+    publicBaseUrl: (
+      process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${appPort}`
+    ).replace(/\/$/, ''),
     maxUploadBytes: parseInt(process.env.MEDIA_MAX_UPLOAD_BYTES ?? String(10 * 1024 * 1024), 10),
+    imageMaxWidth: parseInt(process.env.MEDIA_IMAGE_MAX_WIDTH ?? '1920', 10),
+    imageQuality: parseInt(process.env.MEDIA_IMAGE_QUALITY ?? '82', 10),
+    imageFormat: (process.env.MEDIA_IMAGE_FORMAT ?? 'webp').toLowerCase() === 'avif' ? 'avif' : 'webp',
   },
-});
+};
+};

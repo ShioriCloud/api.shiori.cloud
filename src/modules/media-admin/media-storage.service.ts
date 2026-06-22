@@ -6,9 +6,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, existsSync } from 'fs';
 import { mkdir, unlink, writeFile } from 'fs/promises';
-import { extname, join, resolve } from 'path';
+import { join, resolve } from 'path';
 import { randomUUID } from 'crypto';
 import type { ReadStream } from 'fs';
+import type { ImageOutputFormat } from './media-image.optimizer';
+import { optimizeImageBuffer } from './media-image.optimizer';
+import { sanitizeMediaBaseName } from './media-file-name.util';
 
 const IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
@@ -19,13 +22,12 @@ const IMAGE_MIME_TYPES = new Set([
   'image/avif',
 ]);
 
-const MIME_TO_EXT: Record<string, string> = {
-  'image/jpeg': '.jpg',
-  'image/jpg': '.jpg',
-  'image/png': '.png',
-  'image/webp': '.webp',
-  'image/gif': '.gif',
-  'image/avif': '.avif',
+export type SavedImage = {
+  fileName: string;
+  storagePath: string;
+  absolutePath: string;
+  mimetype: string;
+  size: number;
 };
 
 @Injectable()
@@ -33,6 +35,9 @@ export class MediaStorageService implements OnModuleInit {
   private readonly storageRoot: string;
   private readonly publicBaseUrl: string;
   private readonly maxUploadBytes: number;
+  private readonly imageMaxWidth: number;
+  private readonly imageQuality: number;
+  private readonly imageFormat: ImageOutputFormat;
 
   constructor(private readonly config: ConfigService) {
     const configuredPath =
@@ -42,6 +47,9 @@ export class MediaStorageService implements OnModuleInit {
       this.config.get<string>('media.publicBaseUrl') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
     this.maxUploadBytes = this.config.get<number>('media.maxUploadBytes', 10 * 1024 * 1024);
+    this.imageMaxWidth = this.config.get<number>('media.imageMaxWidth', 1920);
+    this.imageQuality = this.config.get<number>('media.imageQuality', 82);
+    this.imageFormat = this.config.get<ImageOutputFormat>('media.imageFormat', 'webp');
   }
 
   async onModuleInit(): Promise<void> {
@@ -69,30 +77,34 @@ export class MediaStorageService implements OnModuleInit {
     }
   }
 
-  resolveExtension(file: Express.Multer.File): string {
-    const fromMime = MIME_TO_EXT[String(file.mimetype ?? '').toLowerCase()];
-    if (fromMime) return fromMime;
-
-    const fromName = extname(String(file.originalname ?? '')).toLowerCase();
-    if (fromName) return fromName;
-
-    return '.bin';
-  }
-
-  async saveImage(file: Express.Multer.File): Promise<{
-    fileName: string;
-    storagePath: string;
-    absolutePath: string;
-  }> {
+  async saveImage(
+    file: Express.Multer.File,
+    preferredBaseName?: string,
+  ): Promise<SavedImage> {
     this.assertAllowedImage(file);
 
-    const ext = this.resolveExtension(file);
-    const fileName = `${randomUUID()}${ext}`;
+    const sourceMimetype = String(file.mimetype ?? '').toLowerCase();
+    const optimized = await optimizeImageBuffer(file.buffer, sourceMimetype, {
+      maxWidth: this.imageMaxWidth,
+      quality: this.imageQuality,
+      format: this.imageFormat,
+    });
+
+    const fileName = preferredBaseName
+      ? `${sanitizeMediaBaseName(preferredBaseName)}${optimized.extension}`
+      : `${randomUUID()}${optimized.extension}`;
     const storagePath = join('media', fileName).replace(/\\/g, '/');
     const absolutePath = join(this.storageRoot, storagePath);
 
-    await writeFile(absolutePath, file.buffer);
-    return { fileName, storagePath, absolutePath };
+    await writeFile(absolutePath, optimized.buffer);
+
+    return {
+      fileName,
+      storagePath,
+      absolutePath,
+      mimetype: optimized.mimetype,
+      size: optimized.buffer.length,
+    };
   }
 
   getAbsolutePath(storagePath: string): string {

@@ -48,9 +48,10 @@ export class MediaAdminController {
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   upload(
     @UploadedFile() file: Express.Multer.File,
+    @Body('name') name: string | undefined,
     @Req() req: PortalAuthedRequest,
   ) {
-    return this.mediaAdminService.upload(file, req.portalTelegramUserId);
+    return this.mediaAdminService.upload(file, req.portalTelegramUserId, name);
   }
 
   @Put(':id')
