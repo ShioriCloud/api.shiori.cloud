@@ -123,6 +123,19 @@ export class FilesAdminService {
     }
   }
 
+  /** Newest-first for picker lists (handles missing created_at on legacy/bot rows). */
+  private applyPickerOrder(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+  ) {
+    qb.orderBy('COALESCE(f.createdAt, f.lastAccessed)', 'DESC', 'NULLS LAST')
+      .addOrderBy(
+        "CASE WHEN f.key ~ '^[0-9]+$' THEN CAST(f.key AS BIGINT) END",
+        'DESC',
+        'NULLS LAST',
+      )
+      .addOrderBy('f.key', 'DESC');
+  }
+
   private applyFileSearch(
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
     query?: string,
@@ -221,7 +234,7 @@ export class FilesAdminService {
         qb.andWhere('f.fileName ILIKE :ext', { ext: `%.${fileExtension}` });
       }
       this.applyFileSearch(qb, term, fileNameOnly);
-      qb.orderBy('f.createdAt', 'DESC', 'NULLS LAST');
+      this.applyPickerOrder(qb);
       const rows = await qb.getMany();
       return rows.map((f) => this.mapPicker(f));
     };
@@ -234,7 +247,7 @@ export class FilesAdminService {
       }
     };
 
-    if (searchText) addRows(await fetchMatches(searchText, true));
+    if (searchText) addRows(await fetchMatches(searchText, false));
     for (const term of extraTerms) {
       if (byKey.size >= limit) break;
       addRows(await fetchMatches(term, true));
@@ -275,8 +288,8 @@ export class FilesAdminService {
     const qb = this.filesRepo
       .createQueryBuilder('f')
       .where('f.fileName ILIKE :ext', { ext: `%.${ext}` })
-      .orderBy('f.createdAt', 'DESC', 'NULLS LAST')
       .take(limit);
+    this.applyPickerOrder(qb);
 
     if (query.activeOnly !== false) {
       qb.andWhere('f.isActive = true');

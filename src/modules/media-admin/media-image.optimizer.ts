@@ -1,6 +1,16 @@
-import sharp from 'sharp';
-
 export type ImageOutputFormat = 'webp' | 'avif';
+
+type SharpModule = typeof import('sharp');
+
+const loadSharp = async (): Promise<SharpModule['default']> => {
+  try {
+    const mod = await import('sharp');
+    return mod.default;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`sharp is unavailable (image optimization disabled): ${msg}`);
+  }
+};
 
 export type OptimizeImageOptions = {
   maxWidth: number;
@@ -24,6 +34,7 @@ export async function optimizeImageBuffer(
   sourceMimetype: string,
   options: OptimizeImageOptions,
 ): Promise<OptimizedImage> {
+  const sharp = await loadSharp();
   const normalizedMime = sourceMimetype.toLowerCase();
   const meta = await sharp(input, { animated: true }).metadata();
   const isAnimated = (meta.pages ?? 1) > 1;
