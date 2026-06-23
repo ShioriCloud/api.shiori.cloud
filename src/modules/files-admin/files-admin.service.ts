@@ -1,10 +1,12 @@
 import {
   Injectable,
+  BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { BotFile, FilePack, FilePackItem } from '../../entities';
+import { isUuid } from '../../common/uuid.util';
 import {
   AddFilePackItemDto,
   FilePickerRecentQueryDto,
@@ -76,6 +78,12 @@ export class FilesAdminService {
     @InjectRepository(FilePackItem)
     private readonly packItemsRepo: Repository<FilePackItem>,
   ) {}
+
+  private assertPackId(packId: string): void {
+    if (!isUuid(String(packId ?? '').trim())) {
+      throw new BadRequestException('invalid pack id');
+    }
+  }
 
   private mapFileStat(file: BotFile): FileDownloadStatRow {
     return {
@@ -312,6 +320,9 @@ export class FilesAdminService {
     let pack: FilePack | null = null;
 
     if (dto.id) {
+      if (!isUuid(dto.id.trim())) {
+        throw new BadRequestException('invalid pack id');
+      }
       pack = await this.packsRepo.findOne({ where: { id: dto.id } });
     }
     if (!pack) {
@@ -344,11 +355,13 @@ export class FilesAdminService {
   }
 
   async deletePack(id: string): Promise<void> {
+    this.assertPackId(id);
     await this.packItemsRepo.delete({ packId: id });
     await this.packsRepo.delete({ id });
   }
 
   async listPackItems(packId: string): Promise<FilePackItemRow[]> {
+    this.assertPackId(packId);
     const items = await this.packItemsRepo.find({
       where: { packId },
       relations: { file: true },
@@ -365,6 +378,7 @@ export class FilesAdminService {
   }
 
   async addPackItem(packId: string, dto: AddFilePackItemDto): Promise<void> {
+    this.assertPackId(packId);
     const pack = await this.packsRepo.findOne({ where: { id: packId } });
     if (!pack) throw new NotFoundException('pack not found');
 
@@ -376,6 +390,7 @@ export class FilesAdminService {
   }
 
   async removePackItem(packId: string, fileKey: string): Promise<void> {
+    this.assertPackId(packId);
     await this.packItemsRepo.delete({ packId, fileKey });
   }
 
@@ -384,6 +399,7 @@ export class FilesAdminService {
     fileKey: string,
     sortOrder: number,
   ): Promise<void> {
+    this.assertPackId(packId);
     await this.packItemsRepo.update({ packId, fileKey }, { sortOrder });
   }
 
@@ -391,6 +407,7 @@ export class FilesAdminService {
     packId: string,
     dto: ReorderFilePackItemsDto,
   ): Promise<void> {
+    this.assertPackId(packId);
     await Promise.all(
       dto.ordered_file_keys.map((fileKey, index) =>
         this.updatePackItemSort(packId, fileKey, index + 1),

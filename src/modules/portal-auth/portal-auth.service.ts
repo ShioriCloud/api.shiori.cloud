@@ -7,6 +7,7 @@ import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
 import { TelegramUser, UserPortalSession } from '../../entities';
+import { isUuid } from '../../common/uuid.util';
 import { PortalLoginDto } from './portal-auth.dto';
 
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -94,14 +95,15 @@ export class PortalAuthService {
   }
 
   async verifySession(token: string): Promise<PortalSessionPayload | null> {
-    if (!token.trim()) return null;
+    const trimmed = token.trim();
+    if (!trimmed || !isUuid(trimmed)) return null;
 
     const session = await this.sessionsRepo.findOne({
-      where: { token: token.trim() },
+      where: { token: trimmed },
     });
 
     if (!session || session.expiresAt.getTime() <= Date.now()) {
-      if (session) await this.sessionsRepo.delete({ token: token.trim() });
+      if (session) await this.sessionsRepo.delete({ token: trimmed });
       return null;
     }
 
@@ -114,7 +116,7 @@ export class PortalAuthService {
       !user.portalLoginEnabled ||
       !this.isStaffRole(user.appRole)
     ) {
-      await this.sessionsRepo.delete({ token: token.trim() });
+      await this.sessionsRepo.delete({ token: trimmed });
       return null;
     }
 
@@ -122,7 +124,8 @@ export class PortalAuthService {
   }
 
   async logout(token: string): Promise<void> {
-    if (!token.trim()) return;
-    await this.sessionsRepo.delete({ token: token.trim() });
+    const trimmed = token.trim();
+    if (!trimmed || !isUuid(trimmed)) return;
+    await this.sessionsRepo.delete({ token: trimmed });
   }
 }
