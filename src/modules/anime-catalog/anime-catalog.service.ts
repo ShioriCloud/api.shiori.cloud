@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { findAnimeByIdOrSlug, requireAnimeId } from '../../common/anime-ref.util';
 import {
   Anime,
   AnimeEpisode,
@@ -35,6 +36,7 @@ export type AnimeSearchResult = {
 
 export type AnimeCardDto = {
   id: string;
+  slug?: string | null;
   title: string;
   title_romaji?: string | null;
   image: string;
@@ -125,6 +127,7 @@ export class AnimeCatalogService {
   ): AnimeCardDto {
     return {
       id: anime.id,
+      slug: anime.slug,
       title: anime.title || 'بدون عنوان',
       title_romaji: anime.titleRomaji,
       image: anime.coverImage ?? '',
@@ -283,10 +286,11 @@ export class AnimeCatalogService {
   }
 
   async getSimilar(
-    animeId: string,
+    idOrSlug: string,
     genreSlugs: string[],
     limit = 12,
   ): Promise<AnimeCardDto[]> {
+    const animeId = await requireAnimeId(this.animeRepo, idOrSlug);
     const slugs = [
       ...new Set(
         genreSlugs.map((s) => String(s).trim().toLowerCase()).filter(Boolean),
@@ -332,10 +336,11 @@ export class AnimeCatalogService {
     return result.items;
   }
 
-  async getById(id: string) {
-    const anime = await this.animeRepo.findOne({ where: { id } });
+  async getById(idOrSlug: string) {
+    const anime = await findAnimeByIdOrSlug(this.animeRepo, idOrSlug);
     if (!anime) throw new NotFoundException('Anime not found');
 
+    const id = anime.id;
     const genreMap = await this.loadGenresForAnimeIds([id]);
     const episodes = await this.episodeRepo.find({
       where: { animeId: id },
@@ -384,6 +389,7 @@ export class AnimeCatalogService {
         title: seriesMember.series.title,
         members: members.map((m) => ({
           id: m.animeId,
+          slug: m.anime?.slug ?? null,
           title: m.anime?.title ?? '',
           image: m.anime?.coverImage ?? '',
           sort_order: m.sortOrder,
@@ -537,7 +543,8 @@ export class AnimeCatalogService {
     return result;
   }
 
-  async getFavoriteCount(animeId: string): Promise<number> {
+  async getFavoriteCount(idOrSlug: string): Promise<number> {
+    const animeId = await requireAnimeId(this.animeRepo, idOrSlug);
     return this.userListRepo.count({ where: { animeId } });
   }
 }

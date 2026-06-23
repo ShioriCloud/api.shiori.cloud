@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
+import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import {
   Anime,
   AnimeEpisode,
@@ -84,6 +85,7 @@ export class AnimeAdminService {
   private toAnimeCard(anime: Anime, genres: AnimeGenre[] = []) {
     return {
       id: anime.id,
+      slug: anime.slug,
       title: anime.title,
       title_romaji: anime.titleRomaji,
       image: anime.coverImage ?? '',
@@ -282,10 +284,15 @@ export class AnimeAdminService {
     if (links.length > 0) await this.studioLinkRepo.save(links);
   }
 
-  private async requireAnime(id: string) {
-    const anime = await this.animeRepo.findOne({ where: { id } });
+  private async requireAnime(idOrSlug: string) {
+    const anime = await findAnimeByIdOrSlug(this.animeRepo, idOrSlug);
     if (!anime) throw new NotFoundException('Anime not found');
-    return anime;
+    const full = await this.animeRepo.findOne({
+      where: { id: anime.id },
+      relations: { lastEditedBy: true },
+    });
+    if (!full) throw new NotFoundException('Anime not found');
+    return full;
   }
 
   async getAnimeIdsWithEpisodes() {
@@ -358,12 +365,8 @@ export class AnimeAdminService {
     return new Set(rows.map((r) => r.animeId));
   }
 
-  async getAnimeAdmin(id: string) {
-    const anime = await this.animeRepo.findOne({
-      where: { id },
-      relations: { lastEditedBy: true },
-    });
-    if (!anime) throw new NotFoundException('Anime not found');
+  async getAnimeAdmin(idOrSlug: string) {
+    const anime = await this.requireAnime(idOrSlug);
     return this.toAnimeAdminRow(anime);
   }
 
@@ -387,8 +390,9 @@ export class AnimeAdminService {
     return this.getAnimeAdmin(saved.id);
   }
 
-  async updateAnime(id: string, body: Payload, editorId?: string) {
-    const anime = await this.requireAnime(id);
+  async updateAnime(idOrSlug: string, body: Payload, editorId?: string) {
+    const anime = await this.requireAnime(idOrSlug);
+    const id = anime.id;
     this.applyAnimeFields(anime, body);
     await this.assertAnimeSlugAvailable(anime.slug, id);
     if (editorId) {
@@ -409,8 +413,12 @@ export class AnimeAdminService {
     return this.createAnime(body, editorId);
   }
 
-  async getAnimeGenreSlugs(animeId: string) {
-    await this.requireAnime(animeId);
+  private async resolveAnimeRecordId(idOrSlug: string): Promise<string> {
+    return (await this.requireAnime(idOrSlug)).id;
+  }
+
+  async getAnimeGenreSlugs(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const links = await this.genreLinkRepo.find({
       where: { animeId },
       relations: { genre: true },
@@ -418,8 +426,8 @@ export class AnimeAdminService {
     return links.map((l) => l.genre?.slug).filter(Boolean) as string[];
   }
 
-  async getAnimeStudioSlugs(animeId: string) {
-    await this.requireAnime(animeId);
+  async getAnimeStudioSlugs(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const links = await this.studioLinkRepo.find({
       where: { animeId },
       relations: { studio: true },
@@ -427,8 +435,8 @@ export class AnimeAdminService {
     return links.map((l) => l.studio?.slug).filter(Boolean) as string[];
   }
 
-  async listEpisodes(animeId: string) {
-    await this.requireAnime(animeId);
+  async listEpisodes(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const episodes = await this.episodeRepo.find({
       where: { animeId },
       order: { episodeNumber: 'ASC' },
@@ -442,8 +450,8 @@ export class AnimeAdminService {
   }
 
   async insertEpisode(body: Payload) {
-    const animeId = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
-    await this.requireAnime(animeId);
+    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const episode = this.episodeRepo.create({
       animeId,
       episodeNumber: Number(this.pick(body, 'episode_number', 'episodeNumber') ?? 0),
@@ -459,8 +467,8 @@ export class AnimeAdminService {
     };
   }
 
-  async insertEpisodesBatch(animeId: string, episodes: Payload[]) {
-    await this.requireAnime(animeId);
+  async insertEpisodesBatch(animeIdOrSlug: string, episodes: Payload[]) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const created = [];
     for (const ep of episodes) {
       created.push(await this.insertEpisode({ ...ep, anime_id: animeId }));
@@ -492,8 +500,8 @@ export class AnimeAdminService {
     await this.episodeRepo.remove(episode);
   }
 
-  async updateEpisodePack(animeId: string, body: Payload) {
-    const anime = await this.requireAnime(animeId);
+  async updateEpisodePack(animeIdOrSlug: string, body: Payload) {
+    const anime = await this.requireAnime(animeIdOrSlug);
     anime.episodePackTitle = this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle') ?? null;
     anime.episodePackLink = this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink') ?? null;
     await this.animeRepo.save(anime);
@@ -591,8 +599,8 @@ export class AnimeAdminService {
     await this.studioRepo.remove(studio);
   }
 
-  async replaceAnimeStudios(animeId: string, slugs: string[]) {
-    await this.requireAnime(animeId);
+  async replaceAnimeStudios(animeIdOrSlug: string, slugs: string[]) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     await this.replaceStudioSlugs(animeId, slugs);
   }
 
@@ -684,8 +692,8 @@ export class AnimeAdminService {
     await this.translatorRepo.remove(t);
   }
 
-  async listSubtitles(animeId: string) {
-    await this.requireAnime(animeId);
+  async listSubtitles(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const rows = await this.subtitleRepo.find({
       where: { animeId },
       order: { episodeNumber: 'ASC' },
@@ -699,8 +707,8 @@ export class AnimeAdminService {
   }
 
   async insertSubtitle(body: Payload) {
-    const animeId = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
-    await this.requireAnime(animeId);
+    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.subtitleRepo.save(
       this.subtitleRepo.create({
         animeId,
@@ -741,8 +749,8 @@ export class AnimeAdminService {
     await this.subtitleRepo.remove(sub);
   }
 
-  async listSubtitlePacks(animeId: string) {
-    await this.requireAnime(animeId);
+  async listSubtitlePacks(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const packs = await this.subtitlePackRepo.find({
       where: { animeId },
       order: { id: 'ASC' },
@@ -755,8 +763,8 @@ export class AnimeAdminService {
   }
 
   async insertSubtitlePack(body: Payload) {
-    const animeId = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
-    await this.requireAnime(animeId);
+    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.subtitlePackRepo.save(
       this.subtitlePackRepo.create({
         animeId,
@@ -792,8 +800,8 @@ export class AnimeAdminService {
     await this.subtitlePackRepo.remove(pack);
   }
 
-  async listTranslatorLinks(animeId: string) {
-    await this.requireAnime(animeId);
+  async listTranslatorLinks(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const links = await this.translatorLinkRepo.find({
       where: { animeId },
       relations: { translator: true },
@@ -808,9 +816,9 @@ export class AnimeAdminService {
   }
 
   async insertTranslatorLink(body: Payload) {
-    const animeId = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
     const translatorId = String(this.pick<string>(body, 'translator_id', 'translatorId') ?? '');
-    await this.requireAnime(animeId);
+    const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.translatorLinkRepo.save(
       this.translatorLinkRepo.create({
         animeId,
@@ -841,8 +849,8 @@ export class AnimeAdminService {
     await this.translatorLinkRepo.remove(link);
   }
 
-  async getSeriesDraft(animeId: string) {
-    await this.requireAnime(animeId);
+  async getSeriesDraft(animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const member = await this.seriesMemberRepo.findOne({
       where: { animeId },
       relations: { series: true },
@@ -865,8 +873,8 @@ export class AnimeAdminService {
     };
   }
 
-  async saveSeries(animeId: string, body: Payload) {
-    await this.requireAnime(animeId);
+  async saveSeries(animeIdOrSlug: string, body: Payload) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const seriesId = this.pick<string | null>(body, 'series_id', 'seriesId');
     const title = String(this.pick(body, 'title', 'title') ?? '');
     const members = (this.pick<Payload[]>(body, 'members', 'members') ?? []) as Payload[];
