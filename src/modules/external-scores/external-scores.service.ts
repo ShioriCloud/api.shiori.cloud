@@ -6,6 +6,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import { Anime } from '../../entities';
 
 export type ExternalScoreIds = {
@@ -170,11 +171,13 @@ export class ExternalScoresService {
   }
 
   async syncAnimeById(
-    animeId: string,
+    animeIdOrSlug: string,
     overrideIds?: ExternalScoreIds,
   ): Promise<ExternalScores> {
-    const anime = await this.animeRepo.findOne({ where: { id: animeId } });
+    const anime = await findAnimeByIdOrSlug(this.animeRepo, animeIdOrSlug);
     if (!anime) throw new NotFoundException('anime not found');
+
+    const animeId = anime.id;
 
     const ids: ExternalScoreIds = {
       anilist_id:

@@ -314,7 +314,10 @@ export class AnimeAdminService {
     const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.created_at', 'DESC');
     if (params?.search?.trim()) {
       const q = `%${params.search.trim()}%`;
-      qb.andWhere('(a.title ILIKE :q OR a.title_romaji ILIKE :q)', { q });
+      qb.andWhere(
+        '(a.title ILIKE :q OR a.title_romaji ILIKE :q OR a.slug ILIKE :q)',
+        { q },
+      );
     }
     const filter = params?.filter ?? 'all';
     if (filter === 'featured') {
