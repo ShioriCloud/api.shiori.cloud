@@ -311,7 +311,7 @@ export class AnimeAdminService {
   }) {
     const page = Math.max(1, params?.page ?? 1);
     const limit = Math.min(100, Math.max(1, params?.limit ?? 50));
-    const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.created_at', 'DESC');
+    const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC');
     if (params?.search?.trim()) {
       const q = `%${params.search.trim()}%`;
       qb.andWhere(
