@@ -1,14 +1,45 @@
 export type ImageOutputFormat = 'webp' | 'avif';
 
-type SharpModule = typeof import('sharp');
+type SharpFn = (
+  input?: Buffer,
+  options?: { animated?: boolean },
+) => import('sharp').Sharp;
 
-const loadSharp = async (): Promise<SharpModule['default']> => {
+const MIME_EXT: Record<string, { mimetype: string; extension: string }> = {
+  'image/jpeg': { mimetype: 'image/jpeg', extension: '.jpg' },
+  'image/jpg': { mimetype: 'image/jpeg', extension: '.jpg' },
+  'image/png': { mimetype: 'image/png', extension: '.png' },
+  'image/webp': { mimetype: 'image/webp', extension: '.webp' },
+  'image/gif': { mimetype: 'image/gif', extension: '.gif' },
+  'image/avif': { mimetype: 'image/avif', extension: '.avif' },
+};
+
+let sharpUnavailableLogged = false;
+
+/** Load sharp in CJS production (dynamic import can break native binding resolution). */
+const loadSharp = (): SharpFn | null => {
   try {
-    const mod = await import('sharp');
-    return mod.default;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mod = require('sharp') as SharpFn | { default?: SharpFn; sharp?: SharpFn };
+    const factory =
+      typeof mod === 'function'
+        ? mod
+        : typeof mod.default === 'function'
+          ? mod.default
+          : mod.sharp;
+    if (typeof factory !== 'function') {
+      throw new Error('sharp export is not a function');
+    }
+    return factory;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`sharp is unavailable (image optimization disabled): ${msg}`);
+    if (!sharpUnavailableLogged) {
+      sharpUnavailableLogged = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `⚠️ sharp unavailable — media uploads will store originals without optimization: ${msg}`,
+      );
+    }
+    return null;
   }
 };
 
@@ -29,22 +60,32 @@ const FORMAT_META: Record<ImageOutputFormat, { mimetype: string; extension: stri
   avif: { mimetype: 'image/avif', extension: '.avif' },
 };
 
+const passthroughOriginal = (input: Buffer, sourceMimetype: string): OptimizedImage => {
+  const normalizedMime = sourceMimetype.toLowerCase();
+  const meta = MIME_EXT[normalizedMime] ?? MIME_EXT['image/jpeg'];
+  return {
+    buffer: input,
+    mimetype: meta.mimetype,
+    extension: meta.extension,
+  };
+};
+
 export async function optimizeImageBuffer(
   input: Buffer,
   sourceMimetype: string,
   options: OptimizeImageOptions,
 ): Promise<OptimizedImage> {
-  const sharp = await loadSharp();
+  const sharp = loadSharp();
+  if (!sharp) {
+    return passthroughOriginal(input, sourceMimetype);
+  }
+
   const normalizedMime = sourceMimetype.toLowerCase();
   const meta = await sharp(input, { animated: true }).metadata();
   const isAnimated = (meta.pages ?? 1) > 1;
 
   if (normalizedMime === 'image/gif' && isAnimated) {
-    return {
-      buffer: input,
-      mimetype: 'image/gif',
-      extension: '.gif',
-    };
+    return passthroughOriginal(input, sourceMimetype);
   }
 
   let pipeline = sharp(input, { animated: isAnimated })

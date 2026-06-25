@@ -18,9 +18,10 @@ ENV NODE_ENV=production
 
 COPY package.json package-lock.json ./
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates \
+  && apt-get install -y --no-install-recommends ca-certificates libvips42 \
   && rm -rf /var/lib/apt/lists/* \
   && npm ci --omit=dev \
+  && npm rebuild sharp \
   && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
