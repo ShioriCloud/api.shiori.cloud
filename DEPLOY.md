@@ -151,7 +151,46 @@ curl -sf https://api.example.com/api/v1/health
 
 ## 6. Optional SQL
 
-If tables were created before recent API features:
+If tables were created before recent API features, apply the catch-up script (safe to re-run):
+
+```bash
+# Local Postgres in docker-compose.yml
+docker exec -i apishioricloud-postgres-1 psql -U shiori -d shiori \
+  < scripts/sql/production_schema_catchup.sql
+
+# Production compose
+npm run db:schema-catchup:docker
+```
+
+Or only slug column:
+
+```bash
+docker exec -i shiori-postgres psql -U shiori -d shiori < scripts/sql/anime_slug.sql
+```
+
+### Maintenance scripts (after deploy)
+
+Requires `DATABASE_URL` in the environment (or `.env` loaded by your shell).
+
+```bash
+# 1) Backfill anime.slug from English title (title_romaji or Latin title); use --all to recompute existing
+npm run db:backfill-anime-slugs
+npm run db:backfill-anime-slugs:apply
+node scripts/backfill-anime-slugs.mjs --all          # dry-run all rows
+node scripts/backfill-anime-slugs.mjs --all --apply
+
+# 2) Re-encode existing media library images to WebP (URLs unchanged)
+npm run db:optimize-media
+MEDIA_STORAGE_PATH=./data/uploads npm run db:optimize-media:apply
+
+# On server (API container has DATABASE_URL + volume at /app/data/uploads):
+docker exec -e MEDIA_STORAGE_PATH=/app/data/uploads api.shiori.cloud \
+  node scripts/optimize-media-assets.mjs --apply
+```
+
+Priority: **schema catch-up** → deploy API → **backfill slugs** → **optimize media** (optional, I/O heavy).
+
+Legacy one-offs:
 
 ```sql
 -- link-telegram tokens

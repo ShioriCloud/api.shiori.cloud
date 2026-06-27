@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pg from 'pg'
+import { loadEnvFile } from './lib/load-env.mjs'
+
+loadEnvFile()
 
 const { Client } = pg
 const __dirname = dirname(fileURLToPath(import.meta.url))
