@@ -1,7 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { findAnimeByIdOrSlug, requireAnimeId } from '../../common/anime-ref.util';
+import {
+  findAnimeByIdOrSlug,
+  requireAnimeId,
+} from '../../common/anime-ref.util';
 import {
   Anime,
   AnimeEpisode,
@@ -17,7 +20,11 @@ import {
   UserAnimeListEntry,
 } from '../../entities';
 
-export type AnimeGenreDto = { slug: string; name_en?: string; name_fa?: string };
+export type AnimeGenreDto = {
+  slug: string;
+  name_en?: string;
+  name_fa?: string;
+};
 
 export type AnimeSearchParams = {
   query?: string;
@@ -466,7 +473,9 @@ export class AnimeCatalogService {
     return genre;
   }
 
-  async resolveAnilistIdsBatch(anilistIds: number[]): Promise<Record<string, string>> {
+  async resolveAnilistIdsBatch(
+    anilistIds: number[],
+  ): Promise<Record<string, string>> {
     const unique = [
       ...new Set(anilistIds.filter((id) => Number.isFinite(id) && id > 0)),
     ];
