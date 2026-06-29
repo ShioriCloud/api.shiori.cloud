@@ -1,48 +1,29 @@
-# Production stack — API + Postgres on one Docker network.
-# Run from /opt/api.shiori.cloud:
-#   docker compose -f docker-compose.prod.yml up -d --build
-#
-# IMPORTANT: Inside the API container, Postgres host must be "postgres" (service name),
-# NOT localhost. This compose overrides DATABASE_URL so .env localhost values are ignored.
+# API only — use deploy/server/docker-compose.api-only.yaml on the server.
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: shiori-postgres
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: shiori
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shiori}
-      POSTGRES_DB: shiori
-    volumes:
-      - shiori_pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U shiori -d shiori']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   api:
-    image: ${API_IMAGE:-shiori-api:local}
-    build: .
+    image: ghcr.io/shioricloud/api.shiori.cloud:latest
     container_name: api.shiori.cloud
     restart: unless-stopped
     ports:
-      - '${APP_PORT:-3000}:${APP_PORT:-3000}'
+      - '${APP_PORT:-4001}:${APP_PORT:-4001}'
     env_file:
       - .env
     environment:
       APP_HOST: 0.0.0.0
-      APP_PORT: ${APP_PORT:-3000}
-      DATABASE_URL: postgresql://shiori:${POSTGRES_PASSWORD:-shiori}@postgres:5432/shiori
+      APP_PORT: ${APP_PORT:-4001}
       MEDIA_STORAGE_PATH: /app/data/uploads
       MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.shiori.cloud}
     volumes:
       - shiori_uploads:/app/data/uploads
-    depends_on:
-      postgres:
-        condition: service_healthy
+    networks:
+      - shiori-network
+    labels:
+      - 'com.centurylinklabs.watchtower.enable=true'
+
+networks:
+  shiori-network:
+    external: true
 
 volumes:
-  shiori_pgdata:
   shiori_uploads:

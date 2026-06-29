@@ -1,5 +1,13 @@
-# API + Postgres (optional bundle). Node listens on APP_PORT — you reverse-proxy to it.
-# For API-only, use docker-compose.api-only.yaml instead.
+# Shiori API + Postgres — production bundle
+#
+# Server path (example): /opt/api.shiori.cloud
+#   cp deploy/server/docker-compose.yaml docker-compose.yml   # or use -f path
+#   cp .env.example .env   # set POSTGRES_PASSWORD, TELEGRAM_BOT_TOKEN, …
+#   docker compose pull
+#   docker compose up -d
+#   curl -sf http://127.0.0.1:${APP_PORT:-4001}/api/v1/health
+#
+# DATABASE_URL is set here (host = service name "postgres") so .env cannot point at wrong DB.
 
 services:
   postgres:
@@ -17,18 +25,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 10s
 
   api:
     image: ghcr.io/shioricloud/api.shiori.cloud:latest
     container_name: api.shiori.cloud
     restart: unless-stopped
     ports:
-      - '${APP_PORT:-3000}:${APP_PORT:-3000}'
+      - '${APP_PORT:-4001}:${APP_PORT:-4001}'
     env_file:
       - .env
     environment:
       APP_HOST: 0.0.0.0
-      APP_PORT: ${APP_PORT:-3000}
+      APP_PORT: ${APP_PORT:-4001}
       DATABASE_URL: postgresql://shiori:${POSTGRES_PASSWORD:-shiori}@postgres:5432/shiori
       MEDIA_STORAGE_PATH: /app/data/uploads
       MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.shiori.cloud}
@@ -37,6 +46,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    labels:
+      - 'com.centurylinklabs.watchtower.enable=true'
 
 volumes:
   shiori_pgdata:
