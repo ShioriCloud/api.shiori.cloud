@@ -16,6 +16,7 @@ import {
   AnimeTranslator,
   AnimeTranslatorLink,
   BotFile,
+  BotSetting,
   FilePack,
   FilePackItem,
   NotificationCampaign,
@@ -39,6 +40,7 @@ import { ExternalScoresModule } from './modules/external-scores/external-scores.
 import { NotificationsAdminModule } from './modules/notifications-admin/notifications-admin.module';
 import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
 import { MediaAdminModule } from './modules/media-admin/media-admin.module';
+import { BotModule } from './modules/bot/bot.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
@@ -71,6 +73,7 @@ import { TelegramModule } from './telegram/telegram.module';
           UserNotification,
           UserPortalSession,
           BotFile,
+          BotSetting,
           FilePack,
           FilePackItem,
           NotificationCampaign,
@@ -93,6 +96,7 @@ import { TelegramModule } from './telegram/telegram.module';
     ExternalScoresModule,
     NotificationsAdminModule,
     MediaAdminModule,
+    BotModule,
   ],
 })
 export class AppModule {}

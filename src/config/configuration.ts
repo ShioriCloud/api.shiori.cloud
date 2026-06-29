@@ -24,6 +24,9 @@ export default () => {
   cron: {
     secret: process.env.CRON_SECRET ?? '',
   },
+  bot: {
+    apiToken: process.env.BOT_API_TOKEN ?? '',
+  },
   externalScores: {
     omdbApiKey: process.env.OMDB_API_KEY ?? '',
   },

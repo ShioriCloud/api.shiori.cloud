@@ -36,6 +36,7 @@ npm run start:dev
 | `TELEGRAM_BOT_USERNAME` | Deep-link bot name (link-telegram flow) |
 | `MINI_APP_URL` | Web App button URL in Telegram notifications |
 | `CRON_SECRET` | Protects `POST /api/v1/cron/*` |
+| `BOT_API_TOKEN` | Protects `GET /api/v1/bot/*` (`x-bot-token` header) |
 | `OMDB_API_KEY` | Optional IMDb score source |
 
 Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connection or local docker).
@@ -53,6 +54,7 @@ Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connectio
 | `anime-admin` | `/anime-admin` | Anime CRUD (staff) |
 | `telegram-users-admin` | `/telegram-users-admin` | User management |
 | `files-admin` | `/files-admin` | Files + file packs |
+| `bot` | `/bot` | Tel-bot file/link lookup (`x-bot-token`) |
 | `notifications-admin` | `/notifications-admin` | Episode release campaigns |
 | `external-scores` | `/cron` | Batch score sync (cron) |
 
@@ -64,6 +66,35 @@ curl -X POST "http://localhost:4001/api/v1/cron/sync-external-scores?limit=25&of
 ```
 
 Paginate with `offset` until `hasMore` is false. Schedule weekly (system cron, GitHub Actions, etc.).
+
+## Bot API (tel-bot)
+
+All routes require header `x-bot-token: YOUR_BOT_API_TOKEN`.
+
+```bash
+# Health (startup check)
+curl -s "https://api.shiori.cloud/api/v1/bot/health" -H "x-bot-token: TOKEN"
+
+# Resolve archive link
+curl -s "https://api.shiori.cloud/api/v1/bot/archive-links/482391056" \
+  -H "x-bot-token: TOKEN"
+```
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/bot/health` | Startup ping |
+| `GET` | `/bot/archive-links/:code` | Public link lookup |
+| `GET` | `/bot/files/:key` | Active file by key |
+| `POST` | `/bot/files` | Create file |
+| `PUT` | `/bot/files/:key` | Upsert (reindex) |
+| `POST` | `/bot/files/:key/downloads` | Increment downloads |
+| `PATCH` | `/bot/files/by-message/:messageId` | Update by Telegram message id |
+| `POST` | `/bot/files/by-message/:messageId/deactivate` | Deactivate by message id |
+| `GET` | `/bot/packs/:slug` | File pack metadata |
+| `GET` | `/bot/packs/:packId/items` | Pack items |
+| `GET/PUT/DELETE` | `/bot/settings/:key` | Bot runtime settings (e.g. mirroring) |
+
+Response for archive link: `{ ok: true, data: { id, code, title?, type?, telegramFileId?, archiveMessageId?, caption? } }` — `404` if missing or inactive.
 
 ## Related repos
 

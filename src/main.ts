@@ -47,6 +47,7 @@ async function bootstrap() {
       'x-telegram-init-data',
       'x-app-session-token',
       'x-portal-token',
+      'x-bot-token',
     ],
   });
 
