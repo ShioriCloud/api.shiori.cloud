@@ -1,6 +1,6 @@
 # Shiori API
 
-NestJS backend for **shiori** and **shiori-admin**. Primary data layer — Supabase client is no longer required in the frontends when `VITE_SHIORI_API_URL` is set.
+NestJS backend for **shiori** and **shiori-admin**. Primary data layer for the mini-app and admin panel.
 
 ## Stack
 
@@ -57,8 +57,6 @@ Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connectio
 | `external-scores` | `/cron` | Batch score sync (cron) |
 
 ## Cron: external scores
-
-Replaces Supabase Edge `sync-external-scores`:
 
 ```bash
 curl -X POST "http://localhost:4001/api/v1/cron/sync-external-scores?limit=25&offset=0" \

@@ -1,5 +1,5 @@
 -- Production catch-up for shiori-cloud Postgres (safe to re-run).
--- Run after Supabase → self-hosted merge when admin/catalog features 500.
+-- Run when admin/catalog features need schema columns on self-hosted Postgres.
 
 -- Anime: slug + timestamps (anime list sorts by created_at)
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS slug text;

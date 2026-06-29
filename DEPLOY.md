@@ -1,6 +1,6 @@
 # Deploy — Shiori API
 
-Self-hosted backend for mini-app and admin. Assumes Postgres already has the mini-app schema (migrated from Supabase or copied via `scripts/copy-from-supabase.sh`).
+Self-hosted backend for mini-app and admin. Assumes Postgres already has the mini-app schema.
 
 ## 1. Environment
 
@@ -104,16 +104,16 @@ Or use PM2 / systemd / Docker with `node dist/main.js`.
 
 ## 3. Frontends
 
-Build with API URL set (drops `@supabase/supabase-js` from bundle):
+Build with API URL set:
 
 ```bash
 # shiori (mini-app frontend)
 cd ../shiori
-VITE_SHIORI_API_URL=https://api.example.com npm run build:api
+VITE_SHIORI_API_URL=https://api.example.com npm run build
 
 # admin
 cd ../shiori-admin
-VITE_SHIORI_API_URL=https://api.example.com npm run build:api
+VITE_SHIORI_API_URL=https://api.example.com npm run build
 ```
 
 Serve `dist/` with nginx, Caddy, or static hosting. Example nginx snippet:
@@ -129,8 +129,6 @@ location / {
 |-----|-----|
 | `shiori` | `VITE_SHIORI_API_URL=https://api.example.com` |
 | `shiori-admin` | `VITE_SHIORI_API_URL=https://api.example.com` |
-
-Supabase env vars are **optional** — only needed if API URL is unset (legacy fallback).
 
 ## 4. Cron jobs
 
@@ -203,13 +201,5 @@ CREATE TABLE IF NOT EXISTS telegram_link_tokens (
 );
 
 -- notification campaigns (if missing)
--- see mini-app docs/sql/supabase-notifications.sql
+-- see shiori/sql/notifications.sql
 ```
-
-## 7. Decommissioning Supabase
-
-Once frontends use only `VITE_SHIORI_API_URL`:
-
-1. Stop using Supabase Edge Functions (`notify-episode-release`, `sync-external-scores`)
-2. Remove `VITE_SUPABASE_*` from mini-app and admin `.env`
-3. Keep Postgres (can stay on Supabase hosting with direct `DATABASE_URL`, or move to self-hosted)
