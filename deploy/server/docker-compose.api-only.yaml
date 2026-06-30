@@ -25,6 +25,7 @@ services:
       APP_PORT: ${APP_PORT:-4001}
       MEDIA_STORAGE_PATH: /app/data/uploads
       MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-https://api.shiori.cloud}
+      LD_LIBRARY_PATH: /app/node_modules/@img/sharp-libvips-linux-x64/lib
     volumes:
       - shiori_uploads:/app/data/uploads
     networks:
