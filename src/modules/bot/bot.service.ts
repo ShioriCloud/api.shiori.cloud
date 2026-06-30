@@ -72,7 +72,7 @@ export class BotService {
       throw new NotFoundException();
     }
 
-    const { rows } = await this.dataSource.query(
+    const rows = await this.dataSource.query(
       `INSERT INTO files (
         key, message_id, type, file_id, file_name, file_size, caption, is_active, created_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
@@ -96,28 +96,14 @@ export class BotService {
       ],
     );
 
-    return { ok: true, data: this.mapFileRow(rows[0]) };
+    const row = Array.isArray(rows) ? rows[0] : undefined;
+    return { ok: true, data: this.mapFileRow(row as Record<string, unknown>) };
   }
 
   async incrementDownloads(key: string): Promise<{ ok: true; data: BotFileDto }> {
     const cleanKey = String(key ?? '').trim();
     if (!cleanKey) {
       throw new NotFoundException();
-    }
-
-    try {
-      const { rows } = await this.dataSource.query(
-        `SELECT * FROM increment_file_downloads($1)`,
-        [cleanKey],
-      );
-      if (rows[0]) {
-        return { ok: true, data: this.mapFileRow(rows[0]) };
-      }
-    } catch (err: unknown) {
-      const code = (err as { code?: string })?.code;
-      if (code !== '42883') {
-        throw err;
-      }
     }
 
     const file = await this.filesRepo.findOne({
