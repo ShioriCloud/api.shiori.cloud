@@ -23,9 +23,10 @@ RUN apt-get update \
     libvips42 \
     libglib2.0-0 \
     libexpat1 \
+    libstdc++6 \
   && rm -rf /var/lib/apt/lists/* \
   && npm ci --omit=dev \
-  && npm rebuild sharp \
+  && npm install --no-save @img/sharp-linux-x64@0.35.2 @img/sharp-libvips-linux-x64@1.3.1 \
   && node -e "require('sharp')({create:{width:8,height:8,channels:3,background:'#f00'}}).webp().toBuffer().then((b)=>{if(!b?.length)throw new Error('empty');console.log('sharp build OK',b.length)})" \
   && npm cache clean --force
 
