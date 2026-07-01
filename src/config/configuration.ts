@@ -36,9 +36,6 @@ export default () => {
       process.env.MEDIA_PUBLIC_BASE_URL ?? `http://localhost:${appPort}`
     ).replace(/\/$/, ''),
     maxUploadBytes: parseInt(process.env.MEDIA_MAX_UPLOAD_BYTES ?? String(10 * 1024 * 1024), 10),
-    imageMaxWidth: parseInt(process.env.MEDIA_IMAGE_MAX_WIDTH ?? '1920', 10),
-    imageQuality: parseInt(process.env.MEDIA_IMAGE_QUALITY ?? '82', 10),
-    imageFormat: (process.env.MEDIA_IMAGE_FORMAT ?? 'webp').toLowerCase() === 'avif' ? 'avif' : 'webp',
   },
 };
 };

@@ -176,17 +176,9 @@ npm run db:backfill-anime-slugs
 npm run db:backfill-anime-slugs:apply
 node scripts/backfill-anime-slugs.mjs --all          # dry-run all rows
 node scripts/backfill-anime-slugs.mjs --all --apply
-
-# 2) Re-encode existing media library images to WebP (URLs unchanged)
-npm run db:optimize-media
-MEDIA_STORAGE_PATH=./data/uploads npm run db:optimize-media:apply
-
-# On server (API container has DATABASE_URL + volume at /app/data/uploads):
-docker exec -e MEDIA_STORAGE_PATH=/app/data/uploads api.shiori.cloud \
-  node scripts/optimize-media-assets.mjs --apply
 ```
 
-Priority: **schema catch-up** → deploy API → **backfill slugs** → **optimize media** (optional, I/O heavy).
+Priority: **schema catch-up** → deploy API → **backfill slugs**.
 
 Legacy one-offs:
 

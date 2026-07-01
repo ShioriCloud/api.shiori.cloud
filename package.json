@@ -22,9 +22,7 @@
     "db:migrate-media:docker": "docker compose -f docker-compose.prod.yml exec -T postgres psql -U shiori -d shiori -f - < scripts/sql/media_assets.sql",
     "db:schema-catchup:docker": "docker compose -f docker-compose.prod.yml exec -T postgres psql -U shiori -d shiori -f - < scripts/sql/production_schema_catchup.sql",
     "db:backfill-anime-slugs": "node scripts/backfill-anime-slugs.mjs",
-    "db:backfill-anime-slugs:apply": "node scripts/backfill-anime-slugs.mjs --apply",
-    "db:optimize-media": "node scripts/optimize-media-assets.mjs",
-    "db:optimize-media:apply": "node scripts/optimize-media-assets.mjs --apply"
+    "db:backfill-anime-slugs:apply": "node scripts/backfill-anime-slugs.mjs --apply"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -39,7 +37,6 @@
     "pg": "^8.21.0",
     "reflect-metadata": "^0.2.0",
     "rxjs": "^7.8.1",
-    "sharp": "^0.35.2",
     "typeorm": "^1.0.0"
   },
   "devDependencies": {
