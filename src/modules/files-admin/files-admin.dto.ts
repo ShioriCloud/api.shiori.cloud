@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -175,4 +176,24 @@ export class ListBotFilesQueryDto extends ListFilesStatsQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   orphanOnly?: boolean;
+}
+
+export class ResyncBotFileFromChannelDto {
+  @IsString()
+  @IsNotEmpty()
+  channelId!: string;
+
+  @IsInt()
+  @Min(1)
+  messageId!: number;
+}
+
+export class PatchBotFileMetadataDto {
+  @IsOptional()
+  @IsString()
+  file_name?: string | null;
+
+  @IsOptional()
+  @IsString()
+  caption?: string | null;
 }

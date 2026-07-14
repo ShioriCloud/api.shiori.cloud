@@ -14,6 +14,7 @@ import {
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
   ListBotFilesQueryDto,
+  PatchBotFileMetadataDto,
   ReorderFilePackItemsDto,
   UpsertFilePackDto,
 } from './files-admin.dto';
@@ -462,6 +463,28 @@ export class FilesAdminService {
     file.isActive = true;
     const saved = await this.filesRepo.save(file);
 
+    const refCounts = await this.countReferencesByKeysBatch([fileKey]);
+    return this.mapFileDetail(saved, refCounts.get(fileKey) ?? 0);
+  }
+
+  async patchBotFileMetadata(
+    key: string,
+    dto: PatchBotFileMetadataDto,
+  ): Promise<BotFileDetailRow> {
+    const fileKey = this.assertFileKey(key);
+    const file = await this.filesRepo.findOne({ where: { key: fileKey } });
+    if (!file) throw new NotFoundException('file not found');
+
+    if (dto.file_name !== undefined) {
+      const name = String(dto.file_name ?? '').trim();
+      file.fileName = name || null;
+    }
+    if (dto.caption !== undefined) {
+      const caption = String(dto.caption ?? '').trim();
+      file.caption = caption || null;
+    }
+
+    const saved = await this.filesRepo.save(file);
     const refCounts = await this.countReferencesByKeysBatch([fileKey]);
     return this.mapFileDetail(saved, refCounts.get(fileKey) ?? 0);
   }

@@ -20,6 +20,7 @@ import {
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
   ListBotFilesQueryDto,
+  PatchBotFileMetadataDto,
   ReorderFilePackItemsDto,
   UpdatePackItemSortDto,
   UpsertFilePackDto,
@@ -72,6 +73,15 @@ export class FilesAdminController {
   @ApiOperation({ summary: 'Reactivate a bot file' })
   reactivateBotFile(@Param('key') key: string) {
     return this.filesAdminService.reactivateBotFile(decodeURIComponent(key));
+  }
+
+  @Patch('files/:key')
+  @ApiOperation({ summary: 'Update bot file metadata (display name, caption)' })
+  patchBotFile(
+    @Param('key') key: string,
+    @Body() body: PatchBotFileMetadataDto,
+  ) {
+    return this.filesAdminService.patchBotFileMetadata(decodeURIComponent(key), body);
   }
 
   @Get('picker/search')

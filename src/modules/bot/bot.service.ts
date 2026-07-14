@@ -40,6 +40,26 @@ export class BotService {
     return { ok: true, data: this.mapFile(file) };
   }
 
+  async getFileByMessageId(
+    messageId: string,
+  ): Promise<{ ok: true; data: BotFileDto }> {
+    const mid = String(messageId ?? '').trim();
+    if (!mid) {
+      throw new NotFoundException();
+    }
+
+    const file = await this.filesRepo
+      .createQueryBuilder('f')
+      .where('f.message_id = CAST(:mid AS bigint)', { mid })
+      .getOne();
+
+    if (!file) {
+      throw new NotFoundException();
+    }
+
+    return { ok: true, data: this.mapFile(file) };
+  }
+
   async createFile(dto: CreateBotFileDto): Promise<{ ok: true; data: BotFileDto }> {
     const key = String(dto.key ?? '').trim();
     if (!key) {
@@ -142,7 +162,7 @@ export class BotService {
       .createQueryBuilder()
       .update(BotFile)
       .set(updates)
-      .where('message_id = :mid', { mid })
+      .where('message_id = CAST(:mid AS bigint)', { mid })
       .execute();
 
     return { ok: true, data: { nModified: result.affected ?? 0 } };
@@ -160,7 +180,7 @@ export class BotService {
       .createQueryBuilder()
       .update(BotFile)
       .set({ isActive: false, lastAccessed: () => 'now()' })
-      .where('message_id = :mid', { mid })
+      .where('message_id = CAST(:mid AS bigint)', { mid })
       .andWhere('is_active = true')
       .execute();
 

@@ -47,6 +47,12 @@ export class BotController {
     return this.botService.getArchiveLinkByCode(code);
   }
 
+  @Get('files/by-message/:messageId')
+  @ApiOperation({ summary: 'Get file by Telegram message id (active or inactive)' })
+  getFileByMessageId(@Param('messageId') messageId: string): Promise<BotFileResponseDto> {
+    return this.botService.getFileByMessageId(messageId);
+  }
+
   @Get('files/:key')
   @ApiOperation({ summary: 'Get active file by key' })
   getFile(@Param('key') key: string): Promise<BotFileResponseDto> {
