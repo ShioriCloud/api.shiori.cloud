@@ -39,6 +39,13 @@ export class FilesAdminController {
     return this.filesAdminService.getDownloadOverview();
   }
 
+  @Get('stats/export')
+  @ApiOperation({ summary: 'Export filtered file download stats as CSV' })
+  async exportStats(@Query() query: ListFilesStatsQueryDto) {
+    const csv = await this.filesAdminService.exportDownloadStatsCsv(query);
+    return { csv };
+  }
+
   @Get('stats')
   @ApiOperation({ summary: 'Paginated file download stats' })
   stats(@Query() query: ListFilesStatsQueryDto) {

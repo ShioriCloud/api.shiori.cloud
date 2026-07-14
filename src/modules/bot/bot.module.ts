@@ -6,7 +6,7 @@ import { BotController } from './bot.controller';
 import { BotService } from './bot.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BotFile, FilePack, FilePackItem, BotSetting])],
+  imports: [TypeOrmModule.forFeature([BotFile, BotFileDownloadEvent, FilePack, FilePackItem, BotSetting])],
   controllers: [BotController],
   providers: [BotService, BotAuthGuard],
 })

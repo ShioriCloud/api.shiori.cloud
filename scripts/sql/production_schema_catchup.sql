@@ -45,3 +45,16 @@ CREATE TABLE IF NOT EXISTS bot_settings (
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Per-download event log (admin download trends)
+CREATE TABLE IF NOT EXISTS file_download_events (
+  id BIGSERIAL PRIMARY KEY,
+  file_key TEXT NOT NULL,
+  downloaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_file_download_events_downloaded_at
+  ON file_download_events (downloaded_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_file_download_events_file_key_downloaded_at
+  ON file_download_events (file_key, downloaded_at DESC);

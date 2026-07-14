@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { BotFile, BotSetting, FilePack, FilePackItem } from '../../entities';
+import { BotFile, BotFileDownloadEvent, BotSetting, FilePack, FilePackItem } from '../../entities';
 import {
   BotArchiveLinkDto,
   BotFileDto,
@@ -23,6 +23,8 @@ export class BotService {
     private readonly packItemsRepo: Repository<FilePackItem>,
     @InjectRepository(BotSetting)
     private readonly settingsRepo: Repository<BotSetting>,
+    @InjectRepository(BotFileDownloadEvent)
+    private readonly downloadEventsRepo: Repository<BotFileDownloadEvent>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -126,16 +128,24 @@ export class BotService {
       throw new NotFoundException();
     }
 
-    const file = await this.filesRepo.findOne({
-      where: { key: cleanKey, isActive: true },
-    });
-    if (!file) {
-      throw new NotFoundException();
-    }
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const file = await manager.findOne(BotFile, {
+        where: { key: cleanKey, isActive: true },
+      });
+      if (!file) {
+        throw new NotFoundException();
+      }
 
-    file.downloads = (file.downloads ?? 0) + 1;
-    file.lastAccessed = new Date();
-    const saved = await this.filesRepo.save(file);
+      file.downloads = (file.downloads ?? 0) + 1;
+      file.lastAccessed = new Date();
+      const updated = await manager.save(file);
+      await manager.insert(BotFileDownloadEvent, {
+        fileKey: cleanKey,
+        downloadedAt: updated.lastAccessed ?? new Date(),
+      });
+      return updated;
+    });
+
     return { ok: true, data: this.mapFile(saved) };
   }
 

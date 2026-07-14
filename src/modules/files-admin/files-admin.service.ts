@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { BotFile, FilePack, FilePackItem, Anime, AnimeEpisode, AnimeSubtitle, AnimeSubtitlePack } from '../../entities';
+import { BotFile, BotFileDownloadEvent, FilePack, FilePackItem, Anime, AnimeEpisode, AnimeSubtitle, AnimeSubtitlePack } from '../../entities';
 import { isUuid } from '../../common/uuid.util';
 import {
   AddFilePackItemDto,
@@ -37,16 +37,26 @@ export type FilePickerItemRow = {
   is_active: boolean;
 };
 
+export type DownloadDailyTrendPoint = {
+  date: string;
+  count: number;
+};
+
 export type FilesDownloadOverview = {
   totalFiles: number;
   totalDownloads: number;
   activeFiles: number;
   inactiveFiles: number;
-  /** Files with last_accessed within the window (approx. download activity). */
-  accessedLast24h: number;
-  accessedLast7d: number;
-  accessedLast30d: number;
+  downloadsLast24h: number;
+  downloadsLast7d: number;
+  downloadsLast30d: number;
+  downloadsThisWeek: number;
+  downloadsPreviousWeek: number;
+  weekOverWeekChangePercent: number | null;
+  dailyTrend: DownloadDailyTrendPoint[];
+  eventTrackingSince: string | null;
   neverDownloaded: number;
+  staleFiles: number;
   mkvFiles: number;
   zipFiles: number;
   mkvDownloads: number;
@@ -162,6 +172,8 @@ export class FilesAdminService {
   constructor(
     @InjectRepository(BotFile)
     private readonly filesRepo: Repository<BotFile>,
+    @InjectRepository(BotFileDownloadEvent)
+    private readonly downloadEventsRepo: Repository<BotFileDownloadEvent>,
     @InjectRepository(FilePack)
     private readonly packsRepo: Repository<FilePack>,
     @InjectRepository(FilePackItem)
@@ -175,6 +187,130 @@ export class FilesAdminService {
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
   ) {}
+
+  private applyDownloadListFilters(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+    query: ListFilesStatsQueryDto,
+  ) {
+    if (query.activeOnly) {
+      qb.andWhere('f.isActive = true');
+    }
+    if (query.zeroDownloads) {
+      qb.andWhere('COALESCE(f.downloads, 0) = 0');
+    }
+    if (query.staleOnly) {
+      this.applyStaleFileFilter(qb);
+    }
+    this.applyFileSearch(qb, query.search);
+  }
+
+  /** Active files with no recent download activity (30+ days). */
+  private applyStaleFileFilter(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+  ) {
+    qb.andWhere('f.isActive = true');
+    qb.andWhere(`(
+      (COALESCE(f.downloads, 0) = 0 AND COALESCE(f.createdAt, f.lastAccessed, NOW()) < NOW() - INTERVAL '30 days')
+      OR
+      (COALESCE(f.downloads, 0) > 0 AND (f.lastAccessed IS NULL OR f.lastAccessed < NOW() - INTERVAL '30 days'))
+    )`);
+  }
+
+  private buildDailyTrend(
+    rows: { day: string; count: string | number }[],
+    days = 14,
+  ): DownloadDailyTrendPoint[] {
+    const counts = new Map<string, number>();
+    for (const row of rows) {
+      const day = String(row.day).slice(0, 10);
+      counts.set(day, Number(row.count) || 0);
+    }
+
+    const result: DownloadDailyTrendPoint[] = [];
+
+    for (let offset = days - 1; offset >= 0; offset--) {
+      const anchor = new Date(Date.now() - offset * 86_400_000);
+      const key = anchor.toLocaleDateString('en-CA', { timeZone: 'Asia/Tehran' });
+      result.push({ date: key, count: counts.get(key) ?? 0 });
+    }
+
+    return result;
+  }
+
+  private async getEventOverviewStats(): Promise<{
+    downloadsLast24h: number;
+    downloadsLast7d: number;
+    downloadsLast30d: number;
+    downloadsThisWeek: number;
+    downloadsPreviousWeek: number;
+    eventTrackingSince: string | null;
+    dailyTrend: DownloadDailyTrendPoint[];
+  }> {
+    const periodAgg = await this.downloadEventsRepo
+      .createQueryBuilder('e')
+      .select(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= NOW() - INTERVAL '1 day')`,
+        'downloadsLast24h',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= NOW() - INTERVAL '7 days')`,
+        'downloadsLast7d',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= NOW() - INTERVAL '30 days')`,
+        'downloadsLast30d',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= date_trunc('week', NOW()))`,
+        'downloadsThisWeek',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= date_trunc('week', NOW()) - INTERVAL '7 days' AND e.downloadedAt < date_trunc('week', NOW()))`,
+        'downloadsPreviousWeek',
+      )
+      .addSelect('MIN(e.downloadedAt)', 'eventTrackingSince')
+      .getRawOne<{
+        downloadsLast24h: string;
+        downloadsLast7d: string;
+        downloadsLast30d: string;
+        downloadsThisWeek: string;
+        downloadsPreviousWeek: string;
+        eventTrackingSince: Date | string | null;
+      }>();
+
+    const trendRows = await this.downloadEventsRepo
+      .createQueryBuilder('e')
+      .select(`(e.downloadedAt AT TIME ZONE 'Asia/Tehran')::date`, 'day')
+      .addSelect('COUNT(*)', 'count')
+      .where(`e.downloadedAt >= NOW() - INTERVAL '13 days'`)
+      .groupBy('day')
+      .orderBy('day', 'ASC')
+      .getRawMany<{ day: string; count: string }>();
+
+    const since = periodAgg?.eventTrackingSince;
+    return {
+      downloadsLast24h: Number(periodAgg?.downloadsLast24h) || 0,
+      downloadsLast7d: Number(periodAgg?.downloadsLast7d) || 0,
+      downloadsLast30d: Number(periodAgg?.downloadsLast30d) || 0,
+      downloadsThisWeek: Number(periodAgg?.downloadsThisWeek) || 0,
+      downloadsPreviousWeek: Number(periodAgg?.downloadsPreviousWeek) || 0,
+      eventTrackingSince:
+        since instanceof Date
+          ? since.toISOString()
+          : since
+            ? new Date(String(since)).toISOString()
+            : null,
+      dailyTrend: this.buildDailyTrend(trendRows),
+    };
+  }
+
+  private escapeCsvCell(
+    value: string | number | boolean | null | undefined,
+  ): string {
+    const raw = value == null ? '' : String(value);
+    if (/[",\n\r]/.test(raw)) return `"${raw.replace(/"/g, '""')}"`;
+    return raw;
+  }
 
   private assertFileKey(key: string): string {
     const clean = String(key ?? '').trim();
@@ -583,10 +719,7 @@ export class FilesAdminService {
     const sortDir = query.sortDir === 'asc' ? 'ASC' : 'DESC';
 
     const qb = this.filesRepo.createQueryBuilder('f');
-    if (query.activeOnly) {
-      qb.andWhere('f.isActive = true');
-    }
-    this.applyFileSearch(qb, query.search);
+    this.applyDownloadListFilters(qb, query);
 
     const total = await qb.clone().getCount();
     const files = await qb
@@ -602,8 +735,48 @@ export class FilesAdminService {
     };
   }
 
+  async exportDownloadStatsCsv(query: ListFilesStatsQueryDto): Promise<string> {
+    const { items } = await this.listDownloadStats({
+      ...query,
+      page: 1,
+      limit: 5000,
+    });
+
+    const header = [
+      'key',
+      'file_name',
+      'caption',
+      'file_size',
+      'downloads',
+      'is_active',
+      'created_at',
+      'last_accessed',
+    ];
+
+    const rows = items.map((row) =>
+      [
+        row.key,
+        row.file_name,
+        row.caption,
+        row.file_size,
+        row.downloads,
+        row.is_active,
+        row.created_at,
+        row.last_accessed,
+      ]
+        .map((cell) => this.escapeCsvCell(cell))
+        .join(','),
+    );
+
+    return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
+  }
+
   async getDownloadOverview(): Promise<FilesDownloadOverview> {
     const totalFiles = await this.filesRepo.count();
+
+    const staleQb = this.filesRepo.createQueryBuilder('f');
+    this.applyStaleFileFilter(staleQb);
+    const staleFiles = await staleQb.getCount();
 
     const agg = await this.filesRepo
       .createQueryBuilder('f')
@@ -611,18 +784,6 @@ export class FilesAdminService {
       .addSelect(
         'SUM(CASE WHEN f.isActive = true THEN 1 ELSE 0 END)',
         'activeFiles',
-      )
-      .addSelect(
-        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END)`,
-        'accessedLast24h',
-      )
-      .addSelect(
-        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END)`,
-        'accessedLast7d',
-      )
-      .addSelect(
-        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)`,
-        'accessedLast30d',
       )
       .addSelect(
         `SUM(CASE WHEN COALESCE(f.downloads, 0) = 0 THEN 1 ELSE 0 END)`,
@@ -647,9 +808,6 @@ export class FilesAdminService {
       .getRawOne<{
         totalDownloads: string;
         activeFiles: string;
-        accessedLast24h: string;
-        accessedLast7d: string;
-        accessedLast30d: string;
         neverDownloaded: string;
         mkvFiles: string;
         zipFiles: string;
@@ -659,6 +817,16 @@ export class FilesAdminService {
 
     const totalDownloads = Number(agg?.totalDownloads) || 0;
     const activeFiles = Number(agg?.activeFiles) || 0;
+
+    const eventStats = await this.getEventOverviewStats();
+    const prevWeek = eventStats.downloadsPreviousWeek;
+    const thisWeek = eventStats.downloadsThisWeek;
+    const weekOverWeekChangePercent =
+      prevWeek > 0
+        ? Math.round(((thisWeek - prevWeek) / prevWeek) * 100)
+        : thisWeek > 0
+          ? 100
+          : null;
 
     const topFiles = await this.filesRepo.find({
       order: { downloads: 'DESC' },
@@ -670,10 +838,16 @@ export class FilesAdminService {
       totalDownloads,
       activeFiles,
       inactiveFiles: totalFiles - activeFiles,
-      accessedLast24h: Number(agg?.accessedLast24h) || 0,
-      accessedLast7d: Number(agg?.accessedLast7d) || 0,
-      accessedLast30d: Number(agg?.accessedLast30d) || 0,
+      downloadsLast24h: eventStats.downloadsLast24h,
+      downloadsLast7d: eventStats.downloadsLast7d,
+      downloadsLast30d: eventStats.downloadsLast30d,
+      downloadsThisWeek: eventStats.downloadsThisWeek,
+      downloadsPreviousWeek: eventStats.downloadsPreviousWeek,
+      weekOverWeekChangePercent,
+      dailyTrend: eventStats.dailyTrend,
+      eventTrackingSince: eventStats.eventTrackingSince,
       neverDownloaded: Number(agg?.neverDownloaded) || 0,
+      staleFiles,
       mkvFiles: Number(agg?.mkvFiles) || 0,
       zipFiles: Number(agg?.zipFiles) || 0,
       mkvDownloads: Number(agg?.mkvDownloads) || 0,

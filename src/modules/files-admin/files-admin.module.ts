@@ -6,6 +6,7 @@ import {
   AnimeSubtitle,
   AnimeSubtitlePack,
   BotFile,
+  BotFileDownloadEvent,
   FilePack,
   FilePackItem,
 } from '../../entities';
@@ -18,6 +19,7 @@ import { FilesAdminService } from './files-admin.service';
     PortalAuthModule,
     TypeOrmModule.forFeature([
       BotFile,
+      BotFileDownloadEvent,
       FilePack,
       FilePackItem,
       AnimeEpisode,

@@ -17,6 +17,7 @@ export { UserPortalSession } from './user-portal-session.entity';
 export { NotificationCampaign } from './notification-campaign.entity';
 export { TelegramLinkToken } from './telegram-link-token.entity';
 export { BotFile } from './bot-file.entity';
+export { BotFileDownloadEvent } from './bot-file-download-event.entity';
 export { BotSetting } from './bot-setting.entity';
 export { FilePack } from './file-pack.entity';
 export { FilePackItem } from './file-pack-item.entity';
