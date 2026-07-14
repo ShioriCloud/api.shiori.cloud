@@ -111,17 +111,6 @@ export class AnimeCatalogController {
     return this.animeCatalogService.resolveAnilistIdsBatch(anilistIds);
   }
 
-  @Get('mal/batch')
-  @ApiOperation({ summary: 'Resolve local anime ids by MAL ids (batch)' })
-  resolveMalBatch(@Query('ids') ids?: string) {
-    const malIds = String(ids ?? '')
-      .split(',')
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isFinite(n) && n > 0);
-
-    return this.animeCatalogService.resolveMalIdsBatch(malIds);
-  }
-
   @Get('anilist/:anilistId')
   @ApiOperation({ summary: 'Resolve local anime id by AniList id' })
   getByAnilist(@Param('anilistId') anilistId: string) {
