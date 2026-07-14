@@ -157,13 +157,39 @@ export class ExternalScoresService {
     return value != null && Number.isFinite(value) ? String(value) : null;
   }
 
+  private applyExternalIds(anime: Anime, overrideIds?: ExternalScoreIds): void {
+    if (overrideIds?.anilist_id !== undefined) {
+      anime.anilistId =
+        typeof overrideIds.anilist_id === 'number' && overrideIds.anilist_id > 0
+          ? overrideIds.anilist_id
+          : null;
+    }
+    if (overrideIds?.mal_id !== undefined) {
+      anime.malId =
+        typeof overrideIds.mal_id === 'number' && overrideIds.mal_id > 0
+          ? overrideIds.mal_id
+          : null;
+    }
+    if (overrideIds?.imdb_id !== undefined) {
+      const imdbId =
+        typeof overrideIds.imdb_id === 'string' ? overrideIds.imdb_id.trim() : '';
+      anime.imdbId = imdbId || null;
+    }
+  }
+
   async applyScoresToAnime(animeId: string, scores: ExternalScores): Promise<ExternalScores> {
     const anime = await this.animeRepo.findOne({ where: { id: animeId } });
     if (!anime) throw new NotFoundException('anime not found');
 
-    anime.averageScore = this.scoreToDb(scores.anilistScore);
-    anime.malScore = this.scoreToDb(scores.malScore);
-    anime.imdbScore = this.scoreToDb(scores.imdbScore);
+    if (scores.anilistScore != null) {
+      anime.averageScore = this.scoreToDb(scores.anilistScore);
+    }
+    if (scores.malScore != null) {
+      anime.malScore = this.scoreToDb(scores.malScore);
+    }
+    if (scores.imdbScore != null) {
+      anime.imdbScore = this.scoreToDb(scores.imdbScore);
+    }
     anime.updatedAt = new Date();
 
     await this.animeRepo.save(anime);
@@ -195,6 +221,20 @@ export class ExternalScoresService {
     }
 
     const scores = await this.fetchExternalScores(ids);
+
+    const hasOverrideFields = Boolean(
+      overrideIds &&
+        (overrideIds.anilist_id !== undefined ||
+          overrideIds.mal_id !== undefined ||
+          overrideIds.imdb_id !== undefined),
+    );
+
+    if (hasOverrideFields) {
+      this.applyExternalIds(anime, overrideIds);
+      anime.updatedAt = new Date();
+      await this.animeRepo.save(anime);
+    }
+
     await this.applyScoresToAnime(animeId, scores);
     return scores;
   }
