@@ -42,6 +42,15 @@ export type FilesDownloadOverview = {
   totalDownloads: number;
   activeFiles: number;
   inactiveFiles: number;
+  /** Files with last_accessed within the window (approx. download activity). */
+  accessedLast24h: number;
+  accessedLast7d: number;
+  accessedLast30d: number;
+  neverDownloaded: number;
+  mkvFiles: number;
+  zipFiles: number;
+  mkvDownloads: number;
+  zipDownloads: number;
   topFiles: FileDownloadStatRow[];
 };
 
@@ -603,7 +612,50 @@ export class FilesAdminService {
         'SUM(CASE WHEN f.isActive = true THEN 1 ELSE 0 END)',
         'activeFiles',
       )
-      .getRawOne<{ totalDownloads: string; activeFiles: string }>();
+      .addSelect(
+        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '1 day' THEN 1 ELSE 0 END)`,
+        'accessedLast24h',
+      )
+      .addSelect(
+        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END)`,
+        'accessedLast7d',
+      )
+      .addSelect(
+        `SUM(CASE WHEN f.lastAccessed >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END)`,
+        'accessedLast30d',
+      )
+      .addSelect(
+        `SUM(CASE WHEN COALESCE(f.downloads, 0) = 0 THEN 1 ELSE 0 END)`,
+        'neverDownloaded',
+      )
+      .addSelect(
+        `SUM(CASE WHEN LOWER(f.fileName) LIKE '%.mkv' THEN 1 ELSE 0 END)`,
+        'mkvFiles',
+      )
+      .addSelect(
+        `SUM(CASE WHEN LOWER(f.fileName) LIKE '%.zip' THEN 1 ELSE 0 END)`,
+        'zipFiles',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN LOWER(f.fileName) LIKE '%.mkv' THEN f.downloads ELSE 0 END), 0)`,
+        'mkvDownloads',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE WHEN LOWER(f.fileName) LIKE '%.zip' THEN f.downloads ELSE 0 END), 0)`,
+        'zipDownloads',
+      )
+      .getRawOne<{
+        totalDownloads: string;
+        activeFiles: string;
+        accessedLast24h: string;
+        accessedLast7d: string;
+        accessedLast30d: string;
+        neverDownloaded: string;
+        mkvFiles: string;
+        zipFiles: string;
+        mkvDownloads: string;
+        zipDownloads: string;
+      }>();
 
     const totalDownloads = Number(agg?.totalDownloads) || 0;
     const activeFiles = Number(agg?.activeFiles) || 0;
@@ -618,6 +670,14 @@ export class FilesAdminService {
       totalDownloads,
       activeFiles,
       inactiveFiles: totalFiles - activeFiles,
+      accessedLast24h: Number(agg?.accessedLast24h) || 0,
+      accessedLast7d: Number(agg?.accessedLast7d) || 0,
+      accessedLast30d: Number(agg?.accessedLast30d) || 0,
+      neverDownloaded: Number(agg?.neverDownloaded) || 0,
+      mkvFiles: Number(agg?.mkvFiles) || 0,
+      zipFiles: Number(agg?.zipFiles) || 0,
+      mkvDownloads: Number(agg?.mkvDownloads) || 0,
+      zipDownloads: Number(agg?.zipDownloads) || 0,
       topFiles: topFiles.map((f) => this.mapFileStat(f)),
     };
   }
