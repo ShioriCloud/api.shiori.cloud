@@ -18,6 +18,7 @@ import {
   UserPortalSession,
 } from '../../entities';
 import { verifyTelegramInitData } from '../../telegram/telegram-init-data';
+import { getTelegramBotTokens } from '../../telegram/telegram-bot-tokens';
 import {
   AppLoginDto,
   AppRegisterDto,
@@ -59,8 +60,8 @@ export class AppAuthService {
     const initData = String(
       Array.isArray(initDataHeader) ? initDataHeader[0] : initDataHeader ?? '',
     ).trim();
-    const botToken = this.config.get<string>('telegram.botToken') ?? '';
-    const verified = verifyTelegramInitData(initData, botToken);
+    const botTokens = getTelegramBotTokens(this.config);
+    const verified = verifyTelegramInitData(initData, botTokens);
 
     if (verified.userId == null) {
       throw new UnauthorizedException('invalid telegram init data');

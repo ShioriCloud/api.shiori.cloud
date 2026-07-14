@@ -31,6 +31,9 @@ export type AnimeSearchParams = {
   year?: number | null;
   season?: string | null;
   genreSlug?: string | null;
+  format?: string | null;
+  airingStatus?: string | null;
+  sortBy?: 'created_at' | 'popular' | 'title' | 'score';
   limit?: number;
   offset?: number;
 };
@@ -262,6 +265,26 @@ export class AnimeCatalogService {
       qb = qb.andWhere('anime.season = :season', { season });
     }
 
+    const formatKey = params.format
+      ? String(params.format).trim().toUpperCase()
+      : '';
+    if (formatKey) {
+      if (formatKey === 'DONGHUA') {
+        qb = qb.andWhere(`UPPER(anime.format) = 'ONA (CHINESE)'`);
+      } else {
+        qb = qb.andWhere('UPPER(anime.format) = :formatKey', { formatKey });
+      }
+    }
+
+    const airingStatus = params.airingStatus
+      ? String(params.airingStatus).trim().toUpperCase()
+      : '';
+    if (airingStatus) {
+      qb = qb.andWhere('anime.airing_status = :airingStatusFilter', {
+        airingStatusFilter: airingStatus,
+      });
+    }
+
     const tokens = String(params.query ?? '')
       .trim()
       .split(/\s+/)
@@ -275,9 +298,9 @@ export class AnimeCatalogService {
       );
     }
 
-    qb = qb.orderBy('anime.created_at', 'DESC');
-
     const total = await qb.clone().select('anime.id').distinct(true).getCount();
+
+    this.applySearchSort(qb, params.sortBy);
     const rows = await qb.skip(offset).take(limit).getMany();
 
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
@@ -290,6 +313,42 @@ export class AnimeCatalogService {
       total,
       hasMore: offset + items.length < total,
     };
+  }
+
+  private applySearchSort(
+    qb: ReturnType<Repository<Anime>['createQueryBuilder']>,
+    sortBy?: AnimeSearchParams['sortBy'],
+  ) {
+    switch (sortBy) {
+      case 'popular': {
+        qb.addSelect(
+          (subQuery) =>
+            subQuery
+              .select('COUNT(*)::int')
+              .from(UserAnimeListEntry, 'listCount')
+              .where('listCount.animeId = anime.id'),
+          'popular_count',
+        );
+        qb.orderBy('popular_count', 'DESC', 'NULLS LAST').addOrderBy(
+          'anime.createdAt',
+          'DESC',
+        );
+        break;
+      }
+      case 'title':
+        qb.orderBy('anime.title', 'ASC').addOrderBy('anime.createdAt', 'DESC');
+        break;
+      case 'score':
+        qb.orderBy(
+          'COALESCE(anime.shioriScore, anime.averageScore, anime.malScore)',
+          'DESC',
+          'NULLS LAST',
+        ).addOrderBy('anime.createdAt', 'DESC');
+        break;
+      case 'created_at':
+      default:
+        qb.orderBy('anime.createdAt', 'DESC');
+    }
   }
 
   async getSimilar(

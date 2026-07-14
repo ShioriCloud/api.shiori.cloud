@@ -109,10 +109,16 @@ const safeEqualHex = (a: string, b: string): boolean => {
   }
 };
 
-export const verifyTelegramInitData = (
+export type TelegramInitDataVerifyResult = {
+  userId: number | null;
+  reason: string;
+  method?: string;
+};
+
+export const verifyTelegramInitDataWithToken = (
   initData: string,
   botToken: string,
-): { userId: number | null; reason: string; method?: string } => {
+): TelegramInitDataVerifyResult => {
   const parsed = parseTelegramInitData(initData);
   if (!parsed) return { userId: null, reason: 'empty_or_invalid_init_data' };
 
@@ -141,4 +147,26 @@ export const verifyTelegramInitData = (
   }
 
   return { userId: null, reason: 'hash_mismatch' };
+};
+
+export const verifyTelegramInitData = (
+  initData: string,
+  botToken: string | string[],
+): TelegramInitDataVerifyResult => {
+  const tokens = (Array.isArray(botToken) ? botToken : [botToken])
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (tokens.length === 0) {
+    return { userId: null, reason: 'bot_token_missing' };
+  }
+
+  let lastReason = 'hash_mismatch';
+  for (const token of tokens) {
+    const verified = verifyTelegramInitDataWithToken(initData, token);
+    if (verified.userId != null) return verified;
+    lastReason = verified.reason;
+  }
+
+  return { userId: null, reason: lastReason };
 };

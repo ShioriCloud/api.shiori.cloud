@@ -21,6 +21,19 @@ export type ExternalScores = {
   imdbScore: number | null;
 };
 
+export type ExternalScoreSourceStatus = {
+  requested: boolean;
+  ok: boolean;
+};
+
+export type SyncExternalScoresResult = ExternalScores & {
+  sources: {
+    anilist: ExternalScoreSourceStatus;
+    mal: ExternalScoreSourceStatus;
+    imdb: ExternalScoreSourceStatus;
+  };
+};
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 @Injectable()
@@ -196,10 +209,33 @@ export class ExternalScoresService {
     return scores;
   }
 
+  private buildSyncResult(
+    ids: ExternalScoreIds,
+    scores: ExternalScores,
+  ): SyncExternalScoresResult {
+    return {
+      ...scores,
+      sources: {
+        anilist: {
+          requested: typeof ids.anilist_id === 'number' && ids.anilist_id > 0,
+          ok: scores.anilistScore != null,
+        },
+        mal: {
+          requested: typeof ids.mal_id === 'number' && ids.mal_id > 0,
+          ok: scores.malScore != null,
+        },
+        imdb: {
+          requested: typeof ids.imdb_id === 'string' && ids.imdb_id.trim().length > 0,
+          ok: scores.imdbScore != null,
+        },
+      },
+    };
+  }
+
   async syncAnimeById(
     animeIdOrSlug: string,
     overrideIds?: ExternalScoreIds,
-  ): Promise<ExternalScores> {
+  ): Promise<SyncExternalScoresResult> {
     const anime = await findAnimeByIdOrSlug(this.animeRepo, animeIdOrSlug);
     if (!anime) throw new NotFoundException('anime not found');
 
@@ -236,7 +272,7 @@ export class ExternalScoresService {
     }
 
     await this.applyScoresToAnime(animeId, scores);
-    return scores;
+    return this.buildSyncResult(ids, scores);
   }
 
   async syncBatch(options?: {

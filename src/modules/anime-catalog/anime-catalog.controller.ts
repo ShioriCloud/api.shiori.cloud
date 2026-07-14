@@ -47,6 +47,12 @@ export class AnimeCatalogController {
 
     @Query('genreSlug') genreSlug?: string,
 
+    @Query('format') format?: string,
+
+    @Query('airingStatus') airingStatus?: string,
+
+    @Query('sortBy') sortBy?: string,
+
     @Query('limit') limit?: string,
 
     @Query('offset') offset?: string,
@@ -57,7 +63,16 @@ export class AnimeCatalogController {
       season: season ?? null,
 
       genreSlug: genreSlug ?? null,
+
+      format: format ?? null,
+
+      airingStatus: airingStatus ?? null,
     };
+
+    const allowedSort = ['created_at', 'popular', 'title', 'score'] as const;
+    if (sortBy && allowedSort.includes(sortBy as (typeof allowedSort)[number])) {
+      params.sortBy = sortBy as AnimeSearchParams['sortBy'];
+    }
 
     if (year !== undefined && year !== '') {
       const parsed = Number(year);

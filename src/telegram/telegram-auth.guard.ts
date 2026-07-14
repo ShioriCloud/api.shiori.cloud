@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { Request } from 'express';
 import { verifyTelegramInitData } from './telegram-init-data';
+import { getTelegramBotTokens } from './telegram-bot-tokens';
 
 export type TelegramAuthedRequest = Request & { telegramUserId: number };
 
@@ -17,8 +18,8 @@ export class TelegramAuthGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<TelegramAuthedRequest>();
     const initData = String(req.headers['x-telegram-init-data'] ?? '').trim();
-    const botToken = this.config.get<string>('telegram.botToken') ?? '';
-    const verified = verifyTelegramInitData(initData, botToken);
+    const botTokens = getTelegramBotTokens(this.config);
+    const verified = verifyTelegramInitData(initData, botTokens);
 
     if (verified.userId == null) {
       throw new UnauthorizedException(

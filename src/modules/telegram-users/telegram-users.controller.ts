@@ -8,6 +8,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { verifyTelegramInitData } from '../../telegram/telegram-init-data';
+import { getTelegramBotTokens } from '../../telegram/telegram-bot-tokens';
 import { RegisterTelegramUserDto } from './telegram-users.dto';
 import { TelegramUsersService } from './telegram-users.service';
 
@@ -23,11 +24,13 @@ export class TelegramUsersController {
   @ApiOperation({ summary: 'Register or update Telegram user visit' })
   async register(
     @Headers('x-telegram-init-data') initDataHeader: string,
-    @Body() body: RegisterTelegramUserDto,
+    @Body() body: RegisterTelegramUserDto & { telegram_init_data?: string },
   ) {
-    const initData = String(initDataHeader ?? '').trim();
-    const botToken = this.config.get<string>('telegram.botToken') ?? '';
-    const verified = verifyTelegramInitData(initData, botToken);
+    const initData = String(
+      initDataHeader ?? body.telegram_init_data ?? '',
+    ).trim();
+    const botTokens = getTelegramBotTokens(this.config);
+    const verified = verifyTelegramInitData(initData, botTokens);
 
     if (verified.userId == null) {
       throw new UnauthorizedException(
@@ -39,7 +42,7 @@ export class TelegramUsersController {
       throw new UnauthorizedException('telegram_user_id mismatch');
     }
 
-    await this.telegramUsersService.registerVisit(body);
-    return { ok: true };
+    const session = await this.telegramUsersService.registerVisit(body);
+    return { ok: true, ...session };
   }
 }

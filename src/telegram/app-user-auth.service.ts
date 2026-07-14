@@ -3,11 +3,31 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UserPortalSession } from '../entities';
+import { getTelegramBotTokens } from './telegram-bot-tokens';
 import { verifyTelegramInitData } from './telegram-init-data';
 
 export type ResolvedAppUserAuth = {
   telegramUserId: number;
   authMethod: 'telegram' | 'session';
+};
+
+export type AppUserAuthFailure = {
+  reason: string;
+};
+
+const readInitData = (
+  headers: Record<string, string | string[] | undefined>,
+  body?: Record<string, unknown>,
+): string => {
+  const headerValue = String(headers['x-telegram-init-data'] ?? '').trim();
+  if (headerValue) return headerValue;
+
+  const bodyValue =
+    typeof body?.telegram_init_data === 'string'
+      ? body.telegram_init_data.trim()
+      : '';
+
+  return bodyValue;
 };
 
 @Injectable()
@@ -20,14 +40,20 @@ export class AppUserAuthService {
 
   async resolveAuth(
     headers: Record<string, string | string[] | undefined>,
-  ): Promise<ResolvedAppUserAuth | null> {
-    const initData = String(headers['x-telegram-init-data'] ?? '').trim();
-    const botToken = this.config.get<string>('telegram.botToken') ?? '';
+    body?: Record<string, unknown>,
+  ): Promise<ResolvedAppUserAuth | AppUserAuthFailure | null> {
+    const initData = readInitData(headers, body);
+    const botTokens = getTelegramBotTokens(this.config);
 
     if (initData) {
-      const verified = verifyTelegramInitData(initData, botToken);
+      const verified = verifyTelegramInitData(initData, botTokens);
       if (verified.userId != null) {
         return { telegramUserId: verified.userId, authMethod: 'telegram' };
+      }
+
+      const sessionToken = String(headers['x-app-session-token'] ?? '').trim();
+      if (!sessionToken) {
+        return { reason: verified.reason };
       }
     }
 
@@ -49,6 +75,6 @@ export class AppUserAuthService {
       await this.sessionsRepo.delete({ token: sessionToken });
     }
 
-    return null;
+    return initData ? { reason: 'invalid_session' } : null;
   }
 }

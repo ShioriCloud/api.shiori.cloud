@@ -19,12 +19,23 @@ export class AppUserAuthGuard implements CanActivate {
     const req = context.switchToHttp().getRequest<
       AppUserAuthedRequest & {
         headers: Record<string, string | string[] | undefined>;
+        body?: Record<string, unknown>;
       }
     >();
 
-    const resolved = await this.appUserAuthService.resolveAuth(req.headers);
+    const resolved = await this.appUserAuthService.resolveAuth(
+      req.headers,
+      req.body,
+    );
+
     if (!resolved) {
       throw new UnauthorizedException('authentication required');
+    }
+
+    if ('reason' in resolved) {
+      throw new UnauthorizedException(
+        `invalid telegram init data (${resolved.reason})`,
+      );
     }
 
     req.telegramUserId = resolved.telegramUserId;

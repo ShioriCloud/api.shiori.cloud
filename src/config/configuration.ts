@@ -16,6 +16,10 @@ export default () => {
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
+    botTokens: (process.env.TELEGRAM_BOT_TOKENS ?? '')
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean),
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? 'ShioriUploadBot',
   },
   miniApp: {
