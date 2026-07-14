@@ -310,7 +310,7 @@ export class AnimeAdminService {
     filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured';
   }) {
     const page = Math.max(1, params?.page ?? 1);
-    const limit = Math.min(100, Math.max(1, params?.limit ?? 50));
+    const limit = Math.min(5000, Math.max(1, params?.limit ?? 50));
     const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC');
     if (params?.search?.trim()) {
       const q = `%${params.search.trim()}%`;
@@ -864,6 +864,7 @@ export class AnimeAdminService {
     const members = await this.seriesMemberRepo.find({
       where: { seriesId: member.seriesId },
       order: { sortOrder: 'ASC' },
+      relations: { anime: true },
     });
     return {
       series_id: member.seriesId,
@@ -872,6 +873,9 @@ export class AnimeAdminService {
         anime_id: m.animeId,
         sort_order: m.sortOrder,
         label_fa: m.labelFa,
+        title: m.anime?.title ?? null,
+        title_romaji: m.anime?.titleRomaji ?? null,
+        slug: m.anime?.slug ?? null,
       })),
     };
   }

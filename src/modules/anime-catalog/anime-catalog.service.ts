@@ -492,6 +492,23 @@ export class AnimeCatalogService {
     return result;
   }
 
+  async resolveMalIdsBatch(malIds: number[]): Promise<Record<string, string>> {
+    const unique = [
+      ...new Set(malIds.filter((id) => Number.isFinite(id) && id > 0)),
+    ];
+    if (unique.length === 0) return {};
+
+    const rows = await this.animeRepo.find({
+      where: { malId: In(unique) },
+    });
+
+    const result: Record<string, string> = {};
+    for (const row of rows) {
+      if (row.malId) result[String(row.malId)] = row.id;
+    }
+    return result;
+  }
+
   async getStudioBySlug(slug: string) {
     const studio = await this.studioRepo.findOne({ where: { slug } });
     if (!studio) throw new NotFoundException('Studio not found');
