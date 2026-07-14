@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Put,
   Query,
@@ -18,6 +19,7 @@ import {
   FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
+  ListBotFilesQueryDto,
   ReorderFilePackItemsDto,
   UpdatePackItemSortDto,
   UpsertFilePackDto,
@@ -40,6 +42,36 @@ export class FilesAdminController {
   @ApiOperation({ summary: 'Paginated file download stats' })
   stats(@Query() query: ListFilesStatsQueryDto) {
     return this.filesAdminService.listDownloadStats(query);
+  }
+
+  @Get('files')
+  @ApiOperation({ summary: 'Paginated bot file library with references' })
+  listBotFiles(@Query() query: ListBotFilesQueryDto) {
+    return this.filesAdminService.listBotFiles(query);
+  }
+
+  @Get('files/:key/references')
+  @ApiOperation({ summary: 'Catalog and pack references for a bot file key' })
+  fileReferences(@Param('key') key: string) {
+    return this.filesAdminService.getFileReferences(decodeURIComponent(key));
+  }
+
+  @Get('files/:key')
+  @ApiOperation({ summary: 'Bot file detail by key' })
+  getBotFile(@Param('key') key: string) {
+    return this.filesAdminService.getBotFileByKey(decodeURIComponent(key));
+  }
+
+  @Patch('files/:key/deactivate')
+  @ApiOperation({ summary: 'Soft-deactivate a bot file' })
+  deactivateBotFile(@Param('key') key: string) {
+    return this.filesAdminService.deactivateBotFile(decodeURIComponent(key));
+  }
+
+  @Patch('files/:key/reactivate')
+  @ApiOperation({ summary: 'Reactivate a bot file' })
+  reactivateBotFile(@Param('key') key: string) {
+    return this.filesAdminService.reactivateBotFile(decodeURIComponent(key));
   }
 
   @Get('picker/search')

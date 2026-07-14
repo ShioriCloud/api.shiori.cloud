@@ -159,3 +159,20 @@ export class ReorderFilePackItemsDto {
   @IsString({ each: true })
   ordered_file_keys!: string[];
 }
+
+const FILE_STATUS_FILTERS = ['all', 'active', 'inactive'] as const;
+
+export class ListBotFilesQueryDto extends ListFilesStatsQueryDto {
+  @IsOptional()
+  @IsString()
+  fileExtension?: string;
+
+  @IsOptional()
+  @IsIn(FILE_STATUS_FILTERS)
+  status?: (typeof FILE_STATUS_FILTERS)[number];
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  orphanOnly?: boolean;
+}

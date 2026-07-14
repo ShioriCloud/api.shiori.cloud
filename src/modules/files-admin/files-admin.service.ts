@@ -5,7 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { BotFile, FilePack, FilePackItem } from '../../entities';
+import { BotFile, FilePack, FilePackItem, Anime, AnimeEpisode, AnimeSubtitle, AnimeSubtitlePack } from '../../entities';
 import { isUuid } from '../../common/uuid.util';
 import {
   AddFilePackItemDto,
@@ -13,6 +13,7 @@ import {
   FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
   ListFilesStatsQueryDto,
+  ListBotFilesQueryDto,
   ReorderFilePackItemsDto,
   UpsertFilePackDto,
 } from './files-admin.dto';
@@ -61,6 +62,84 @@ export type FilePackItemRow = {
   file_name?: string | null;
 };
 
+export type BotFileListItemRow = FileDownloadStatRow & {
+  type: string | null;
+  reference_count: number;
+};
+
+export type BotFileDetailRow = BotFileListItemRow & {
+  message_id: string | null;
+  file_id: string | null;
+};
+
+export type BotFileReferenceEpisode = {
+  episode_id: string;
+  episode_number: number | null;
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+};
+
+export type BotFileReferenceSubtitle = {
+  subtitle_id: string;
+  episode_number: number;
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+};
+
+export type BotFileReferenceSubtitlePack = {
+  pack_id: string;
+  title: string | null;
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+};
+
+export type BotFileReferenceAnimeEpisodePack = {
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+  episode_pack_title: string | null;
+};
+
+export type BotFileReferenceFilePack = {
+  pack_id: string;
+  slug: string;
+  title: string;
+};
+
+export type BotFileReferences = {
+  episodes: BotFileReferenceEpisode[];
+  subtitles: BotFileReferenceSubtitle[];
+  subtitle_packs: BotFileReferenceSubtitlePack[];
+  anime_episode_packs: BotFileReferenceAnimeEpisodePack[];
+  file_packs: BotFileReferenceFilePack[];
+  total: number;
+};
+
+const parseTelegramFileKeyFromLink = (link: string | null | undefined): string | null => {
+  const raw = String(link ?? '').trim();
+  if (!raw) return null;
+
+  const fromUrl = raw.match(/[?&]start=get_([^&]+)/i)?.[1];
+  if (fromUrl) {
+    try {
+      return decodeURIComponent(fromUrl).trim() || null;
+    } catch {
+      return fromUrl.trim() || null;
+    }
+  }
+
+  const bare = raw.match(/^get_(.+)$/i)?.[1];
+  if (!bare) return null;
+  try {
+    return decodeURIComponent(bare).trim() || null;
+  } catch {
+    return bare.trim() || null;
+  }
+};
+
 const splitFileSearchTokens = (query?: string): string[] =>
   String(query ?? '')
     .trim()
@@ -77,7 +156,315 @@ export class FilesAdminService {
     private readonly packsRepo: Repository<FilePack>,
     @InjectRepository(FilePackItem)
     private readonly packItemsRepo: Repository<FilePackItem>,
+    @InjectRepository(AnimeEpisode)
+    private readonly episodeRepo: Repository<AnimeEpisode>,
+    @InjectRepository(AnimeSubtitle)
+    private readonly subtitleRepo: Repository<AnimeSubtitle>,
+    @InjectRepository(AnimeSubtitlePack)
+    private readonly subtitlePackRepo: Repository<AnimeSubtitlePack>,
+    @InjectRepository(Anime)
+    private readonly animeRepo: Repository<Anime>,
   ) {}
+
+  private assertFileKey(key: string): string {
+    const clean = String(key ?? '').trim();
+    if (!clean || clean.length > 128) {
+      throw new BadRequestException('invalid file key');
+    }
+    return clean;
+  }
+
+  private fileLinkPattern(key: string): string {
+    return `%get_${key.replace(/([%_\\])/g, '\\$1')}%`;
+  }
+
+  private mapFileListItem(file: BotFile, referenceCount = 0): BotFileListItemRow {
+    return {
+      ...this.mapFileStat(file),
+      type: file.type,
+      reference_count: referenceCount,
+    };
+  }
+
+  private mapFileDetail(file: BotFile, referenceCount = 0): BotFileDetailRow {
+    return {
+      ...this.mapFileListItem(file, referenceCount),
+      message_id: file.messageId,
+      file_id: file.fileId,
+    };
+  }
+
+  private applyStatusFilter(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+    query: { activeOnly?: boolean; status?: 'all' | 'active' | 'inactive' },
+  ) {
+    const status =
+      query.status ??
+      (query.activeOnly ? 'active' : 'all');
+
+    if (status === 'active') {
+      qb.andWhere('f.isActive = true');
+    } else if (status === 'inactive') {
+      qb.andWhere('f.isActive = false');
+    }
+  }
+
+  private applyFileExtensionFilter(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+    fileExtension?: string,
+  ) {
+    const ext = String(fileExtension ?? '')
+      .trim()
+      .replace(/^\./, '')
+      .toLowerCase();
+    if (!ext) return;
+    qb.andWhere('f.fileName ILIKE :fileExt', { fileExt: `%.${ext}` });
+  }
+
+  private applyOrphanOnlyFilter(
+    qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+  ) {
+    qb.andWhere(`NOT EXISTS (
+      SELECT 1 FROM episodes ep
+      WHERE ep.download_link ILIKE '%' || 'get_' || f.key || '%'
+    )`);
+    qb.andWhere(`NOT EXISTS (
+      SELECT 1 FROM subtitles sub
+      WHERE sub.subtitle_link ILIKE '%' || 'get_' || f.key || '%'
+    )`);
+    qb.andWhere(`NOT EXISTS (
+      SELECT 1 FROM subtitle_packs sp
+      WHERE sp.subtitle_link ILIKE '%' || 'get_' || f.key || '%'
+    )`);
+    qb.andWhere(`NOT EXISTS (
+      SELECT 1 FROM anime a
+      WHERE a.episode_pack_link ILIKE '%' || 'get_' || f.key || '%'
+    )`);
+    qb.andWhere(`NOT EXISTS (
+      SELECT 1 FROM file_pack_items fpi
+      WHERE fpi.file_key = f.key
+    )`);
+  }
+
+  private async countReferencesByKeysBatch(
+    keys: string[],
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    keys.forEach((key) => map.set(key, 0));
+    if (keys.length === 0) return map;
+
+    const bump = (key: string | null | undefined) => {
+      const clean = String(key ?? '').trim();
+      if (!clean || !map.has(clean)) return;
+      map.set(clean, (map.get(clean) ?? 0) + 1);
+    };
+
+    const patterns = keys.map((key) => this.fileLinkPattern(key));
+
+    const [episodes, subtitles, subtitlePacks, animePacks, packItems] =
+      await Promise.all([
+        this.episodeRepo
+          .createQueryBuilder('e')
+          .select(['e.downloadLink'])
+          .where('e.downloadLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.subtitleRepo
+          .createQueryBuilder('s')
+          .select(['s.subtitleLink'])
+          .where('s.subtitleLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.subtitlePackRepo
+          .createQueryBuilder('sp')
+          .select(['sp.subtitleLink'])
+          .where('sp.subtitleLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.animeRepo
+          .createQueryBuilder('a')
+          .select(['a.episodePackLink'])
+          .where('a.episodePackLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.packItemsRepo.find({ where: { fileKey: In(keys) } }),
+      ]);
+
+    for (const row of episodes) bump(parseTelegramFileKeyFromLink(row.downloadLink));
+    for (const row of subtitles) bump(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const row of subtitlePacks) {
+      bump(parseTelegramFileKeyFromLink(row.subtitleLink));
+    }
+    for (const row of animePacks) {
+      bump(parseTelegramFileKeyFromLink(row.episodePackLink));
+    }
+    for (const row of packItems) bump(row.fileKey);
+
+    return map;
+  }
+
+  async listBotFiles(
+    query: ListBotFilesQueryDto,
+  ): Promise<{ items: BotFileListItemRow[]; total: number }> {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 20;
+    const sortDir = query.sortDir === 'asc' ? 'ASC' : 'DESC';
+
+    const qb = this.filesRepo.createQueryBuilder('f');
+    this.applyStatusFilter(qb, query);
+    this.applyFileExtensionFilter(qb, query.fileExtension);
+    if (query.orphanOnly) this.applyOrphanOnlyFilter(qb);
+    this.applyFileSearch(qb, query.search);
+
+    const total = await qb.clone().getCount();
+    const files = await qb
+      .orderBy(this.sortColumn(query.sortBy), sortDir, 'NULLS LAST')
+      .addOrderBy('f.key', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    const refCounts = await this.countReferencesByKeysBatch(files.map((f) => f.key));
+
+    return {
+      items: files.map((f) => this.mapFileListItem(f, refCounts.get(f.key) ?? 0)),
+      total,
+    };
+  }
+
+  async getBotFileByKey(key: string): Promise<BotFileDetailRow> {
+    const fileKey = this.assertFileKey(key);
+    const file = await this.filesRepo.findOne({ where: { key: fileKey } });
+    if (!file) throw new NotFoundException('file not found');
+
+    const refCounts = await this.countReferencesByKeysBatch([fileKey]);
+    return this.mapFileDetail(file, refCounts.get(fileKey) ?? 0);
+  }
+
+  async getFileReferences(key: string): Promise<BotFileReferences> {
+    const fileKey = this.assertFileKey(key);
+    const file = await this.filesRepo.findOne({ where: { key: fileKey } });
+    if (!file) throw new NotFoundException('file not found');
+
+    const pattern = this.fileLinkPattern(fileKey);
+
+    const [episodes, subtitles, subtitlePacks, animeEpisodePacks, filePacks] =
+      await Promise.all([
+        this.episodeRepo
+          .createQueryBuilder('e')
+          .innerJoinAndSelect('e.anime', 'a')
+          .where('e.downloadLink ILIKE :pattern', { pattern })
+          .orderBy('a.title', 'ASC')
+          .addOrderBy('e.episodeNumber', 'ASC')
+          .getMany(),
+        this.subtitleRepo
+          .createQueryBuilder('s')
+          .innerJoinAndSelect('s.anime', 'a')
+          .where('s.subtitleLink ILIKE :pattern', { pattern })
+          .orderBy('a.title', 'ASC')
+          .addOrderBy('s.episodeNumber', 'ASC')
+          .getMany(),
+        this.subtitlePackRepo
+          .createQueryBuilder('sp')
+          .innerJoinAndSelect('sp.anime', 'a')
+          .where('sp.subtitleLink ILIKE :pattern', { pattern })
+          .orderBy('a.title', 'ASC')
+          .getMany(),
+        this.animeRepo
+          .createQueryBuilder('a')
+          .where('a.episodePackLink ILIKE :pattern', { pattern })
+          .orderBy('a.title', 'ASC')
+          .getMany(),
+        this.packItemsRepo
+          .createQueryBuilder('i')
+          .innerJoinAndSelect('i.pack', 'p')
+          .where('i.fileKey = :fileKey', { fileKey })
+          .orderBy('p.title', 'ASC')
+          .getMany(),
+      ]);
+
+    const episodeRows = episodes
+      .filter((row) => parseTelegramFileKeyFromLink(row.downloadLink) === fileKey)
+      .map((row) => ({
+        episode_id: row.id,
+        episode_number: row.episodeNumber,
+        anime_id: row.animeId,
+        anime_title: row.anime?.title ?? '—',
+        anime_slug: row.anime?.slug ?? null,
+      }));
+
+    const subtitleRows = subtitles
+      .filter((row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey)
+      .map((row) => ({
+        subtitle_id: row.id,
+        episode_number: row.episodeNumber,
+        anime_id: row.animeId,
+        anime_title: row.anime?.title ?? '—',
+        anime_slug: row.anime?.slug ?? null,
+      }));
+
+    const subtitlePackRows = subtitlePacks
+      .filter((row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey)
+      .map((row) => ({
+        pack_id: row.id,
+        title: row.title,
+        anime_id: row.animeId,
+        anime_title: row.anime?.title ?? '—',
+        anime_slug: row.anime?.slug ?? null,
+      }));
+
+    const animeEpisodePackRows = animeEpisodePacks
+      .filter((row) => parseTelegramFileKeyFromLink(row.episodePackLink) === fileKey)
+      .map((row) => ({
+        anime_id: row.id,
+        anime_title: row.title ?? '—',
+        anime_slug: row.slug ?? null,
+        episode_pack_title: row.episodePackTitle,
+      }));
+
+    const filePackRows = filePacks.map((row) => ({
+      pack_id: row.packId,
+      slug: row.pack?.slug ?? '',
+      title: row.pack?.title ?? '—',
+    }));
+
+    const total =
+      episodeRows.length +
+      subtitleRows.length +
+      subtitlePackRows.length +
+      animeEpisodePackRows.length +
+      filePackRows.length;
+
+    return {
+      episodes: episodeRows,
+      subtitles: subtitleRows,
+      subtitle_packs: subtitlePackRows,
+      anime_episode_packs: animeEpisodePackRows,
+      file_packs: filePackRows,
+      total,
+    };
+  }
+
+  async deactivateBotFile(key: string): Promise<BotFileDetailRow> {
+    const fileKey = this.assertFileKey(key);
+    const file = await this.filesRepo.findOne({ where: { key: fileKey } });
+    if (!file) throw new NotFoundException('file not found');
+
+    file.isActive = false;
+    file.lastAccessed = new Date();
+    const saved = await this.filesRepo.save(file);
+
+    const refCounts = await this.countReferencesByKeysBatch([fileKey]);
+    return this.mapFileDetail(saved, refCounts.get(fileKey) ?? 0);
+  }
+
+  async reactivateBotFile(key: string): Promise<BotFileDetailRow> {
+    const fileKey = this.assertFileKey(key);
+    const file = await this.filesRepo.findOne({ where: { key: fileKey } });
+    if (!file) throw new NotFoundException('file not found');
+
+    file.isActive = true;
+    const saved = await this.filesRepo.save(file);
+
+    const refCounts = await this.countReferencesByKeysBatch([fileKey]);
+    return this.mapFileDetail(saved, refCounts.get(fileKey) ?? 0);
+  }
 
   private assertPackId(packId: string): void {
     if (!isUuid(String(packId ?? '').trim())) {

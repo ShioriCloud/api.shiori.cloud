@@ -1,6 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BotFile, FilePack, FilePackItem } from '../../entities';
+import {
+  Anime,
+  AnimeEpisode,
+  AnimeSubtitle,
+  AnimeSubtitlePack,
+  BotFile,
+  FilePack,
+  FilePackItem,
+} from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { FilesAdminController } from './files-admin.controller';
 import { FilesAdminService } from './files-admin.service';
@@ -8,7 +16,15 @@ import { FilesAdminService } from './files-admin.service';
 @Module({
   imports: [
     PortalAuthModule,
-    TypeOrmModule.forFeature([BotFile, FilePack, FilePackItem]),
+    TypeOrmModule.forFeature([
+      BotFile,
+      FilePack,
+      FilePackItem,
+      AnimeEpisode,
+      AnimeSubtitle,
+      AnimeSubtitlePack,
+      Anime,
+    ]),
   ],
   controllers: [FilesAdminController],
   providers: [FilesAdminService],
