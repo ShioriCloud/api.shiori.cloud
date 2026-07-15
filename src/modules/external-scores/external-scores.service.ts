@@ -104,30 +104,14 @@ export class ExternalScoresService {
     return Number.isFinite(score) ? score : null;
   }
 
-  private async fetchImdbApiDevScore(imdbId: string): Promise<number | null> {
-    const res = await fetch(
-      `https://api.imdbapi.dev/titles/${encodeURIComponent(imdbId.trim())}`,
-    );
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as {
-      rating?: { aggregateRating?: number | null };
-    };
-    const score = json.rating?.aggregateRating;
-    return typeof score === 'number' && Number.isFinite(score) ? score : null;
-  }
-
   private async fetchImdbScore(imdbId: string): Promise<number | null> {
     const cleanId = imdbId.trim();
     if (!cleanId) return null;
 
     const omdbApiKey = this.config.get<string>('externalScores.omdbApiKey')?.trim();
-    if (omdbApiKey) {
-      const fromOmdb = await this.fetchOmdbScore(cleanId, omdbApiKey);
-      if (fromOmdb !== null) return fromOmdb;
-    }
+    if (!omdbApiKey) return null;
 
-    return this.fetchImdbApiDevScore(cleanId);
+    return this.fetchOmdbScore(cleanId, omdbApiKey);
   }
 
   async fetchExternalScores(ids: ExternalScoreIds): Promise<ExternalScores> {
