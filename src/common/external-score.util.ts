@@ -1,4 +1,5 @@
 import * as dns from 'dns';
+import { isIP } from 'net';
 import * as https from 'https';
 import * as http from 'http';
 
@@ -26,8 +27,69 @@ const insecureTlsEnabled = () =>
   process.env.EXTERNAL_SCORES_INSECURE_TLS === 'true' ||
   process.env.EXTERNAL_SCORES_JIKAN_INSECURE_TLS === 'true';
 
-const ipv4Lookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
-  dns.lookup(hostname, { ...(options as dns.LookupOptions), family: 4 }, callback);
+const isPrivateIp = (ip: string): boolean => {
+  if (!isIP(ip)) return false;
+  if (ip.startsWith('10.')) return true;
+  if (ip.startsWith('127.')) return true;
+  if (ip.startsWith('192.168.')) return true;
+  if (ip.startsWith('169.254.')) return true;
+  const [first, second] = ip.split('.').map(Number);
+  return first === 172 && second >= 16 && second <= 31;
+};
+
+const parsePublicDnsServers = (): string[] => {
+  const raw = process.env.EXTERNAL_SCORES_DNS_SERVERS?.trim();
+  if (raw) {
+    const servers = raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+    if (servers.length > 0) return servers;
+  }
+  return ['8.8.8.8', '1.1.1.1'];
+};
+
+const publicDnsResolver = new dns.Resolver();
+publicDnsResolver.setServers(parsePublicDnsServers());
+
+const resolveIpv4ViaPublicDns = (hostname: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    publicDnsResolver.resolve4(hostname, (error, addresses) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      const publicIp = addresses?.find((ip) => !isPrivateIp(ip));
+      if (!publicIp) {
+        reject(new Error(`No public IPv4 for ${hostname}`));
+        return;
+      }
+
+      resolve(publicIp);
+    });
+  });
+
+const resolveExternalHostnameIpv4 = async (hostname: string): Promise<string> => {
+  try {
+    const { address } = await dns.promises.lookup(hostname, { family: 4 });
+    if (!isPrivateIp(address)) return address;
+  } catch {
+    // Fall back to public DNS below.
+  }
+
+  return resolveIpv4ViaPublicDns(hostname);
+};
+
+const externalIpv4Lookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
+  resolveExternalHostnameIpv4(hostname)
+    .then((address) => {
+      if (options?.all) {
+        callback(null, [{ address, family: 4 }]);
+        return;
+      }
+      callback(null, address, 4);
+    })
+    .catch((error) => {
+      callback(error as NodeJS.ErrnoException, '', 4);
+    });
 };
 
 const formatRequestError = (error: unknown): string => {
@@ -57,7 +119,7 @@ const requestJson = async (
     insecureTls?: boolean;
   },
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
-  const timeoutMs = init?.timeoutMs ?? 15_000;
+  const timeoutMs = init?.timeoutMs ?? 25_000;
   const parsed = new URL(url);
   const isHttps = parsed.protocol === 'https:';
   const transport = isHttps ? https : http;
@@ -72,7 +134,7 @@ const requestJson = async (
         agent: isHttps
           ? new https.Agent({
               rejectUnauthorized: !useInsecureTls,
-              lookup: ipv4Lookup,
+              lookup: externalIpv4Lookup,
             })
           : undefined,
       },
@@ -135,6 +197,9 @@ const requestJson = async (
   });
 };
 
+const shouldRetryStatus = (status: number) =>
+  status === 429 || status === 502 || status === 503 || status === 504;
+
 const requestJsonWithRetry = async (
   url: string,
   init?: Parameters<typeof requestJson>[1],
@@ -142,10 +207,12 @@ const requestJsonWithRetry = async (
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
   const result = await requestJson(url, init);
 
-  if (result.ok || result.status === 429) return result;
-  if (attempt >= 1 || result.status > 0) return result;
+  if (result.ok) return result;
+  if (attempt >= 2) return result;
+  if (result.status > 0 && !shouldRetryStatus(result.status)) return result;
+  if (result.status === 0 && attempt >= 1) return result;
 
-  await sleep(500 * (attempt + 1));
+  await sleep(result.status === 429 ? 1_000 * (attempt + 1) : 750 * (attempt + 1));
   return requestJsonWithRetry(url, init, attempt + 1);
 };
 
