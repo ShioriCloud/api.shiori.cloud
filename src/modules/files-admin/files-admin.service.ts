@@ -217,12 +217,15 @@ export class FilesAdminService {
   }
 
   private buildDailyTrend(
-    rows: { day: string; count: string | number }[],
+    rows: { day: string | Date; count: string | number }[],
     days = 14,
   ): DownloadDailyTrendPoint[] {
     const counts = new Map<string, number>();
     for (const row of rows) {
-      const day = String(row.day).slice(0, 10);
+      const day =
+        row.day instanceof Date
+          ? row.day.toLocaleDateString('en-CA', { timeZone: 'Asia/Tehran' })
+          : String(row.day).slice(0, 10);
       counts.set(day, Number(row.count) || 0);
     }
 
