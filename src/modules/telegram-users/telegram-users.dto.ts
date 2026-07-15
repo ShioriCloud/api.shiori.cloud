@@ -27,4 +27,9 @@ export class RegisterTelegramUserDto {
   @IsOptional()
   @IsBoolean()
   is_premium?: boolean;
+
+  /** Fallback when proxy strips x-telegram-init-data header */
+  @IsOptional()
+  @IsString()
+  telegram_init_data?: string;
 }

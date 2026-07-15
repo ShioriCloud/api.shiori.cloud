@@ -24,7 +24,7 @@ export class TelegramUsersController {
   @ApiOperation({ summary: 'Register or update Telegram user visit' })
   async register(
     @Headers('x-telegram-init-data') initDataHeader: string,
-    @Body() body: RegisterTelegramUserDto & { telegram_init_data?: string },
+    @Body() body: RegisterTelegramUserDto,
   ) {
     const initData = String(
       initDataHeader ?? body.telegram_init_data ?? '',

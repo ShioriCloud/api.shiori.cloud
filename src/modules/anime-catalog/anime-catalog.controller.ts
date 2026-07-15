@@ -47,6 +47,8 @@ export class AnimeCatalogController {
 
     @Query('genreSlug') genreSlug?: string,
 
+    @Query('genreSlugs') genreSlugs?: string,
+
     @Query('format') format?: string,
 
     @Query('airingStatus') airingStatus?: string,
@@ -57,12 +59,19 @@ export class AnimeCatalogController {
 
     @Query('offset') offset?: string,
   ) {
+    const parsedGenreSlugs = String(genreSlugs ?? '')
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+
     const params: AnimeSearchParams = {
       query: q,
 
       season: season ?? null,
 
       genreSlug: genreSlug ?? null,
+
+      genreSlugs: parsedGenreSlugs.length > 0 ? parsedGenreSlugs : undefined,
 
       format: format ?? null,
 

@@ -31,6 +31,7 @@ export type AnimeSearchParams = {
   year?: number | null;
   season?: string | null;
   genreSlug?: string | null;
+  genreSlugs?: string[];
   format?: string | null;
   airingStatus?: string | null;
   sortBy?: 'created_at' | 'popular' | 'title' | 'score';
@@ -234,9 +235,16 @@ export class AnimeCatalogService {
         ? params.offset!
         : 0;
 
-    const genreSlug = params.genreSlug
-      ? String(params.genreSlug).trim().toLowerCase()
-      : '';
+    const genreSlugs = [
+      ...new Set(
+        [
+          ...(params.genreSlugs ?? []).map((s) => String(s).trim().toLowerCase()),
+          params.genreSlug
+            ? String(params.genreSlug).trim().toLowerCase()
+            : '',
+        ].filter(Boolean),
+      ),
+    ];
     const season =
       params.season && String(params.season).trim()
         ? String(params.season).trim().toUpperCase()
@@ -250,12 +258,14 @@ export class AnimeCatalogService {
 
     let qb = this.animeRepo.createQueryBuilder('anime');
 
-    if (genreSlug) {
+    genreSlugs.forEach((slug, index) => {
       qb = qb
-        .innerJoin('anime_genres', 'ag', 'ag.anime_id = anime.id')
-        .innerJoin('genres', 'g', 'g.id = ag.genre_id')
-        .andWhere('g.slug = :genreSlug', { genreSlug });
-    }
+        .innerJoin('anime_genres', `ag_f_${index}`, `ag_f_${index}.anime_id = anime.id`)
+        .innerJoin('genres', `g_f_${index}`, `g_f_${index}.id = ag_f_${index}.genre_id`)
+        .andWhere(`g_f_${index}.slug = :genreSlug_${index}`, {
+          [`genreSlug_${index}`]: slug,
+        });
+    });
 
     if (year !== null) {
       qb = qb.andWhere('anime.year = :year', { year });
