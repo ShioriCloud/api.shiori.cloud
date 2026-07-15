@@ -26,7 +26,7 @@ Never set `DATABASE_SYNC=true` against a live database.
 
 If API logs show `Unable to connect to the database` / `ECONNREFUSED`:
 
-1. **`localhost` inside Docker is wrong** — the API container cannot reach Postgres on the host via `localhost:5433`. Use the compose stack below, or set `DATABASE_URL` to the Postgres **service name** / host IP (never `127.0.0.1` from inside a container).
+1. **`localhost` inside Docker is wrong** — the API container cannot reach Postgres on the host via `localhost:15432`. Use the compose stack below, or set `DATABASE_URL` to the Postgres **service name** / host IP (never `127.0.0.1` from inside a container).
 
 2. **Recommended on server** (`/opt/api.shiori.cloud`):
 

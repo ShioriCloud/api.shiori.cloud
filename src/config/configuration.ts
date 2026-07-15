@@ -5,7 +5,7 @@ export default () => {
   app: {
     port: appPort,
     host: process.env.APP_HOST ?? '0.0.0.0',
-    allowOrigins: (process.env.APP_ALLOW_ORIGINS ?? 'http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:3001')
+    allowOrigins: (process.env.APP_ALLOW_ORIGINS ?? 'http://localhost:5173,http://localhost:5174,http://localhost:4173,http://localhost:3001')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean),
