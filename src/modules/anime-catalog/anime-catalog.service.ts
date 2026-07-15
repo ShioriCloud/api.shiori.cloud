@@ -625,4 +625,180 @@ export class AnimeCatalogService {
     const animeId = await requireAnimeId(this.animeRepo, idOrSlug);
     return this.userListRepo.count({ where: { animeId } });
   }
+
+  async listAiringSchedule() {
+    const emptySchedule: Record<string, Array<{
+      id: number;
+      title: string;
+      time: string;
+      episode: string;
+      image: string;
+      genres: { slug: string; name_en?: string }[];
+      localId: string | null;
+    }>> = {
+      شنبه: [],
+      یکشنبه: [],
+      دوشنبه: [],
+      سه‌شنبه: [],
+      چهارشنبه: [],
+      پنج‌شنبه: [],
+      جمعه: [],
+    };
+
+    const getCurrentSeason = (): 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL' => {
+      const m = new Date().getMonth() + 1;
+      if (m >= 1 && m <= 3) return 'WINTER';
+      if (m >= 4 && m <= 6) return 'SPRING';
+      if (m >= 7 && m <= 9) return 'SUMMER';
+      return 'FALL';
+    };
+
+    const currentSeason = getCurrentSeason();
+    const currentYear = new Date().getFullYear();
+
+    const query = `
+      query ($page: Int, $perPage: Int, $season: MediaSeason, $seasonYear: Int) {
+        Page(page: $page, perPage: $perPage) {
+          media(
+            season: $season
+            seasonYear: $seasonYear
+            status: RELEASING
+            type: ANIME
+            sort: POPULARITY_DESC
+          ) {
+            id
+            format
+            title { romaji english native }
+            coverImage { large }
+            genres
+            nextAiringEpisode { airingAt episode }
+          }
+        }
+      }
+    `;
+
+    const res = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        variables: {
+          page: 1,
+          perPage: 50,
+          season: currentSeason,
+          seasonYear: currentYear,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(`AniList request failed: ${res.status} ${text}`);
+    }
+
+    const json = (await res.json()) as {
+      errors?: Array<{ message?: string }>;
+      data?: { Page?: { media?: Array<Record<string, unknown>> } };
+    };
+    if (json?.errors?.length) {
+      throw new Error(json.errors?.[0]?.message || 'AniList query error');
+    }
+
+    const mediaList = json?.data?.Page?.media ?? [];
+    const schedule = { ...emptySchedule };
+
+    const toPersianDay = (d: Date): string => {
+      const dayMap: Record<number, string> = {
+        0: 'یکشنبه',
+        1: 'دوشنبه',
+        2: 'سه‌شنبه',
+        3: 'چهارشنبه',
+        4: 'پنج‌شنبه',
+        5: 'جمعه',
+        6: 'شنبه',
+      };
+      return dayMap[d.getDay()] ?? '';
+    };
+
+    for (const m of mediaList) {
+      const allowedFormats = new Set(['TV', 'ONA', 'OVA', 'SPECIAL']);
+      const format =
+        typeof m?.format === 'string' ? m.format.trim().toUpperCase() : '';
+      if (!allowedFormats.has(format)) continue;
+
+      const ep = m?.nextAiringEpisode as
+        | { airingAt?: number; episode?: number }
+        | undefined;
+      if (!ep || typeof ep.airingAt !== 'number') continue;
+
+      const airingAtMs = ep.airingAt * 1000;
+      if (!Number.isFinite(airingAtMs)) continue;
+
+      const d = new Date(airingAtMs);
+      const day = toPersianDay(d);
+      if (!schedule[day]) continue;
+
+      const titleObj = m?.title as
+        | { english?: string; romaji?: string; native?: string }
+        | undefined;
+      const title =
+        (typeof titleObj?.english === 'string' && titleObj.english.trim()) ||
+        (typeof titleObj?.romaji === 'string' && titleObj.romaji.trim()) ||
+        (typeof titleObj?.native === 'string' && titleObj.native.trim()) ||
+        'بدون عنوان';
+
+      const time = d.toLocaleTimeString('fa-IR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
+      const coverImage = m?.coverImage as { large?: string } | undefined;
+      const genresRaw = Array.isArray(m?.genres) ? m.genres : [];
+
+      schedule[day].push({
+        id: Number(m.id),
+        title,
+        time,
+        episode: String(ep.episode ?? ''),
+        image: coverImage?.large ?? '',
+        genres: genresRaw
+          .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+          .map((g) => ({ slug: g.trim().toLowerCase(), name_en: g })),
+        localId: null,
+      });
+    }
+
+    for (const day of Object.keys(schedule)) {
+      schedule[day].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    }
+
+    const anilistIds = Object.values(schedule)
+      .flat()
+      .map((item) => item.id)
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    if (anilistIds.length > 0) {
+      const rows = await this.animeRepo.find({
+        where: { anilistId: In(anilistIds) },
+        select: { id: true, anilistId: true },
+      });
+      const localByAnilist = new Map(
+        rows
+          .filter((row) => row.anilistId != null)
+          .map((row) => [Number(row.anilistId), row.id]),
+      );
+
+      for (const day of Object.keys(schedule)) {
+        schedule[day] = schedule[day].map((item) => ({
+          ...item,
+          localId: localByAnilist.get(item.id) ?? null,
+        }));
+      }
+    }
+
+    return { schedule, currentSeason, currentYear };
+  }
 }

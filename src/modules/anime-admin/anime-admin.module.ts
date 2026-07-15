@@ -13,9 +13,12 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  UserAnimeListEntry,
+  UserNotification,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { ExternalScoresModule } from '../external-scores/external-scores.module';
+import { NotificationsAdminModule } from '../notifications-admin/notifications-admin.module';
 import { AnimeAdminController } from './anime-admin.controller';
 import { AnimeAdminService } from './anime-admin.service';
 
@@ -23,6 +26,7 @@ import { AnimeAdminService } from './anime-admin.service';
   imports: [
     PortalAuthModule,
     ExternalScoresModule,
+    NotificationsAdminModule,
     TypeOrmModule.forFeature([
       Anime,
       AnimeEpisode,
@@ -36,6 +40,8 @@ import { AnimeAdminService } from './anime-admin.service';
       AnimeSeriesMember,
       AnimeTranslator,
       AnimeTranslatorLink,
+      UserAnimeListEntry,
+      UserNotification,
     ]),
   ],
   controllers: [AnimeAdminController],

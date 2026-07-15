@@ -59,6 +59,15 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, swagger));
 
   await app.listen(port, host);
+
+  const botToken = config.get<string>('telegram.botToken', '').trim();
+  if (!botToken) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      'WARNING: TELEGRAM_BOT_TOKEN is not set — Telegram mini-app auth (user list, notifications) will return 401.',
+    );
+  }
+
   // eslint-disable-next-line no-console
   console.log(`Shiori API: http://${host}:${port}/api/v1`);
   // eslint-disable-next-line no-console

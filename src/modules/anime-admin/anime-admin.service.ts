@@ -3,8 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import {
@@ -20,7 +20,10 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  UserAnimeListEntry,
+  UserNotification,
 } from '../../entities';
+import { NotificationsAdminService } from '../notifications-admin/notifications-admin.service';
 
 type Payload = Record<string, unknown>;
 
@@ -39,6 +42,10 @@ export class AnimeAdminService {
     @InjectRepository(AnimeSeriesMember) private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
     @InjectRepository(AnimeTranslator) private readonly translatorRepo: Repository<AnimeTranslator>,
     @InjectRepository(AnimeTranslatorLink) private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
+    @InjectRepository(UserAnimeListEntry) private readonly userListRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(UserNotification) private readonly userNotificationRepo: Repository<UserNotification>,
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly notificationsAdminService: NotificationsAdminService,
   ) {}
 
   private pick<T>(body: Payload, snake: string, camel: string): T | undefined {
@@ -200,6 +207,8 @@ export class AnimeAdminService {
     if (imdbScore !== undefined) anime.imdbScore = imdbScore == null ? null : String(imdbScore);
     const averageScore = this.pick<number | string | null>(body, 'average_score', 'averageScore');
     if (averageScore !== undefined) anime.averageScore = averageScore == null ? null : String(averageScore);
+    const shioriScore = this.pick<number | string | null>(body, 'shiori_score', 'shioriScore');
+    if (shioriScore !== undefined) anime.shioriScore = shioriScore == null ? null : String(shioriScore);
 
     return anime;
   }
@@ -416,6 +425,38 @@ export class AnimeAdminService {
     return this.createAnime(body, editorId);
   }
 
+  async deleteAnime(idOrSlug: string) {
+    const anime = await this.requireAnime(idOrSlug);
+    const animeId = anime.id;
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(UserAnimeListEntry, { animeId });
+      await manager.delete(UserNotification, { animeId });
+      await manager.delete(AnimeEpisode, { animeId });
+      await manager.delete(AnimeSubtitle, { animeId });
+      await manager.delete(AnimeSubtitlePack, { animeId });
+      await manager.delete(AnimeGenreLink, { animeId });
+      await manager.delete(AnimeStudioLink, { animeId });
+      await manager.delete(AnimeTranslatorLink, { animeId });
+      await manager.delete(AnimeSeriesMember, { animeId });
+
+      await manager
+        .createQueryBuilder()
+        .update(Anime)
+        .set({ prevAnimeId: null })
+        .where('prev_anime_id = :animeId', { animeId })
+        .execute();
+      await manager
+        .createQueryBuilder()
+        .update(Anime)
+        .set({ nextAnimeId: null })
+        .where('next_anime_id = :animeId', { animeId })
+        .execute();
+
+      await manager.delete(Anime, { id: animeId });
+    });
+  }
+
   private async resolveAnimeRecordId(idOrSlug: string): Promise<string> {
     return (await this.requireAnime(idOrSlug)).id;
   }
@@ -462,6 +503,17 @@ export class AnimeAdminService {
       downloadLink: (this.pick<string | null>(body, 'download_link', 'downloadLink') ?? null),
     });
     const saved = await this.episodeRepo.save(episode);
+
+    const episodeNumber = saved.episodeNumber ?? 0;
+    if (episodeNumber > 0) {
+      void this.notificationsAdminService
+        .notifyEpisodeRelease(
+          { animeId, episodeNumber, sendTelegram: true },
+          'auto',
+        )
+        .catch(() => undefined);
+    }
+
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,

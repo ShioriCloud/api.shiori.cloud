@@ -30,6 +30,12 @@ export class AnimeCatalogController {
     return this.animeCatalogService.listRecent(limit ? Number(limit) : 20);
   }
 
+  @Get('schedule')
+  @ApiOperation({ summary: 'Weekly airing schedule (AniList + local ids)' })
+  listSchedule() {
+    return this.animeCatalogService.listAiringSchedule();
+  }
+
   @Get('all')
   @ApiOperation({ summary: 'Full anime catalog (cards)' })
   listAll() {

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
+import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import { ExternalScoresService } from '../external-scores/external-scores.service';
 import { AnimeAdminService } from './anime-admin.service';
 
@@ -96,6 +97,14 @@ export class AnimeAdminController {
     return this.animeAdminService.updateAnime(id, body, req.portalTelegramUserId);
   }
 
+  @Delete('anime/:id')
+  @UseGuards(PortalFullAdminGuard)
+  @ApiOperation({ summary: 'Delete anime and related records (admin only)' })
+  async deleteAnime(@Param('id') id: string) {
+    await this.animeAdminService.deleteAnime(id);
+    return { ok: true };
+  }
+
   @Post('anime/upsert')
   upsertAnime(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
     return this.animeAdminService.upsertAnime(body, req.portalTelegramUserId);
@@ -155,6 +164,7 @@ export class AnimeAdminController {
   }
 
   @Delete('genres/:id')
+  @UseGuards(PortalFullAdminGuard)
   async deleteGenre(@Param('id') id: string) {
     await this.animeAdminService.deleteGenre({ id });
     return { ok: true };
@@ -176,6 +186,7 @@ export class AnimeAdminController {
   }
 
   @Delete('studios/:id')
+  @UseGuards(PortalFullAdminGuard)
   async deleteStudio(@Param('id') id: string) {
     await this.animeAdminService.deleteStudio(id);
     return { ok: true };
@@ -206,6 +217,7 @@ export class AnimeAdminController {
   }
 
   @Delete('translators/:id')
+  @UseGuards(PortalFullAdminGuard)
   async deleteTranslator(@Param('id') id: string) {
     await this.animeAdminService.deleteTranslator(id);
     return { ok: true };
