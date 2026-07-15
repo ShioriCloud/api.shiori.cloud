@@ -304,12 +304,21 @@ export class AnimeAdminController {
     @Param('animeId') animeId: string,
     @Body() body: Record<string, unknown>,
   ) {
-    const anilistId = normalizeExternalId(body.anilist_id);
-    const malId = normalizeExternalId(body.mal_id);
+    const overrideIds: {
+      anilist_id?: number | null;
+      mal_id?: number | null;
+    } = {};
 
-    return this.externalScoresService.syncAnimeById(animeId, {
-      anilist_id: body.anilist_id !== undefined ? anilistId : undefined,
-      mal_id: body.mal_id !== undefined ? malId : undefined,
-    });
+    if (body.anilist_id !== undefined) {
+      overrideIds.anilist_id = normalizeExternalId(body.anilist_id);
+    }
+    if (body.mal_id !== undefined) {
+      overrideIds.mal_id = normalizeExternalId(body.mal_id);
+    }
+
+    return this.externalScoresService.syncAnimeById(
+      animeId,
+      Object.keys(overrideIds).length > 0 ? overrideIds : undefined,
+    );
   }
 }

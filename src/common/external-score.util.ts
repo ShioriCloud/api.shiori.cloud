@@ -1,3 +1,4 @@
+import * as dns from 'dns';
 import * as https from 'https';
 import * as http from 'http';
 
@@ -21,25 +22,59 @@ export const parseExternalScore = (value: unknown): number | null => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const jikanInsecureTlsEnabled = () =>
+const insecureTlsEnabled = () =>
+  process.env.EXTERNAL_SCORES_INSECURE_TLS === 'true' ||
   process.env.EXTERNAL_SCORES_JIKAN_INSECURE_TLS === 'true';
 
-const fetchJsonViaNodeHttp = async (
+const ipv4Lookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
+  dns.lookup(hostname, { ...(options as dns.LookupOptions), family: 4 }, callback);
+};
+
+const formatRequestError = (error: unknown): string => {
+  if (!(error instanceof Error)) return 'Request failed';
+
+  const cause = (error as Error & { cause?: unknown }).cause;
+  if (cause instanceof Error && cause.message && cause.message !== error.message) {
+    return `${error.message} (${cause.message})`;
+  }
+  if (typeof cause === 'object' && cause && 'code' in cause) {
+    const code = String((cause as { code?: unknown }).code ?? '');
+    if (code && !error.message.includes(code)) {
+      return `${error.message} (${code})`;
+    }
+  }
+
+  return error.message;
+};
+
+const requestJson = async (
   url: string,
-  init?: RequestInit & { timeoutMs?: number; insecureTls?: boolean },
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+    timeoutMs?: number;
+    insecureTls?: boolean;
+  },
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
   const timeoutMs = init?.timeoutMs ?? 15_000;
   const parsed = new URL(url);
   const isHttps = parsed.protocol === 'https:';
   const transport = isHttps ? https : http;
+  const useInsecureTls = init?.insecureTls ?? false;
 
   return new Promise((resolve) => {
     const req = transport.request(
       url,
       {
         method: init?.method ?? 'GET',
-        headers: init?.headers as Record<string, string> | undefined,
-        rejectUnauthorized: init?.insecureTls ? false : undefined,
+        headers: init?.headers,
+        agent: isHttps
+          ? new https.Agent({
+              rejectUnauthorized: !useInsecureTls,
+              lookup: ipv4Lookup,
+            })
+          : undefined,
       },
       (res) => {
         let text = '';
@@ -89,80 +124,40 @@ const fetchJsonViaNodeHttp = async (
         ok: false,
         status: 0,
         json: null,
-        error: error instanceof Error ? error.message : 'Request failed',
+        error: formatRequestError(error),
       });
     });
 
     req.on('close', () => clearTimeout(timer));
 
-    if (init?.body) req.write(String(init.body));
+    if (init?.body) req.write(init.body);
     req.end();
   });
 };
 
-const fetchJson = async (
+const requestJsonWithRetry = async (
   url: string,
-  init?: RequestInit & { timeoutMs?: number },
+  init?: Parameters<typeof requestJson>[1],
+  attempt = 0,
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
-  const timeoutMs = init?.timeoutMs ?? 15_000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const result = await requestJson(url, init);
 
-  try {
-    const res = await fetch(url, {
-      ...init,
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'ShioriAPI/1.0 (external-scores)',
-        ...(init?.headers ?? {}),
-      },
-    });
+  if (result.ok || result.status === 429) return result;
+  if (attempt >= 1 || result.status > 0) return result;
 
-    const text = await res.text();
-    let json: unknown = null;
-    if (text.trim()) {
-      try {
-        json = JSON.parse(text);
-      } catch {
-        return {
-          ok: false,
-          status: res.status,
-          json: null,
-          error: `Invalid JSON (${res.status})`,
-        };
-      }
-    }
-
-    if (!res.ok) {
-      return {
-        ok: false,
-        status: res.status,
-        json,
-        error: `HTTP ${res.status}`,
-      };
-    }
-
-    return { ok: true, status: res.status, json };
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.name === 'AbortError'
-          ? 'Request timed out'
-          : error.message
-        : 'Request failed';
-    return { ok: false, status: 0, json: null, error: message };
-  } finally {
-    clearTimeout(timer);
-  }
+  await sleep(500 * (attempt + 1));
+  return requestJsonWithRetry(url, init, attempt + 1);
 };
 
 export const fetchAnilistScorePercent = async (
   anilistId: number,
 ): Promise<{ score: number | null; error?: string }> => {
-  const result = await fetchJson('https://graphql.anilist.co', {
+  const result = await requestJsonWithRetry('https://graphql.anilist.co', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
     body: JSON.stringify({
       query: `
         query ($id: Int) {
@@ -174,6 +169,7 @@ export const fetchAnilistScorePercent = async (
       `,
       variables: { id: anilistId },
     }),
+    insecureTls: insecureTlsEnabled(),
   });
 
   if (!result.ok) {
@@ -206,9 +202,10 @@ export const fetchMalScoreFromJikan = async (
   attempt = 0,
 ): Promise<{ score: number | null; error?: string }> => {
   const url = `https://api.jikan.moe/v4/anime/${malId}`;
-  const result = jikanInsecureTlsEnabled()
-    ? await fetchJsonViaNodeHttp(url, { insecureTls: true })
-    : await fetchJson(url);
+  const result = await requestJsonWithRetry(url, {
+    headers: { Accept: 'application/json' },
+    insecureTls: insecureTlsEnabled(),
+  });
 
   if (result.status === 429 && attempt < 2) {
     await sleep(1_000 * (attempt + 1));
