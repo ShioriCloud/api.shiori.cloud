@@ -5,6 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import {
+  fetchExternalScoresDetailed,
+  normalizeExternalId,
+  resolveExternalScoreIds,
+} from '../../common/external-score.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import { Anime } from '../../entities';
 
@@ -21,6 +26,7 @@ export type ExternalScores = {
 export type ExternalScoreSourceStatus = {
   requested: boolean;
   ok: boolean;
+  error?: string | null;
 };
 
 export type SyncExternalScoresResult = ExternalScores & {
@@ -39,78 +45,17 @@ export class ExternalScoresService {
     private readonly animeRepo: Repository<Anime>,
   ) {}
 
-  private async fetchAnilistScorePercent(anilistId: number): Promise<number | null> {
-    const res = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        query: `
-          query ($id: Int) {
-            Media(id: $id, type: ANIME) {
-              meanScore
-              averageScore
-            }
-          }
-        `,
-        variables: { id: anilistId },
-      }),
-    });
-
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as {
-      data?: { Media?: { meanScore?: number | null; averageScore?: number | null } };
-    };
-
-    const media = json.data?.Media;
-    if (!media) return null;
-
-    if (typeof media.averageScore === 'number' && media.averageScore > 0) {
-      return media.averageScore;
-    }
-    if (typeof media.meanScore === 'number' && media.meanScore > 0) {
-      return media.meanScore;
-    }
-
-    return null;
-  }
-
-  private async fetchMalScore(malId: number): Promise<number | null> {
-    const res = await fetch(`https://api.jikan.moe/v4/anime/${malId}`);
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as { data?: { score?: number | null } };
-    const score = json.data?.score;
-    return typeof score === 'number' && Number.isFinite(score) ? score : null;
-  }
-
   async fetchExternalScores(ids: ExternalScoreIds): Promise<ExternalScores> {
-    const anilistId =
-      typeof ids.anilist_id === 'number' && ids.anilist_id > 0
-        ? ids.anilist_id
-        : null;
-    const malId =
-      typeof ids.mal_id === 'number' && ids.mal_id > 0 ? ids.mal_id : null;
-
-    const [anilistResult, malResult] = await Promise.allSettled([
-      anilistId ? this.fetchAnilistScorePercent(anilistId) : Promise.resolve(null),
-      malId ? this.fetchMalScore(malId) : Promise.resolve(null),
-    ]);
-
-    const unwrap = (r: PromiseSettledResult<number | null>): number | null =>
-      r.status === 'fulfilled' ? r.value : null;
-
+    const result = await fetchExternalScoresDetailed(ids);
     return {
-      anilistScore: unwrap(anilistResult),
-      malScore: unwrap(malResult),
+      anilistScore: result.anilistScore,
+      malScore: result.malScore,
     };
   }
 
   private hasExternalIds(ids: ExternalScoreIds): boolean {
-    return Boolean(
-      (typeof ids.anilist_id === 'number' && ids.anilist_id > 0) ||
-        (typeof ids.mal_id === 'number' && ids.mal_id > 0),
-    );
+    const resolved = resolveExternalScoreIds(ids);
+    return resolved.anilist_id != null || resolved.mal_id != null;
   }
 
   private scoreToDb(value: number | null): string | null {
@@ -119,16 +64,10 @@ export class ExternalScoresService {
 
   private applyExternalIds(anime: Anime, overrideIds?: ExternalScoreIds): void {
     if (overrideIds?.anilist_id !== undefined) {
-      anime.anilistId =
-        typeof overrideIds.anilist_id === 'number' && overrideIds.anilist_id > 0
-          ? overrideIds.anilist_id
-          : null;
+      anime.anilistId = normalizeExternalId(overrideIds.anilist_id);
     }
     if (overrideIds?.mal_id !== undefined) {
-      anime.malId =
-        typeof overrideIds.mal_id === 'number' && overrideIds.mal_id > 0
-          ? overrideIds.mal_id
-          : null;
+      anime.malId = normalizeExternalId(overrideIds.mal_id);
     }
   }
 
@@ -151,17 +90,24 @@ export class ExternalScoresService {
   private buildSyncResult(
     ids: ExternalScoreIds,
     scores: ExternalScores,
+    errors: Array<{ source: 'anilist' | 'mal'; message: string }>,
   ): SyncExternalScoresResult {
+    const resolved = resolveExternalScoreIds(ids);
+    const errorFor = (source: 'anilist' | 'mal') =>
+      errors.find((entry) => entry.source === source)?.message ?? null;
+
     return {
       ...scores,
       sources: {
         anilist: {
-          requested: typeof ids.anilist_id === 'number' && ids.anilist_id > 0,
+          requested: resolved.anilist_id != null,
           ok: scores.anilistScore != null,
+          error: resolved.anilist_id != null && scores.anilistScore == null ? errorFor('anilist') : null,
         },
         mal: {
-          requested: typeof ids.mal_id === 'number' && ids.mal_id > 0,
+          requested: resolved.mal_id != null,
           ok: scores.malScore != null,
+          error: resolved.mal_id != null && scores.malScore == null ? errorFor('mal') : null,
         },
       },
     };
@@ -189,7 +135,11 @@ export class ExternalScoresService {
       throw new BadRequestException('شناسه AniList / MAL ثبت نشده');
     }
 
-    const scores = await this.fetchExternalScores(ids);
+    const fetched = await fetchExternalScoresDetailed(ids);
+    const scores = {
+      anilistScore: fetched.anilistScore,
+      malScore: fetched.malScore,
+    };
 
     const hasOverrideFields = Boolean(
       overrideIds &&
@@ -203,7 +153,7 @@ export class ExternalScoresService {
     }
 
     await this.applyScoresToAnime(animeId, scores);
-    return this.buildSyncResult(ids, scores);
+    return this.buildSyncResult(ids, scores, fetched.errors);
   }
 
   async syncBatch(options?: {
@@ -229,11 +179,14 @@ export class ExternalScoresService {
 
     for (const row of rows) {
       try {
-        const scores = await this.fetchExternalScores({
+        const fetched = await fetchExternalScoresDetailed({
           anilist_id: row.anilistId,
           mal_id: row.malId,
         });
-        await this.applyScoresToAnime(row.id, scores);
+        await this.applyScoresToAnime(row.id, {
+          anilistScore: fetched.anilistScore,
+          malScore: fetched.malScore,
+        });
         updated += 1;
       } catch (e) {
         errors.push({

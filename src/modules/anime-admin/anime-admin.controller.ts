@@ -14,6 +14,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
 import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import { ExternalScoresService } from '../external-scores/external-scores.service';
+import { normalizeExternalId } from '../../common/external-score.util';
 import { AnimeAdminService } from './anime-admin.service';
 
 @ApiTags('Anime Admin')
@@ -303,13 +304,12 @@ export class AnimeAdminController {
     @Param('animeId') animeId: string,
     @Body() body: Record<string, unknown>,
   ) {
-    const anilistId =
-      body.anilist_id !== undefined ? Number(body.anilist_id) : undefined;
-    const malId = body.mal_id !== undefined ? Number(body.mal_id) : undefined;
+    const anilistId = normalizeExternalId(body.anilist_id);
+    const malId = normalizeExternalId(body.mal_id);
 
     return this.externalScoresService.syncAnimeById(animeId, {
-      anilist_id: Number.isFinite(anilistId) ? anilistId : undefined,
-      mal_id: Number.isFinite(malId) ? malId : undefined,
+      anilist_id: body.anilist_id !== undefined ? anilistId : undefined,
+      mal_id: body.mal_id !== undefined ? malId : undefined,
     });
   }
 }
