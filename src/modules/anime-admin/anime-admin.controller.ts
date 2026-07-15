@@ -306,13 +306,10 @@ export class AnimeAdminController {
     const anilistId =
       body.anilist_id !== undefined ? Number(body.anilist_id) : undefined;
     const malId = body.mal_id !== undefined ? Number(body.mal_id) : undefined;
-    const imdbId =
-      body.imdb_id !== undefined ? String(body.imdb_id ?? '') : undefined;
 
     return this.externalScoresService.syncAnimeById(animeId, {
       anilist_id: Number.isFinite(anilistId) ? anilistId : undefined,
       mal_id: Number.isFinite(malId) ? malId : undefined,
-      imdb_id: imdbId,
     });
   }
 }

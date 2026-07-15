@@ -115,10 +115,8 @@ export class AnimeAdminService {
       isFeatured: anime.isFeatured,
       averageScore: this.numOrNull(anime.averageScore) ?? undefined,
       malScore: this.numOrNull(anime.malScore) ?? undefined,
-      imdbScore: this.numOrNull(anime.imdbScore) ?? undefined,
       anilist_id: anime.anilistId ?? undefined,
       mal_id: anime.malId ?? undefined,
-      imdb_id: anime.imdbId ?? undefined,
     };
   }
 
@@ -135,9 +133,7 @@ export class AnimeAdminService {
       year: anime.year,
       anilist_id: anime.anilistId,
       mal_id: anime.malId,
-      imdb_id: anime.imdbId,
       mal_score: this.numOrNull(anime.malScore),
-      imdb_score: this.numOrNull(anime.imdbScore),
       featured_image: anime.featuredImage,
       cover_image: anime.coverImage,
       is_featured: anime.isFeatured,
@@ -193,7 +189,6 @@ export class AnimeAdminService {
     assign('isFeatured', this.pick<boolean>(body, 'is_featured', 'isFeatured'));
     assign('anilistId', this.pick<number | null>(body, 'anilist_id', 'anilistId'));
     assign('malId', this.pick<number | null>(body, 'mal_id', 'malId'));
-    assign('imdbId', this.pick<string | null>(body, 'imdb_id', 'imdbId'));
     assign('startDate', this.pick<string | null>(body, 'start_date', 'startDate'));
     assign('endDate', this.pick<string | null>(body, 'end_date', 'endDate'));
     assign('episodePackTitle', this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle'));
@@ -203,8 +198,6 @@ export class AnimeAdminService {
 
     const malScore = this.pick<number | string | null>(body, 'mal_score', 'malScore');
     if (malScore !== undefined) anime.malScore = malScore == null ? null : String(malScore);
-    const imdbScore = this.pick<number | string | null>(body, 'imdb_score', 'imdbScore');
-    if (imdbScore !== undefined) anime.imdbScore = imdbScore == null ? null : String(imdbScore);
     const averageScore = this.pick<number | string | null>(body, 'average_score', 'averageScore');
     if (averageScore !== undefined) anime.averageScore = averageScore == null ? null : String(averageScore);
     const shioriScore = this.pick<number | string | null>(body, 'shiori_score', 'shioriScore');

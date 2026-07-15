@@ -37,7 +37,6 @@ npm run start:dev
 | `MINI_APP_URL` | Web App button URL in Telegram notifications |
 | `CRON_SECRET` | Protects `POST /api/v1/cron/*` |
 | `BOT_API_TOKEN` | Protects `GET /api/v1/bot/*` (`x-bot-token` header) |
-| `OMDB_API_KEY` | Optional IMDb score source |
 
 Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connection or local docker).
 

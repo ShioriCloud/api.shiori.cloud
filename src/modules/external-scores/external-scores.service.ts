@@ -3,7 +3,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
@@ -12,13 +11,11 @@ import { Anime } from '../../entities';
 export type ExternalScoreIds = {
   anilist_id?: number | null;
   mal_id?: number | null;
-  imdb_id?: string | null;
 };
 
 export type ExternalScores = {
   anilistScore: number | null;
   malScore: number | null;
-  imdbScore: number | null;
 };
 
 export type ExternalScoreSourceStatus = {
@@ -30,7 +27,6 @@ export type SyncExternalScoresResult = ExternalScores & {
   sources: {
     anilist: ExternalScoreSourceStatus;
     mal: ExternalScoreSourceStatus;
-    imdb: ExternalScoreSourceStatus;
   };
 };
 
@@ -41,7 +37,6 @@ export class ExternalScoresService {
   constructor(
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
-    private readonly config: ConfigService,
   ) {}
 
   private async fetchAnilistScorePercent(anilistId: number): Promise<number | null> {
@@ -89,31 +84,6 @@ export class ExternalScoresService {
     return typeof score === 'number' && Number.isFinite(score) ? score : null;
   }
 
-  private async fetchOmdbScore(imdbId: string, apiKey: string): Promise<number | null> {
-    const url = new URL('https://www.omdbapi.com/');
-    url.searchParams.set('apikey', apiKey.trim());
-    url.searchParams.set('i', imdbId.trim());
-
-    const res = await fetch(url.toString());
-    if (!res.ok) return null;
-
-    const json = (await res.json()) as { imdbRating?: string };
-    if (!json.imdbRating || json.imdbRating === 'N/A') return null;
-
-    const score = Number(json.imdbRating);
-    return Number.isFinite(score) ? score : null;
-  }
-
-  private async fetchImdbScore(imdbId: string): Promise<number | null> {
-    const cleanId = imdbId.trim();
-    if (!cleanId) return null;
-
-    const omdbApiKey = this.config.get<string>('externalScores.omdbApiKey')?.trim();
-    if (!omdbApiKey) return null;
-
-    return this.fetchOmdbScore(cleanId, omdbApiKey);
-  }
-
   async fetchExternalScores(ids: ExternalScoreIds): Promise<ExternalScores> {
     const anilistId =
       typeof ids.anilist_id === 'number' && ids.anilist_id > 0
@@ -121,15 +91,10 @@ export class ExternalScoresService {
         : null;
     const malId =
       typeof ids.mal_id === 'number' && ids.mal_id > 0 ? ids.mal_id : null;
-    const imdbId =
-      typeof ids.imdb_id === 'string' && ids.imdb_id.trim()
-        ? ids.imdb_id.trim()
-        : null;
 
-    const [anilistResult, malResult, imdbResult] = await Promise.allSettled([
+    const [anilistResult, malResult] = await Promise.allSettled([
       anilistId ? this.fetchAnilistScorePercent(anilistId) : Promise.resolve(null),
       malId ? this.fetchMalScore(malId) : Promise.resolve(null),
-      imdbId ? this.fetchImdbScore(imdbId) : Promise.resolve(null),
     ]);
 
     const unwrap = (r: PromiseSettledResult<number | null>): number | null =>
@@ -138,15 +103,13 @@ export class ExternalScoresService {
     return {
       anilistScore: unwrap(anilistResult),
       malScore: unwrap(malResult),
-      imdbScore: unwrap(imdbResult),
     };
   }
 
   private hasExternalIds(ids: ExternalScoreIds): boolean {
     return Boolean(
       (typeof ids.anilist_id === 'number' && ids.anilist_id > 0) ||
-        (typeof ids.mal_id === 'number' && ids.mal_id > 0) ||
-        (typeof ids.imdb_id === 'string' && ids.imdb_id.trim()),
+        (typeof ids.mal_id === 'number' && ids.mal_id > 0),
     );
   }
 
@@ -167,11 +130,6 @@ export class ExternalScoresService {
           ? overrideIds.mal_id
           : null;
     }
-    if (overrideIds?.imdb_id !== undefined) {
-      const imdbId =
-        typeof overrideIds.imdb_id === 'string' ? overrideIds.imdb_id.trim() : '';
-      anime.imdbId = imdbId || null;
-    }
   }
 
   async applyScoresToAnime(animeId: string, scores: ExternalScores): Promise<ExternalScores> {
@@ -183,9 +141,6 @@ export class ExternalScoresService {
     }
     if (scores.malScore != null) {
       anime.malScore = this.scoreToDb(scores.malScore);
-    }
-    if (scores.imdbScore != null) {
-      anime.imdbScore = this.scoreToDb(scores.imdbScore);
     }
     anime.updatedAt = new Date();
 
@@ -208,10 +163,6 @@ export class ExternalScoresService {
           requested: typeof ids.mal_id === 'number' && ids.mal_id > 0,
           ok: scores.malScore != null,
         },
-        imdb: {
-          requested: typeof ids.imdb_id === 'string' && ids.imdb_id.trim().length > 0,
-          ok: scores.imdbScore != null,
-        },
       },
     };
   }
@@ -232,21 +183,17 @@ export class ExternalScoresService {
           : anime.anilistId,
       mal_id:
         overrideIds?.mal_id !== undefined ? overrideIds.mal_id : anime.malId,
-      imdb_id:
-        overrideIds?.imdb_id !== undefined ? overrideIds.imdb_id : anime.imdbId,
     };
 
     if (!this.hasExternalIds(ids)) {
-      throw new BadRequestException('شناسه AniList / MAL / IMDb ثبت نشده');
+      throw new BadRequestException('شناسه AniList / MAL ثبت نشده');
     }
 
     const scores = await this.fetchExternalScores(ids);
 
     const hasOverrideFields = Boolean(
       overrideIds &&
-        (overrideIds.anilist_id !== undefined ||
-          overrideIds.mal_id !== undefined ||
-          overrideIds.imdb_id !== undefined),
+        (overrideIds.anilist_id !== undefined || overrideIds.mal_id !== undefined),
     );
 
     if (hasOverrideFields) {
@@ -270,10 +217,8 @@ export class ExternalScoresService {
 
     const rows = await this.animeRepo
       .createQueryBuilder('a')
-      .select(['a.id', 'a.anilistId', 'a.malId', 'a.imdbId'])
-      .where(
-        '(a.anilistId IS NOT NULL OR a.malId IS NOT NULL OR (a.imdbId IS NOT NULL AND a.imdbId <> \'\'))',
-      )
+      .select(['a.id', 'a.anilistId', 'a.malId'])
+      .where('(a.anilistId IS NOT NULL OR a.malId IS NOT NULL)')
       .orderBy('a.id', 'ASC')
       .skip(offset)
       .take(limit)
@@ -287,7 +232,6 @@ export class ExternalScoresService {
         const scores = await this.fetchExternalScores({
           anilist_id: row.anilistId,
           mal_id: row.malId,
-          imdb_id: row.imdbId,
         });
         await this.applyScoresToAnime(row.id, scores);
         updated += 1;

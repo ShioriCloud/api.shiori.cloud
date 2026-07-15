@@ -31,9 +31,6 @@ export default () => {
   bot: {
     apiToken: process.env.BOT_API_TOKEN ?? '',
   },
-  externalScores: {
-    omdbApiKey: process.env.OMDB_API_KEY ?? '',
-  },
   media: {
     storagePath: process.env.MEDIA_STORAGE_PATH ?? './data/uploads',
     publicBaseUrl: (

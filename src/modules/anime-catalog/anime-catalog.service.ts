@@ -66,11 +66,9 @@ export type AnimeCardDto = {
   isFeatured?: boolean;
   averageScore?: number;
   malScore?: number;
-  imdbScore?: number;
   shioriScore?: number;
   anilist_id?: number;
   mal_id?: number;
-  imdb_id?: string;
   favoriteCount?: number;
 };
 
@@ -159,11 +157,9 @@ export class AnimeCatalogService {
       isFeatured: anime.isFeatured,
       averageScore: this.num(anime.averageScore),
       malScore: this.num(anime.malScore),
-      imdbScore: this.num(anime.imdbScore),
       shioriScore: this.num(anime.shioriScore),
       anilist_id: anime.anilistId ?? undefined,
       mal_id: anime.malId ?? undefined,
-      imdb_id: anime.imdbId ?? undefined,
       favoriteCount,
     };
   }

@@ -10,7 +10,7 @@ export class ExternalScoresController {
 
   @Post('sync-external-scores')
   @UseGuards(CronAuthGuard)
-  @ApiOperation({ summary: 'Batch sync AniList/MAL/IMDb scores (cron)' })
+  @ApiOperation({ summary: 'Batch sync AniList/MAL scores (cron)' })
   syncExternalScores(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
