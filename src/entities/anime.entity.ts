@@ -115,6 +115,22 @@ export class Anime {
   @Column({ type: 'text', name: 'episode_pack_link', nullable: true })
   episodePackLink: string | null;
 
+  /** Hardsub badge language for public UI: `fa` | `en` */
+  @Column({ type: 'text', name: 'hardsub_language', default: 'fa' })
+  hardsubLanguage: string;
+
+  /** Release file kind: `softsub` | `hardsub` */
+  @Column({ type: 'text', name: 'video_file_type', default: 'softsub' })
+  videoFileType: string;
+
+  /** Available resolution: `480p` | `720p` | `1080p` */
+  @Column({ type: 'text', name: 'video_resolution', default: '1080p' })
+  videoResolution: string;
+
+  /** Encode label: `x264` | `x265` | `x265_10bit` | `bluray` */
+  @Column({ type: 'text', name: 'video_encode', default: 'x265_10bit' })
+  videoEncode: string;
+
   @Column({ type: 'uuid', name: 'prev_anime_id', nullable: true })
   prevAnimeId: string | null;
 

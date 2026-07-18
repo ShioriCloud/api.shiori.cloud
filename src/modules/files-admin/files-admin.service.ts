@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import { BotFile, BotFileDownloadEvent, FilePack, FilePackItem, Anime, AnimeEpisode, AnimeSubtitle, AnimeSubtitlePack } from '../../entities';
 import { isUuid } from '../../common/uuid.util';
 import {
@@ -218,7 +218,7 @@ export class FilesAdminService {
 
   private buildDailyTrend(
     rows: { day: string | Date; count: string | number }[],
-    days = 14,
+    days = 30,
   ): DownloadDailyTrendPoint[] {
     const counts = new Map<string, number>();
     for (const row of rows) {
@@ -285,7 +285,7 @@ export class FilesAdminService {
       .createQueryBuilder('e')
       .select(`(e.downloadedAt AT TIME ZONE 'Asia/Tehran')::date`, 'day')
       .addSelect('COUNT(*)', 'count')
-      .where(`e.downloadedAt >= NOW() - INTERVAL '13 days'`)
+      .where(`e.downloadedAt >= NOW() - INTERVAL '29 days'`)
       .groupBy('day')
       .orderBy('day', 'ASC')
       .getRawMany<{ day: string; count: string }>();
@@ -303,7 +303,7 @@ export class FilesAdminService {
           : since
             ? new Date(String(since)).toISOString()
             : null,
-      dailyTrend: this.buildDailyTrend(trendRows),
+      dailyTrend: this.buildDailyTrend(trendRows, 30),
     };
   }
 
@@ -362,12 +362,24 @@ export class FilesAdminService {
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
     fileExtension?: string,
   ) {
-    const ext = String(fileExtension ?? '')
-      .trim()
-      .replace(/^\./, '')
-      .toLowerCase();
-    if (!ext) return;
-    qb.andWhere('f.fileName ILIKE :fileExt', { fileExt: `%.${ext}` });
+    const exts = String(fileExtension ?? '')
+      .split(',')
+      .map((part) => part.trim().replace(/^\./, '').toLowerCase())
+      .filter(Boolean);
+    if (exts.length === 0) return;
+    if (exts.length === 1) {
+      qb.andWhere('f.fileName ILIKE :fileExt', { fileExt: `%.${exts[0]}` });
+      return;
+    }
+    qb.andWhere(
+      new Brackets((sub) => {
+        exts.forEach((ext, index) => {
+          const key = `fileExt${index}`;
+          if (index === 0) sub.where(`f.fileName ILIKE :${key}`, { [key]: `%.${ext}` });
+          else sub.orWhere(`f.fileName ILIKE :${key}`, { [key]: `%.${ext}` });
+        });
+      }),
+    );
   }
 
   private applyOrphanOnlyFilter(
@@ -869,17 +881,10 @@ export class FilesAdminService {
     ];
     if (!searchText && extraTerms.length === 0) return [];
 
-    const fileExtension = String(query.fileExtension ?? '')
-      .trim()
-      .replace(/^\./, '')
-      .toLowerCase();
-
     const fetchMatches = async (term: string, fileNameOnly: boolean) => {
       const qb = this.filesRepo.createQueryBuilder('f').take(limit);
       if (query.activeOnly) qb.andWhere('f.isActive = true');
-      if (fileExtension) {
-        qb.andWhere('f.fileName ILIKE :ext', { ext: `%.${fileExtension}` });
-      }
+      this.applyFileExtensionFilter(qb, query.fileExtension);
       this.applyFileSearch(qb, term, fileNameOnly);
       this.applyPickerOrder(qb);
       const rows = await qb.getMany();
@@ -926,24 +931,18 @@ export class FilesAdminService {
 
   async getRecentPicker(query: FilePickerRecentQueryDto): Promise<FilePickerItemRow[]> {
     const limit = query.limit && query.limit > 0 ? query.limit : 30;
-    const ext = String(query.fileExtension ?? '')
-      .trim()
-      .replace(/^\./, '')
-      .toLowerCase();
-    if (!ext) return [];
+    const exts = String(query.fileExtension ?? '')
+      .split(',')
+      .map((part) => part.trim().replace(/^\./, '').toLowerCase())
+      .filter(Boolean);
+    if (exts.length === 0) return [];
 
-    const qb = this.filesRepo
-      .createQueryBuilder('f')
-      .where('f.fileName ILIKE :ext', { ext: `%.${ext}` })
-      .take(limit);
+    const qb = this.filesRepo.createQueryBuilder('f').take(limit);
+    this.applyFileExtensionFilter(qb, query.fileExtension);
+    if (query.activeOnly !== false) qb.andWhere('f.isActive = true');
     this.applyPickerOrder(qb);
-
-    if (query.activeOnly !== false) {
-      qb.andWhere('f.isActive = true');
-    }
-
-    const files = await qb.getMany();
-    return files.map((f) => this.mapPicker(f));
+    const rows = await qb.getMany();
+    return rows.map((f) => this.mapPicker(f));
   }
 
   async listPacks(): Promise<FilePackRow[]> {

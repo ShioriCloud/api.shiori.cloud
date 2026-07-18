@@ -16,6 +16,30 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS shiori_score numeric(4, 1);
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS episode_pack_title text;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS episode_pack_link text;
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS hardsub_language text DEFAULT 'fa';
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS video_file_type text DEFAULT 'softsub';
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS video_resolution text DEFAULT '1080p';
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS video_encode text DEFAULT 'x265_10bit';
+
+UPDATE anime SET hardsub_language = 'fa' WHERE hardsub_language IS NULL OR hardsub_language = '';
+UPDATE anime SET video_file_type = 'softsub' WHERE video_file_type IS NULL OR video_file_type = '';
+UPDATE anime SET video_resolution = '1080p' WHERE video_resolution IS NULL OR video_resolution = '';
+UPDATE anime SET video_encode = 'x265_10bit' WHERE video_encode IS NULL OR video_encode = '';
+
+-- Existing anime with soft-subs → Persian hardsub badge
+UPDATE anime a
+SET hardsub_language = 'fa'
+WHERE COALESCE(a.hardsub_language, 'fa') <> 'fa'
+  AND (
+    EXISTS (
+      SELECT 1 FROM subtitles s
+      WHERE s.anime_id = a.id AND NULLIF(TRIM(s.subtitle_link), '') IS NOT NULL
+    )
+    OR EXISTS (
+      SELECT 1 FROM subtitle_packs p
+      WHERE p.anime_id = a.id AND NULLIF(TRIM(p.subtitle_link), '') IS NOT NULL
+    )
+  );
 
 -- Media library
 CREATE TABLE IF NOT EXISTS media_assets (

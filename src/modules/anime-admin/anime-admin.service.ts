@@ -8,6 +8,12 @@ import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import {
+  normalizeHardsubLanguage,
+  normalizeVideoEncode,
+  normalizeVideoFileType,
+  normalizeVideoResolution,
+} from '../../common/anime-media-meta.util';
+import {
   Anime,
   AnimeEpisode,
   AnimeGenre,
@@ -145,6 +151,10 @@ export class AnimeAdminService {
       end_date: anime.endDate,
       episode_pack_title: anime.episodePackTitle,
       episode_pack_link: anime.episodePackLink,
+      hardsub_language: normalizeHardsubLanguage(anime.hardsubLanguage),
+      video_file_type: normalizeVideoFileType(anime.videoFileType),
+      video_resolution: normalizeVideoResolution(anime.videoResolution),
+      video_encode: normalizeVideoEncode(anime.videoEncode),
       updated_at: anime.updatedAt?.toISOString?.() ?? null,
       last_edited_by: anime.lastEditedById ? Number(anime.lastEditedById) : null,
       last_editor: editor
@@ -195,6 +205,26 @@ export class AnimeAdminService {
     assign('episodePackLink', this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink'));
     assign('prevAnimeId', this.pick<string | null>(body, 'prev_anime_id', 'prevAnimeId'));
     assign('nextAnimeId', this.pick<string | null>(body, 'next_anime_id', 'nextAnimeId'));
+
+    const hardsubLanguage = this.pick<string | null>(body, 'hardsub_language', 'hardsubLanguage');
+    if (hardsubLanguage !== undefined) {
+      anime.hardsubLanguage = normalizeHardsubLanguage(hardsubLanguage);
+    }
+
+    const videoFileType = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
+    if (videoFileType !== undefined) {
+      anime.videoFileType = normalizeVideoFileType(videoFileType);
+    }
+
+    const videoResolution = this.pick<string | null>(body, 'video_resolution', 'videoResolution');
+    if (videoResolution !== undefined) {
+      anime.videoResolution = normalizeVideoResolution(videoResolution);
+    }
+
+    const videoEncode = this.pick<string | null>(body, 'video_encode', 'videoEncode');
+    if (videoEncode !== undefined) {
+      anime.videoEncode = normalizeVideoEncode(videoEncode);
+    }
 
     const malScore = this.pick<number | string | null>(body, 'mal_score', 'malScore');
     if (malScore !== undefined) anime.malScore = malScore == null ? null : String(malScore);
@@ -771,6 +801,15 @@ export class AnimeAdminService {
       title: saved.title,
       subtitle_link: saved.subtitleLink,
     };
+  }
+
+  async insertSubtitlesBatch(animeIdOrSlug: string, subtitles: Payload[]) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
+    const created = [];
+    for (const row of subtitles) {
+      created.push(await this.insertSubtitle({ ...row, anime_id: animeId }));
+    }
+    return created;
   }
 
   async updateSubtitle(id: string, body: Payload) {

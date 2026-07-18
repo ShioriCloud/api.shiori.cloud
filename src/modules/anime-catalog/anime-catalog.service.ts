@@ -6,6 +6,12 @@ import {
   requireAnimeId,
 } from '../../common/anime-ref.util';
 import {
+  normalizeHardsubLanguage,
+  normalizeVideoEncode,
+  normalizeVideoFileType,
+  normalizeVideoResolution,
+} from '../../common/anime-media-meta.util';
+import {
   Anime,
   AnimeEpisode,
   AnimeGenre,
@@ -70,6 +76,10 @@ export type AnimeCardDto = {
   anilist_id?: number;
   mal_id?: number;
   favoriteCount?: number;
+  hardsub_language?: 'fa' | 'en';
+  video_file_type?: 'softsub' | 'hardsub';
+  video_resolution?: '480p' | '720p' | '1080p';
+  video_encode?: 'x264' | 'x265' | 'x265_10bit' | 'bluray';
 };
 
 @Injectable()
@@ -161,6 +171,10 @@ export class AnimeCatalogService {
       anilist_id: anime.anilistId ?? undefined,
       mal_id: anime.malId ?? undefined,
       favoriteCount,
+      hardsub_language: normalizeHardsubLanguage(anime.hardsubLanguage),
+      video_file_type: normalizeVideoFileType(anime.videoFileType),
+      video_resolution: normalizeVideoResolution(anime.videoResolution),
+      video_encode: normalizeVideoEncode(anime.videoEncode),
     };
   }
 

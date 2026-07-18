@@ -234,6 +234,14 @@ export class AnimeAdminController {
     return this.animeAdminService.insertSubtitle(body);
   }
 
+  @Post('anime/:animeId/subtitles/batch')
+  insertSubtitlesBatch(
+    @Param('animeId') animeId: string,
+    @Body() body: { subtitles?: Array<Record<string, unknown>> },
+  ) {
+    return this.animeAdminService.insertSubtitlesBatch(animeId, body.subtitles ?? []);
+  }
+
   @Put('subtitles/:id')
   updateSubtitle(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.animeAdminService.updateSubtitle(id, body);
