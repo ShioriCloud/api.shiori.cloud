@@ -1,4 +1,6 @@
 export type VideoFileType = 'softsub' | 'hardsub'
+/** Episode download category shown as tabs in the mini-app */
+export type EpisodeVideoFileType = VideoFileType | 'free'
 export type VideoResolution = '480p' | '720p' | '1080p'
 export type VideoEncode = 'x264' | 'x265' | 'x265_10bit' | 'bluray'
 export type HardsubLanguage = 'fa' | 'en'
@@ -8,6 +10,13 @@ export const normalizeHardsubLanguage = (value: unknown): HardsubLanguage =>
 
 export const normalizeVideoFileType = (value: unknown): VideoFileType =>
   String(value ?? '').trim().toLowerCase() === 'hardsub' ? 'hardsub' : 'softsub'
+
+export const normalizeEpisodeVideoFileType = (value: unknown): EpisodeVideoFileType => {
+  const v = String(value ?? '').trim().toLowerCase()
+  if (v === 'hardsub') return 'hardsub'
+  if (v === 'free') return 'free'
+  return 'softsub'
+}
 
 export const normalizeVideoResolution = (value: unknown): VideoResolution => {
   const v = String(value ?? '').trim().toLowerCase()

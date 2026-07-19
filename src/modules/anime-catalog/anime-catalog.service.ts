@@ -6,6 +6,7 @@ import {
   requireAnimeId,
 } from '../../common/anime-ref.util';
 import {
+  normalizeEpisodeVideoFileType,
   normalizeHardsubLanguage,
   normalizeVideoEncode,
   normalizeVideoFileType,
@@ -118,6 +119,23 @@ export class AnimeCatalogService {
     return Number.isFinite(n) ? n : undefined;
   }
 
+  /** Live average of user ratings (source of truth for shioriScore in API responses). */
+  private async getLiveShioriScore(animeId: string): Promise<number | undefined> {
+    const raw = await this.userListRepo.manager.query(
+      `
+      SELECT ROUND(AVG(user_rating)::numeric, 1) AS avg
+      FROM user_anime_list
+      WHERE anime_id = $1
+        AND user_rating IS NOT NULL
+      `,
+      [animeId],
+    );
+    const avgRaw = Array.isArray(raw) ? raw[0]?.avg : null;
+    if (avgRaw == null || avgRaw === '') return undefined;
+    const n = Number(avgRaw);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
   private async loadGenresForAnimeIds(
     animeIds: string[],
   ): Promise<Map<string, AnimeGenreDto[]>> {
@@ -184,6 +202,29 @@ export class AnimeCatalogService {
     });
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
     return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
+  }
+
+  /** Lightweight cards for a set of anime ids (My List). Max 100. */
+  async listByIds(ids: string[]): Promise<AnimeCardDto[]> {
+    const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))].slice(
+      0,
+      100,
+    );
+    if (unique.length === 0) return [];
+
+    const rows = await this.animeRepo.find({ where: { id: In(unique) } });
+    if (rows.length === 0) return [];
+
+    const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
+    const rowMap = new Map(rows.map((r) => [r.id, r]));
+
+    return unique
+      .map((id) => {
+        const anime = rowMap.get(id);
+        if (!anime) return null;
+        return this.toCard(anime, genreMap.get(anime.id) ?? []);
+      })
+      .filter((x): x is AnimeCardDto => x != null);
   }
 
   async listFeatured(limit = 10): Promise<AnimeCardDto[]> {
@@ -490,18 +531,44 @@ export class AnimeCatalogService {
       where: { animeId: id },
     });
 
+    const liveShioriScore = await this.getLiveShioriScore(id);
+
     return {
       ...this.toCard(anime, genreMap.get(id) ?? [], favoriteCount),
+      // Prefer live average so UI never depends on a stale/missing cached column.
+      shioriScore: liveShioriScore ?? this.num(anime.shioriScore),
+      episodes: episodes.map((e) => {
+        const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
+        /**
+         * Launch: expose download links (open mini-app UX).
+         * Later (subscription gate): mask softsub/hardsub — only free keeps link;
+         * paid downloads go through POST /subscriptions/episode-download/claim.
+         *
+         * const MASK_PAID_DOWNLOAD_LINKS = true;
+         * const download_link =
+         *   MASK_PAID_DOWNLOAD_LINKS && video_file_type !== 'free'
+         *     ? null
+         *     : e.downloadLink;
+         */
+        const download_link = e.downloadLink;
+        return {
+          id: e.id,
+          episode_number: e.episodeNumber,
+          title: e.title,
+          download_link,
+          video_file_type,
+        };
+      }),
       episode_pack_title: anime.episodePackTitle,
+      /**
+       * Launch: expose pack link.
+       * Later: set episode_pack_link null + episode_pack_available true,
+       * claim via POST /subscriptions/episode-pack/claim.
+       */
       episode_pack_link: anime.episodePackLink,
+      episode_pack_available: Boolean(anime.episodePackLink?.trim()),
       prev_anime_id: anime.prevAnimeId,
       next_anime_id: anime.nextAnimeId,
-      episodes: episodes.map((e) => ({
-        id: e.id,
-        episode_number: e.episodeNumber,
-        title: e.title,
-        download_link: e.downloadLink,
-      })),
       subtitles: subtitles.map((s) => ({
         id: s.id,
         episode_number: s.episodeNumber,

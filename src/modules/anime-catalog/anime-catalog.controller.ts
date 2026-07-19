@@ -128,6 +128,16 @@ export class AnimeCatalogController {
     return this.animeCatalogService.listFavoriteCounts();
   }
 
+  @Get('by-ids')
+  @ApiOperation({ summary: 'Anime cards by ids (batch, for My List)' })
+  listByIds(@Query('ids') ids?: string) {
+    const list = String(ids ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return this.animeCatalogService.listByIds(list);
+  }
+
   @Get('anilist/batch')
   @ApiOperation({ summary: 'Resolve local anime ids by AniList ids (batch)' })
   resolveAnilistBatch(@Query('ids') ids?: string) {

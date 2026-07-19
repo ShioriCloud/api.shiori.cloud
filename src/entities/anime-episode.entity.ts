@@ -18,6 +18,10 @@ export class AnimeEpisode {
   @Column({ type: 'text', name: 'download_link', nullable: true })
   downloadLink: string | null;
 
+  /** Download category: `softsub` | `hardsub` | `free` */
+  @Column({ type: 'text', name: 'video_file_type', default: 'softsub' })
+  videoFileType: string;
+
   @ManyToOne(() => Anime, (anime) => anime.episodes, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'anime_id' })
   anime: Anime;

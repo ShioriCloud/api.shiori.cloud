@@ -1,3 +1,4 @@
+import { Transform, Type } from 'class-transformer';
 import { IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateIf } from 'class-validator';
 
 export class UpsertUserAnimeListDto {
@@ -6,12 +7,18 @@ export class UpsertUserAnimeListDto {
   anime_id!: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
   @Min(0)
   episodes_watched?: number;
 
   @IsOptional()
-  @ValidateIf((_, value) => value !== null)
+  @Transform(({ value }) => {
+    if (value === null || value === undefined || value === '') return value ?? null
+    const n = Number(value)
+    return Number.isFinite(n) ? n : value
+  })
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsNumber()
   @Min(1)
   @Max(10)

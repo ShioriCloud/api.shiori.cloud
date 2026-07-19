@@ -27,6 +27,7 @@ import {
   UserAnimeListEntry,
   UserNotification,
   UserPortalSession,
+  DownloadTokenLedger,
 } from './entities';
 import { AnimeCatalogModule } from './modules/anime-catalog/anime-catalog.module';
 import { AnimeNotificationsModule } from './modules/anime-notifications/anime-notifications.module';
@@ -42,6 +43,8 @@ import { NotificationsAdminModule } from './modules/notifications-admin/notifica
 import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
 import { MediaAdminModule } from './modules/media-admin/media-admin.module';
 import { BotModule } from './modules/bot/bot.module';
+import { DownloadTokensModule } from './modules/download-tokens/download-tokens.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
@@ -81,6 +84,7 @@ import { TelegramModule } from './telegram/telegram.module';
           NotificationCampaign,
           TelegramLinkToken,
           MediaAsset,
+          DownloadTokenLedger,
         ],
       }),
     }),
@@ -99,6 +103,8 @@ import { TelegramModule } from './telegram/telegram.module';
     NotificationsAdminModule,
     MediaAdminModule,
     BotModule,
+    DownloadTokensModule,
+    SubscriptionsModule,
   ],
 })
 export class AppModule {}

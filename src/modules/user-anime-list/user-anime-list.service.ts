@@ -48,6 +48,8 @@ export class UserAnimeListService {
           ? null
           : String(body.user_rating);
 
+    const ratingTouched = body.user_rating !== undefined;
+
     if (!row) {
       row = this.listRepo.create({
         telegramUserId,
@@ -61,7 +63,17 @@ export class UserAnimeListService {
     }
 
     await this.listRepo.save(row);
-    return { ok: true };
+
+    const favoriteCount = await this.listRepo.count({ where: { animeId } });
+    const shioriScore = ratingTouched
+      ? await this.refreshShioriScore(animeId)
+      : undefined;
+
+    return {
+      ok: true as const,
+      favorite_count: favoriteCount,
+      ...(shioriScore !== undefined ? { shiori_score: shioriScore } : {}),
+    };
   }
 
   async remove(telegramUserId: string, animeId: string) {
@@ -69,6 +81,42 @@ export class UserAnimeListService {
     if (!result.affected) {
       throw new NotFoundException('List entry not found');
     }
-    return { ok: true };
+    const favoriteCount = await this.listRepo.count({ where: { animeId } });
+    const shioriScore = await this.refreshShioriScore(animeId);
+    return {
+      ok: true as const,
+      favorite_count: favoriteCount,
+      shiori_score: shioriScore,
+    };
+  }
+
+  /** Recompute cached average; returns the new score (or null when none). */
+  private async refreshShioriScore(animeId: string): Promise<number | null> {
+    const raw = await this.listRepo.manager.query(
+      `
+      SELECT ROUND(AVG(user_rating)::numeric, 1) AS avg
+      FROM user_anime_list
+      WHERE anime_id = $1
+        AND user_rating IS NOT NULL
+      `,
+      [animeId],
+    );
+
+    const avgRaw = Array.isArray(raw) ? raw[0]?.avg : null;
+    const avg =
+      avgRaw != null && avgRaw !== '' && Number.isFinite(Number(avgRaw))
+        ? Number(avgRaw)
+        : null;
+
+    await this.listRepo.manager.query(
+      `
+      UPDATE anime
+      SET shiori_score = $2
+      WHERE id = $1
+      `,
+      [animeId, avg],
+    );
+
+    return avg;
   }
 }

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Headers,
   Post,
   UnauthorizedException,
@@ -44,5 +45,36 @@ export class TelegramUsersController {
 
     const session = await this.telegramUsersService.registerVisit(body);
     return { ok: true, ...session };
+  }
+
+  @Post('dev-session')
+  @ApiOperation({
+    summary: 'DEV ONLY: issue session without Telegram (ALLOW_DEV_AUTH=true)',
+  })
+  async devSession(@Body() body?: { telegram_user_id?: number | string }) {
+    if (!this.config.get<boolean>('allowDevAuth')) {
+      throw new ForbiddenException('dev auth disabled');
+    }
+
+    const configured = String(
+      this.config.get<string>('devTelegramUserId') ?? '90344148',
+    ).trim();
+    const fromBody = String(body?.telegram_user_id ?? '').trim();
+    const telegramUserId = fromBody || configured;
+    if (!/^\d+$/.test(telegramUserId)) {
+      throw new UnauthorizedException('invalid telegram_user_id');
+    }
+
+    const session = await this.telegramUsersService.registerVisit({
+      telegram_user_id: Number(telegramUserId),
+      first_name: 'Dev',
+      last_name: null,
+      username: null,
+      language_code: 'fa',
+      photo_url: null,
+      is_premium: false,
+    });
+
+    return { ok: true, telegram_user_id: Number(telegramUserId), ...session };
   }
 }

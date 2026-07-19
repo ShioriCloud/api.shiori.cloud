@@ -52,4 +52,12 @@ export class TelegramUser {
 
   @Column({ type: 'boolean', name: 'notify_telegram_dm', default: true })
   notifyTelegramDm: boolean;
+
+  /** Free-download tokens (1 per free episode claim). New users start at 10. */
+  @Column({ type: 'int', name: 'download_token_balance', default: 10 })
+  downloadTokenBalance: number;
+
+  /** Monthly subscription end; active while expires_at > now(). */
+  @Column({ type: 'timestamptz', name: 'subscription_expires_at', nullable: true })
+  subscriptionExpiresAt: Date | null;
 }

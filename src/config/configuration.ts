@@ -38,5 +38,19 @@ export default () => {
     ).replace(/\/$/, ''),
     maxUploadBytes: parseInt(process.env.MEDIA_MAX_UPLOAD_BYTES ?? String(10 * 1024 * 1024), 10),
   },
+  /** Local browser testing without Telegram Mini App (never enable in prod). */
+  allowDevAuth: process.env.ALLOW_DEV_AUTH === 'true',
+  devTelegramUserId: process.env.DEV_TELEGRAM_USER_ID ?? '90344148',
+  daramet: {
+    webhookSecret: process.env.DARAMET_WEBHOOK_SECRET ?? '',
+    donateUrl: process.env.DARAMET_DONATE_URL ?? '',
+  },
+  subscription: {
+    monthlyAmountIrr: parseInt(
+      process.env.SUBSCRIPTION_MONTHLY_AMOUNT_IRR ?? '150000',
+      10,
+    ),
+    days: parseInt(process.env.SUBSCRIPTION_DAYS ?? '30', 10),
+  },
 };
 };

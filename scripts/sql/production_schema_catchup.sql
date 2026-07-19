@@ -14,6 +14,39 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS last_edited_by bigint;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS prev_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS shiori_score numeric(4, 1);
+
+-- Keep anime.shiori_score in sync with user_anime_list.user_rating
+CREATE OR REPLACE FUNCTION public.refresh_anime_shiori_score()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  target_anime_id UUID;
+BEGIN
+  target_anime_id := COALESCE(NEW.anime_id, OLD.anime_id);
+
+  UPDATE anime
+  SET shiori_score = (
+    SELECT ROUND(AVG(user_rating)::numeric, 1)
+    FROM user_anime_list
+    WHERE anime_id = target_anime_id
+      AND user_rating IS NOT NULL
+  )
+  WHERE id = target_anime_id;
+
+  RETURN COALESCE(NEW, OLD);
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_user_anime_list_shiori_score ON user_anime_list;
+CREATE TRIGGER trg_user_anime_list_shiori_score
+  AFTER INSERT OR UPDATE OF user_rating OR DELETE
+  ON user_anime_list
+  FOR EACH ROW
+  EXECUTE FUNCTION public.refresh_anime_shiori_score();
+
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS episode_pack_title text;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS episode_pack_link text;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS hardsub_language text DEFAULT 'fa';
@@ -82,3 +115,43 @@ CREATE INDEX IF NOT EXISTS idx_file_download_events_downloaded_at
 
 CREATE INDEX IF NOT EXISTS idx_file_download_events_file_key_downloaded_at
   ON file_download_events (file_key, downloaded_at DESC);
+
+-- Episode download category for mini-app tabs (softsub | hardsub | free)
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS video_file_type text DEFAULT 'softsub';
+UPDATE episodes e
+SET video_file_type = CASE
+  WHEN a.video_file_type = 'hardsub' THEN 'hardsub'
+  ELSE 'softsub'
+END
+FROM anime a
+WHERE e.anime_id = a.id
+  AND (e.video_file_type IS NULL OR e.video_file_type = '');
+UPDATE episodes SET video_file_type = 'softsub' WHERE video_file_type IS NULL OR video_file_type = '';
+
+-- Same episode number may exist once per type (softsub / hardsub / free)
+DROP INDEX IF EXISTS episodes_unique_per_anime_episode;
+CREATE UNIQUE INDEX episodes_unique_per_anime_episode
+  ON episodes (anime_id, episode_number, COALESCE(video_file_type, 'softsub'));
+
+-- Free-download token wallet (mini-app «رایگان» tab)
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS download_token_balance integer NOT NULL DEFAULT 10;
+
+CREATE TABLE IF NOT EXISTS download_token_ledger (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_user_id bigint NOT NULL,
+  delta integer NOT NULL,
+  balance_after integer NOT NULL,
+  reason text NOT NULL,
+  ref_type text,
+  ref_id text,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_download_token_ledger_user_created
+  ON download_token_ledger (telegram_user_id, created_at DESC);
+
+-- Monthly subscription (softsub/hardsub access)
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS subscription_expires_at timestamptz;

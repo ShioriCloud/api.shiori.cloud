@@ -22,3 +22,4 @@ export { BotSetting } from './bot-setting.entity';
 export { FilePack } from './file-pack.entity';
 export { FilePackItem } from './file-pack-item.entity';
 export { MediaAsset } from './media-asset.entity';
+export { DownloadTokenLedger } from './download-token-ledger.entity';

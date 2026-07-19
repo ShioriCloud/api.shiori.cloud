@@ -8,6 +8,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import {
+  normalizeEpisodeVideoFileType,
   normalizeHardsubLanguage,
   normalizeVideoEncode,
   normalizeVideoFileType,
@@ -513,17 +514,28 @@ export class AnimeAdminService {
       episode_number: e.episodeNumber ?? 0,
       title: e.title,
       download_link: e.downloadLink,
+      video_file_type: normalizeEpisodeVideoFileType(e.videoFileType),
     }));
   }
 
   async insertEpisode(body: Payload) {
     const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
     const animeId = await this.resolveAnimeRecordId(animeIdRaw);
+    const videoFileTypeRaw = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
+    let videoFileType = videoFileTypeRaw != null ? normalizeEpisodeVideoFileType(videoFileTypeRaw) : null;
+    if (!videoFileType) {
+      const anime = await this.animeRepo.findOne({
+        where: { id: animeId },
+        select: { id: true, videoFileType: true },
+      });
+      videoFileType = normalizeEpisodeVideoFileType(anime?.videoFileType);
+    }
     const episode = this.episodeRepo.create({
       animeId,
       episodeNumber: Number(this.pick(body, 'episode_number', 'episodeNumber') ?? 0),
       title: (this.pick<string | null>(body, 'title', 'title') ?? null),
       downloadLink: (this.pick<string | null>(body, 'download_link', 'downloadLink') ?? null),
+      videoFileType,
     });
     const saved = await this.episodeRepo.save(episode);
 
@@ -542,6 +554,7 @@ export class AnimeAdminService {
       episode_number: saved.episodeNumber ?? 0,
       title: saved.title,
       download_link: saved.downloadLink,
+      video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
     };
   }
 
@@ -563,12 +576,17 @@ export class AnimeAdminService {
     if (title !== undefined) episode.title = title;
     const link = this.pick<string | null>(body, 'download_link', 'downloadLink');
     if (link !== undefined) episode.downloadLink = link;
+    const videoFileType = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
+    if (videoFileType !== undefined) {
+      episode.videoFileType = normalizeEpisodeVideoFileType(videoFileType);
+    }
     const saved = await this.episodeRepo.save(episode);
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,
       title: saved.title,
       download_link: saved.downloadLink,
+      video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
     };
   }
 

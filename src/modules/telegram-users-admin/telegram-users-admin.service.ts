@@ -30,6 +30,9 @@ export type TelegramUserAdminRow = {
   last_seen_at: string;
   visit_count: number;
   favorites_count: number;
+  download_token_balance: number;
+  subscription_expires_at: string | null;
+  subscription_active: boolean;
 };
 
 export type TelegramUsersOverview = {
@@ -86,6 +89,14 @@ export class TelegramUsersAdminService {
       last_seen_at: user.lastSeenAt?.toISOString?.() ?? '',
       visit_count: user.visitCount ?? 0,
       favorites_count: favoritesCount,
+      download_token_balance: user.downloadTokenBalance ?? 0,
+      subscription_expires_at: user.subscriptionExpiresAt
+        ? user.subscriptionExpiresAt.toISOString()
+        : null,
+      subscription_active: Boolean(
+        user.subscriptionExpiresAt &&
+          user.subscriptionExpiresAt.getTime() > Date.now(),
+      ),
     };
   }
 
