@@ -28,7 +28,12 @@ import {
   UserNotification,
   UserPortalSession,
   DownloadTokenLedger,
+  HomeBlock,
+  SponsorCampaign,
+  SponsorJoinEvent,
 } from './entities';
+import { HomeModule } from './modules/home/home.module';
+import { HomeAdminModule } from './modules/home-admin/home-admin.module';
 import { AnimeCatalogModule } from './modules/anime-catalog/anime-catalog.module';
 import { AnimeNotificationsModule } from './modules/anime-notifications/anime-notifications.module';
 import { AppAuthModule } from './modules/app-auth/app-auth.module';
@@ -43,6 +48,7 @@ import { NotificationsAdminModule } from './modules/notifications-admin/notifica
 import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
 import { MediaAdminModule } from './modules/media-admin/media-admin.module';
 import { BotModule } from './modules/bot/bot.module';
+import { MembershipAdminModule } from './modules/membership-admin/membership-admin.module';
 import { DownloadTokensModule } from './modules/download-tokens/download-tokens.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { TelegramModule } from './telegram/telegram.module';
@@ -85,9 +91,14 @@ import { TelegramModule } from './telegram/telegram.module';
           TelegramLinkToken,
           MediaAsset,
           DownloadTokenLedger,
+          HomeBlock,
+          SponsorCampaign,
+          SponsorJoinEvent,
         ],
       }),
     }),
+    HomeModule,
+    HomeAdminModule,
     TelegramModule,
     HealthModule,
     AnimeCatalogModule,
@@ -103,6 +114,7 @@ import { TelegramModule } from './telegram/telegram.module';
     NotificationsAdminModule,
     MediaAdminModule,
     BotModule,
+    MembershipAdminModule,
     DownloadTokensModule,
     SubscriptionsModule,
   ],

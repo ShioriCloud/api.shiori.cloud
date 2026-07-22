@@ -59,6 +59,8 @@ export class AnimeCatalogController {
 
     @Query('airingStatus') airingStatus?: string,
 
+    @Query('hardsubLanguage') hardsubLanguage?: string,
+
     @Query('sortBy') sortBy?: string,
 
     @Query('limit') limit?: string,
@@ -83,6 +85,13 @@ export class AnimeCatalogController {
 
       airingStatus: airingStatus ?? null,
     };
+
+    const hardsubKey = String(hardsubLanguage ?? '')
+      .trim()
+      .toLowerCase();
+    if (hardsubKey === 'fa' || hardsubKey === 'en') {
+      params.hardsubLanguage = hardsubKey;
+    }
 
     const allowedSort = ['created_at', 'popular', 'title', 'score'] as const;
     if (sortBy && allowedSort.includes(sortBy as (typeof allowedSort)[number])) {

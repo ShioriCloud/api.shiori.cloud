@@ -69,7 +69,13 @@ export class AnimeAdminService {
   }
 
   private toGenre(g: AnimeGenre) {
-    return { id: g.id, slug: g.slug, name_en: g.nameEn, name_fa: g.nameFa };
+    return {
+      id: g.id,
+      slug: g.slug,
+      name_en: g.nameEn,
+      name_fa: g.nameFa,
+      image_url: g.imageUrl,
+    };
   }
 
   private toStudio(s: AnimeStudio & { _animeCount?: number }) {
@@ -629,14 +635,24 @@ export class AnimeAdminService {
       if (body.name_fa !== undefined || body.nameFa !== undefined) {
         genre.nameFa = (body.name_fa as string) ?? (body.nameFa as string) ?? null;
       }
+      if (body.image_url !== undefined || body.imageUrl !== undefined) {
+        const raw = (body.image_url as string) ?? (body.imageUrl as string) ?? null;
+        genre.imageUrl = raw != null && String(raw).trim() ? String(raw).trim() : null;
+      }
       return this.toGenre(await this.genreRepo.save(genre));
     }
     const slug = String(body.slug ?? '').trim();
     if (!slug) throw new BadRequestException('slug is required');
+    const imageRaw =
+      (body.image_url as string) ?? (body.imageUrl as string) ?? null;
     const genre = this.genreRepo.create({
       slug,
       nameEn: (body.name_en as string) ?? (body.nameEn as string) ?? null,
       nameFa: (body.name_fa as string) ?? (body.nameFa as string) ?? null,
+      imageUrl:
+        imageRaw != null && String(imageRaw).trim()
+          ? String(imageRaw).trim()
+          : null,
     });
     return this.toGenre(await this.genreRepo.save(genre));
   }

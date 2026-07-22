@@ -23,3 +23,6 @@ export { FilePack } from './file-pack.entity';
 export { FilePackItem } from './file-pack-item.entity';
 export { MediaAsset } from './media-asset.entity';
 export { DownloadTokenLedger } from './download-token-ledger.entity';
+export { HomeBlock } from './home-block.entity';
+export { SponsorCampaign } from './sponsor-campaign.entity';
+export { SponsorJoinEvent } from './sponsor-join-event.entity';

@@ -15,6 +15,9 @@ export class AnimeGenre {
   @Column({ type: 'text', name: 'name_fa', nullable: true })
   nameFa: string | null;
 
+  @Column({ type: 'text', name: 'image_url', nullable: true })
+  imageUrl: string | null;
+
   @OneToMany(() => AnimeGenreLink, (link) => link.genre)
   animeLinks: AnimeGenreLink[];
 }

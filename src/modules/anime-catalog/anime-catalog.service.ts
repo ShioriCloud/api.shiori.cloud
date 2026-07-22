@@ -41,6 +41,7 @@ export type AnimeSearchParams = {
   genreSlugs?: string[];
   format?: string | null;
   airingStatus?: string | null;
+  hardsubLanguage?: 'fa' | 'en' | null;
   sortBy?: 'created_at' | 'popular' | 'title' | 'score';
   limit?: number;
   offset?: number;
@@ -345,6 +346,15 @@ export class AnimeCatalogService {
     if (airingStatus) {
       qb = qb.andWhere('anime.airing_status = :airingStatusFilter', {
         airingStatusFilter: airingStatus,
+      });
+    }
+
+    const hardsubLanguage = params.hardsubLanguage
+      ? String(params.hardsubLanguage).trim().toLowerCase()
+      : '';
+    if (hardsubLanguage === 'fa' || hardsubLanguage === 'en') {
+      qb = qb.andWhere('anime.hardsub_language = :hardsubLanguage', {
+        hardsubLanguage,
       });
     }
 

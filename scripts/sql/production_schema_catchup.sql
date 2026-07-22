@@ -155,3 +155,51 @@ CREATE INDEX IF NOT EXISTS idx_download_token_ledger_user_created
 -- Monthly subscription (softsub/hardsub access)
 ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS subscription_expires_at timestamptz;
+
+-- Genre cover for explore grid
+ALTER TABLE genres ADD COLUMN IF NOT EXISTS image_url text;
+
+-- Home builder: custom blocks after fixed mini-app sections
+CREATE TABLE IF NOT EXISTS home_blocks (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  type text NOT NULL CHECK (type IN ('curated_slider', 'cta_banner', 'cta_card')),
+  title text,
+  subtitle text,
+  description text,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_home_blocks_sort_order ON home_blocks (sort_order ASC);
+CREATE INDEX IF NOT EXISTS idx_home_blocks_active_sort ON home_blocks (is_active, sort_order ASC);
+
+-- Sponsor channel campaigns (tel-bot membership gate)
+CREATE TABLE IF NOT EXISTS sponsor_campaigns (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  channel_id text NOT NULL,
+  channel_username text,
+  title text NOT NULL,
+  target_count integer NOT NULL CHECK (target_count > 0),
+  joined_count integer NOT NULL DEFAULT 0 CHECK (joined_count >= 0),
+  is_active boolean NOT NULL DEFAULT true,
+  sort_order integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sponsor_campaigns_active_sort
+  ON sponsor_campaigns (is_active, sort_order ASC);
+
+CREATE TABLE IF NOT EXISTS sponsor_join_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id uuid NOT NULL REFERENCES sponsor_campaigns (id) ON DELETE CASCADE,
+  telegram_user_id bigint NOT NULL,
+  verified_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (campaign_id, telegram_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sponsor_join_events_campaign_verified
+  ON sponsor_join_events (campaign_id, verified_at DESC);

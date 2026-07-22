@@ -26,6 +26,8 @@ import {
   UpdateBotFileByMessageDto,
   UpsertBotFileDto,
 } from './bot.dto';
+import { AttributeSponsorJoinDto } from '../sponsor-campaigns/sponsor-campaigns.dto';
+import { SponsorCampaignsService } from '../sponsor-campaigns/sponsor-campaigns.service';
 import { BotService } from './bot.service';
 
 @ApiTags('Bot')
@@ -33,7 +35,10 @@ import { BotService } from './bot.service';
 @UseGuards(BotAuthGuard)
 @ApiHeader({ name: 'x-bot-token', required: true })
 export class BotController {
-  constructor(private readonly botService: BotService) {}
+  constructor(
+    private readonly botService: BotService,
+    private readonly sponsorCampaigns: SponsorCampaignsService,
+  ) {}
 
   @Get('health')
   @ApiOperation({ summary: 'Health check for tel-bot startup' })
@@ -128,5 +133,20 @@ export class BotController {
   @ApiOperation({ summary: 'Delete bot setting' })
   deleteSetting(@Param('key') key: string): Promise<BotSettingDeletedResponseDto> {
     return this.botService.deleteSetting(key);
+  }
+
+  @Get('sponsor-campaigns/active')
+  @ApiOperation({ summary: 'List active sponsor campaigns for membership gate' })
+  listActiveSponsorCampaigns() {
+    return this.sponsorCampaigns.listActiveCampaigns();
+  }
+
+  @Post('sponsor-campaigns/:id/attribute-join')
+  @ApiOperation({ summary: 'Attribute a verified channel join to a campaign' })
+  attributeSponsorJoin(
+    @Param('id') id: string,
+    @Body() body: AttributeSponsorJoinDto,
+  ) {
+    return this.sponsorCampaigns.attributeJoin(id, body);
   }
 }

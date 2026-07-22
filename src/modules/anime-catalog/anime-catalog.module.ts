@@ -36,5 +36,6 @@ import { AnimeCatalogService } from './anime-catalog.service';
   ],
   controllers: [AnimeCatalogController],
   providers: [AnimeCatalogService],
+  exports: [AnimeCatalogService],
 })
 export class AnimeCatalogModule {}
