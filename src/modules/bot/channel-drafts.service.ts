@@ -52,8 +52,12 @@ export class ChannelDraftsService {
     const key = String(idOrSlug ?? '').trim();
     if (!key) throw new BadRequestException('anime id/slug required');
 
-    const byId = await this.animeRepo.findOne({ where: { id: key } });
-    if (byId) return byId;
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (uuidRe.test(key)) {
+      const byId = await this.animeRepo.findOne({ where: { id: key } });
+      if (byId) return byId;
+    }
 
     const bySlug = await this.animeRepo.findOne({ where: { slug: key } });
     if (bySlug) return bySlug;
@@ -156,7 +160,18 @@ export class ChannelDraftsService {
       anime.channelLatestMessageId = String(dto.channelMessageId);
     }
     anime.updatedAt = new Date();
-    await this.animeRepo.save(anime);
+    try {
+      await this.animeRepo.save(anime);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`bindTemplate save failed: ${msg}`);
+      if (/channel_cover_file_id|channel_caption_html|channel_id|does not exist/i.test(msg)) {
+        throw new BadRequestException(
+          'ستون‌های قالب کانال روی جدول anime نیست — production_schema_catchup.sql را اجرا کن',
+        );
+      }
+      throw err;
+    }
 
     return {
       ok: true,
