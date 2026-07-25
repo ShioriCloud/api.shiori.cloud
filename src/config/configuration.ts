@@ -21,6 +21,11 @@ export default () => {
       .map((value) => value.trim())
       .filter(Boolean),
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? 'ShioriUploadBot',
+    adminUserId: process.env.ADMIN_USER_ID ?? '',
+    postsChannelId:
+      process.env.PUBLIC_POSTS_CHANNEL_ID ||
+      process.env.ADDITIONAL_CHANNEL_ID ||
+      '',
   },
   miniApp: {
     baseUrl: process.env.MINI_APP_URL ?? '',

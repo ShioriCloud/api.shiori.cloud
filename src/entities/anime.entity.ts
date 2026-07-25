@@ -135,6 +135,22 @@ export class Anime {
   @Column({ type: 'text', name: 'video_encode', default: 'x265_10bit' })
   videoEncode: string;
 
+  /** Telegram file_id for channel post cover (bound template). */
+  @Column({ type: 'text', name: 'channel_cover_file_id', nullable: true })
+  channelCoverFileId: string | null;
+
+  /** Last channel caption as HTML (bound template). */
+  @Column({ type: 'text', name: 'channel_caption_html', nullable: true })
+  channelCaptionHtml: string | null;
+
+  /** Latest published channel message id for this anime. */
+  @Column({ type: 'bigint', name: 'channel_latest_message_id', nullable: true })
+  channelLatestMessageId: string | null;
+
+  /** Telegram channel id used for this anime's posts. */
+  @Column({ type: 'text', name: 'channel_id', nullable: true })
+  channelId: string | null;
+
   @Column({ type: 'uuid', name: 'prev_anime_id', nullable: true })
   prevAnimeId: string | null;
 

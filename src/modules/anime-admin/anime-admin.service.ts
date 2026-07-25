@@ -31,6 +31,7 @@ import {
   UserNotification,
 } from '../../entities';
 import { NotificationsAdminService } from '../notifications-admin/notifications-admin.service';
+import { ChannelDraftsService } from '../bot/channel-drafts.service';
 
 type Payload = Record<string, unknown>;
 
@@ -53,6 +54,7 @@ export class AnimeAdminService {
     @InjectRepository(UserNotification) private readonly userNotificationRepo: Repository<UserNotification>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notificationsAdminService: NotificationsAdminService,
+    private readonly channelDraftsService: ChannelDraftsService,
   ) {}
 
   private pick<T>(body: Payload, snake: string, camel: string): T | undefined {
@@ -555,12 +557,27 @@ export class AnimeAdminService {
         .catch(() => undefined);
     }
 
+    let channelDraft: Awaited<
+      ReturnType<ChannelDraftsService['createFromEpisode']>
+    > | null = null;
+    if (episodeNumber > 0 && String(saved.downloadLink ?? '').trim()) {
+      try {
+        channelDraft = await this.channelDraftsService.createFromEpisode(
+          animeId,
+          episodeNumber,
+        );
+      } catch {
+        channelDraft = null;
+      }
+    }
+
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,
       title: saved.title,
       download_link: saved.downloadLink,
       video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
+      channel_draft: channelDraft,
     };
   }
 

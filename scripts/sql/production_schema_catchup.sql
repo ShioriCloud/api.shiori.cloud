@@ -204,3 +204,28 @@ CREATE TABLE IF NOT EXISTS sponsor_join_events (
 
 CREATE INDEX IF NOT EXISTS idx_sponsor_join_events_campaign_verified
   ON sponsor_join_events (campaign_id, verified_at DESC);
+
+-- Channel post templates (admin draft → channel publish)
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS channel_cover_file_id text;
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS channel_caption_html text;
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS channel_latest_message_id bigint;
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS channel_id text;
+
+CREATE TABLE IF NOT EXISTS channel_post_drafts (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  anime_id uuid NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
+  episode_number integer NOT NULL,
+  proposed_caption text NOT NULL,
+  cover_file_id text,
+  status text NOT NULL DEFAULT 'pending',
+  admin_preview_message_id bigint,
+  admin_preview_chat_id bigint,
+  published_message_id bigint,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT channel_post_drafts_status_check
+    CHECK (status IN ('pending', 'published', 'rejected'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_channel_post_drafts_anime_created
+  ON channel_post_drafts (anime_id, created_at DESC);

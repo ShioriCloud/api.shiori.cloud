@@ -31,6 +31,7 @@ import {
   HomeBlock,
   SponsorCampaign,
   SponsorJoinEvent,
+  ChannelPostDraft,
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
@@ -94,6 +95,7 @@ import { TelegramModule } from './telegram/telegram.module';
           HomeBlock,
           SponsorCampaign,
           SponsorJoinEvent,
+          ChannelPostDraft,
         ],
       }),
     }),

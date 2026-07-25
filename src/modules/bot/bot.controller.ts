@@ -29,6 +29,7 @@ import {
 import { AttributeSponsorJoinDto } from '../sponsor-campaigns/sponsor-campaigns.dto';
 import { SponsorCampaignsService } from '../sponsor-campaigns/sponsor-campaigns.service';
 import { BotService } from './bot.service';
+import { ChannelDraftsService } from './channel-drafts.service';
 
 @ApiTags('Bot')
 @Controller('bot')
@@ -38,6 +39,7 @@ export class BotController {
   constructor(
     private readonly botService: BotService,
     private readonly sponsorCampaigns: SponsorCampaignsService,
+    private readonly channelDrafts: ChannelDraftsService,
   ) {}
 
   @Get('health')
@@ -148,5 +150,74 @@ export class BotController {
     @Body() body: AttributeSponsorJoinDto,
   ) {
     return this.sponsorCampaigns.attributeJoin(id, body);
+  }
+
+  @Put('anime/:idOrSlug/channel-template')
+  @ApiOperation({ summary: 'Bind channel post template to catalog anime' })
+  bindChannelTemplate(
+    @Param('idOrSlug') idOrSlug: string,
+    @Body()
+    body: {
+      cover_file_id?: string;
+      coverFileId?: string;
+      caption_html?: string;
+      captionHtml?: string;
+      caption_text?: string;
+      captionText?: string;
+      caption_entities?: Array<{
+        type: string;
+        offset: number;
+        length: number;
+        url?: string;
+      }>;
+      captionEntities?: Array<{
+        type: string;
+        offset: number;
+        length: number;
+        url?: string;
+      }>;
+      channel_id?: string;
+      channelId?: string;
+      channel_message_id?: number | string;
+      channelMessageId?: number | string;
+    },
+  ) {
+    return this.channelDrafts.bindTemplate({
+      animeIdOrSlug: idOrSlug,
+      coverFileId: body.cover_file_id ?? body.coverFileId ?? '',
+      captionHtml: body.caption_html ?? body.captionHtml,
+      captionText: body.caption_text ?? body.captionText,
+      captionEntities: body.caption_entities ?? body.captionEntities,
+      channelId: body.channel_id ?? body.channelId ?? '',
+      channelMessageId: body.channel_message_id ?? body.channelMessageId,
+    });
+  }
+
+  @Post('channel-drafts/from-episode')
+  @ApiOperation({ summary: 'Create channel post draft from a catalog episode' })
+  createDraftFromEpisode(
+    @Body() body: { anime_id?: string; animeId?: string; episode_number?: number; episodeNumber?: number },
+  ) {
+    const animeId = String(body.anime_id ?? body.animeId ?? '').trim();
+    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    return this.channelDrafts.createFromEpisode(animeId, episodeNumber);
+  }
+
+  @Get('channel-drafts/:id')
+  @ApiOperation({ summary: 'Get channel post draft' })
+  getChannelDraft(@Param('id') id: string) {
+    return this.channelDrafts.getDraft(id);
+  }
+
+  @Post('channel-drafts/:id/publish')
+  @ApiOperation({ summary: 'Publish channel post draft to posts channel' })
+  publishChannelDraft(@Param('id') id: string) {
+    return this.channelDrafts.publishDraft(id);
+  }
+
+  @Post('channel-drafts/:id/reject')
+  @ApiOperation({ summary: 'Reject channel post draft' })
+  rejectChannelDraft(@Param('id') id: string) {
+    return this.channelDrafts.rejectDraft(id);
   }
 }
