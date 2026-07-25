@@ -79,6 +79,10 @@ export class Anime {
   })
   shioriScore: string | null;
 
+  /** Cumulative detail-page views (popularity signal). */
+  @Column({ type: 'int', name: 'view_count', default: 0 })
+  viewCount: number;
+
   @Column({ type: 'int', name: 'anilist_id', nullable: true })
   anilistId: number | null;
 

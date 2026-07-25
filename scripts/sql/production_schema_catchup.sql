@@ -14,6 +14,7 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS last_edited_by bigint;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS prev_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS shiori_score numeric(4, 1);
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS view_count integer NOT NULL DEFAULT 0;
 
 -- Keep anime.shiori_score in sync with user_anime_list.user_rating
 CREATE OR REPLACE FUNCTION public.refresh_anime_shiori_score()

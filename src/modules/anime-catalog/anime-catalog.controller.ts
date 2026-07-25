@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
@@ -19,7 +19,7 @@ export class AnimeCatalogController {
   }
 
   @Get('popular')
-  @ApiOperation({ summary: 'Popular anime by favorite count' })
+  @ApiOperation({ summary: 'Popular anime by view count' })
   listPopular(@Query('limit') limit?: number) {
     return this.animeCatalogService.listPopular(limit ? Number(limit) : 20);
   }
@@ -188,6 +188,13 @@ export class AnimeCatalogController {
   @ApiOperation({ summary: 'Favorite count for one anime' })
   getFavoriteCount(@Param('id') id: string) {
     return this.animeCatalogService.getFavoriteCount(id);
+  }
+
+  @Post(':id/view')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Increment anime detail view count' })
+  recordView(@Param('id') id: string) {
+    return this.animeCatalogService.recordView(id);
   }
 
   @Get(':id/similar')

@@ -78,6 +78,7 @@ export type AnimeCardDto = {
   anilist_id?: number;
   mal_id?: number;
   favoriteCount?: number;
+  viewCount?: number;
   hardsub_language?: 'fa' | 'en';
   video_file_type?: 'softsub' | 'hardsub';
   video_resolution?: '480p' | '720p' | '1080p';
@@ -160,11 +161,7 @@ export class AnimeCatalogService {
     return map;
   }
 
-  private toCard(
-    anime: Anime,
-    genres: AnimeGenreDto[],
-    favoriteCount?: number,
-  ): AnimeCardDto {
+  private toCard(anime: Anime, genres: AnimeGenreDto[]): AnimeCardDto {
     return {
       id: anime.id,
       slug: anime.slug,
@@ -189,7 +186,7 @@ export class AnimeCatalogService {
       shioriScore: this.num(anime.shioriScore),
       anilist_id: anime.anilistId ?? undefined,
       mal_id: anime.malId ?? undefined,
-      favoriteCount,
+      viewCount: Number(anime.viewCount) || 0,
       hardsub_language: normalizeHardsubLanguage(anime.hardsubLanguage),
       video_file_type: normalizeVideoFileType(anime.videoFileType),
       video_resolution: normalizeVideoResolution(anime.videoResolution),
@@ -239,35 +236,22 @@ export class AnimeCatalogService {
   }
 
   async listPopular(limit = 20): Promise<AnimeCardDto[]> {
-    const counts = await this.userListRepo
-      .createQueryBuilder('list')
-      .select('list.anime_id', 'animeId')
-      .addSelect('COUNT(*)', 'count')
-      .groupBy('list.anime_id')
-      .orderBy('count', 'DESC')
-      .limit(limit)
-      .getRawMany<{ animeId: string; count: string }>();
+    const rows = await this.animeRepo.find({
+      order: { viewCount: 'DESC', createdAt: 'DESC' },
+      take: limit,
+    });
+    const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
+    return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
+  }
 
-    if (counts.length === 0) {
-      return this.listRecent(limit);
-    }
-
-    const ids = counts.map((c) => c.animeId);
-    const rows = await this.animeRepo.find({ where: { id: In(ids) } });
-    const rowMap = new Map(rows.map((r) => [r.id, r]));
-    const genreMap = await this.loadGenresForAnimeIds(ids);
-
-    return counts
-      .map((c) => {
-        const anime = rowMap.get(c.animeId);
-        if (!anime) return null;
-        return this.toCard(
-          anime,
-          genreMap.get(anime.id) ?? [],
-          Number(c.count),
-        );
-      })
-      .filter((x): x is AnimeCardDto => x != null);
+  async recordView(idOrSlug: string): Promise<{ viewCount: number }> {
+    const animeId = await requireAnimeId(this.animeRepo, idOrSlug);
+    await this.animeRepo.increment({ id: animeId }, 'viewCount', 1);
+    const updated = await this.animeRepo.findOne({
+      where: { id: animeId },
+      select: { id: true, viewCount: true },
+    });
+    return { viewCount: Number(updated?.viewCount) || 0 };
   }
 
   async listRecent(limit = 20): Promise<AnimeCardDto[]> {
@@ -393,21 +377,12 @@ export class AnimeCatalogService {
     sortBy?: AnimeSearchParams['sortBy'],
   ) {
     switch (sortBy) {
-      case 'popular': {
-        qb.addSelect(
-          (subQuery) =>
-            subQuery
-              .select('COUNT(*)::int')
-              .from(UserAnimeListEntry, 'listCount')
-              .where('listCount.animeId = anime.id'),
-          'popular_count',
-        );
-        qb.orderBy('popular_count', 'DESC', 'NULLS LAST').addOrderBy(
+      case 'popular':
+        qb.orderBy('anime.viewCount', 'DESC').addOrderBy(
           'anime.createdAt',
           'DESC',
         );
         break;
-      }
       case 'title':
         qb.orderBy('anime.title', 'ASC').addOrderBy('anime.createdAt', 'DESC');
         break;
@@ -537,14 +512,10 @@ export class AnimeCatalogService {
       };
     }
 
-    const favoriteCount = await this.userListRepo.count({
-      where: { animeId: id },
-    });
-
     const liveShioriScore = await this.getLiveShioriScore(id);
 
     return {
-      ...this.toCard(anime, genreMap.get(id) ?? [], favoriteCount),
+      ...this.toCard(anime, genreMap.get(id) ?? []),
       // Prefer live average so UI never depends on a stale/missing cached column.
       shioriScore: liveShioriScore ?? this.num(anime.shioriScore),
       episodes: episodes.map((e) => {
