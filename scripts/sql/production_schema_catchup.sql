@@ -229,3 +229,44 @@ CREATE TABLE IF NOT EXISTS channel_post_drafts (
 
 CREATE INDEX IF NOT EXISTS idx_channel_post_drafts_anime_created
   ON channel_post_drafts (anime_id, created_at DESC);
+
+-- Support tickets (mini-app ↔ admin portal)
+CREATE TABLE IF NOT EXISTS support_tickets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  telegram_user_id bigint NOT NULL,
+  category text NOT NULL,
+  subject text NOT NULL,
+  status text NOT NULL DEFAULT 'open',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT support_tickets_category_check
+    CHECK (category IN (
+      'bug_report',
+      'app_improvement',
+      'feature_request',
+      'account_issue',
+      'other'
+    )),
+  CONSTRAINT support_tickets_status_check
+    CHECK (status IN ('open', 'answered', 'closed'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_tickets_telegram_user
+  ON support_tickets (telegram_user_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_support_tickets_status_updated
+  ON support_tickets (status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS support_ticket_messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  ticket_id uuid NOT NULL REFERENCES support_tickets (id) ON DELETE CASCADE,
+  author_telegram_user_id bigint NOT NULL,
+  author_role text NOT NULL,
+  body text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT support_ticket_messages_author_role_check
+    CHECK (author_role IN ('user', 'staff'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket
+  ON support_ticket_messages (ticket_id, created_at ASC);

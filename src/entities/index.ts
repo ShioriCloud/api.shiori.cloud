@@ -27,3 +27,5 @@ export { HomeBlock } from './home-block.entity';
 export { SponsorCampaign } from './sponsor-campaign.entity';
 export { SponsorJoinEvent } from './sponsor-join-event.entity';
 export { ChannelPostDraft } from './channel-post-draft.entity';
+export { SupportTicket } from './support-ticket.entity';
+export { SupportTicketMessage } from './support-ticket-message.entity';

@@ -32,6 +32,8 @@ import {
   SponsorCampaign,
   SponsorJoinEvent,
   ChannelPostDraft,
+  SupportTicket,
+  SupportTicketMessage,
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
@@ -52,6 +54,7 @@ import { BotModule } from './modules/bot/bot.module';
 import { MembershipAdminModule } from './modules/membership-admin/membership-admin.module';
 import { DownloadTokensModule } from './modules/download-tokens/download-tokens.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
@@ -96,6 +99,8 @@ import { TelegramModule } from './telegram/telegram.module';
           SponsorCampaign,
           SponsorJoinEvent,
           ChannelPostDraft,
+          SupportTicket,
+          SupportTicketMessage,
         ],
       }),
     }),
@@ -119,6 +124,7 @@ import { TelegramModule } from './telegram/telegram.module';
     MembershipAdminModule,
     DownloadTokensModule,
     SubscriptionsModule,
+    SupportTicketsModule,
   ],
 })
 export class AppModule {}

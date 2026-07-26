@@ -1,0 +1,54 @@
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+
+export const SUPPORT_TICKET_CATEGORIES = [
+  'bug_report',
+  'app_improvement',
+  'feature_request',
+  'account_issue',
+  'other',
+] as const;
+
+export const SUPPORT_TICKET_STATUSES = ['open', 'answered', 'closed'] as const;
+
+export class CreateSupportTicketDto {
+  @IsIn([...SUPPORT_TICKET_CATEGORIES])
+  category!: (typeof SUPPORT_TICKET_CATEGORIES)[number];
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  subject!: string;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(4000)
+  body!: string;
+}
+
+export class ReplySupportTicketDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  body!: string;
+}
+
+export class UpdateSupportTicketStatusDto {
+  @IsIn([...SUPPORT_TICKET_STATUSES])
+  status!: (typeof SUPPORT_TICKET_STATUSES)[number];
+}
+
+export class ListSupportTicketsAdminQueryDto {
+  @IsOptional()
+  @IsIn([...SUPPORT_TICKET_STATUSES])
+  status?: (typeof SUPPORT_TICKET_STATUSES)[number];
+
+  @IsOptional()
+  @IsIn([...SUPPORT_TICKET_CATEGORIES])
+  category?: (typeof SUPPORT_TICKET_CATEGORIES)[number];
+}
