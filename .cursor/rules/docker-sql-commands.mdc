@@ -1,0 +1,39 @@
+---
+description: Always write production SQL commands for Docker Postgres with Shiori DB credentials
+alwaysApply: true
+---
+
+# Docker SQL commands (production)
+
+When giving the user SQL / migration / schema commands to run on the server:
+
+1. **Always** write them as `docker exec` (or `docker compose exec`) commands — never bare `psql` against localhost.
+2. Use these credentials and container defaults unless the user overrides them:
+
+| Variable | Value |
+|----------|--------|
+| Container | `shiori-postgres` (fallback: discover with `docker ps \| grep postgres`) |
+| Host (inside Docker network) | `postgres` |
+| Port | `5432` |
+| User | `dawn` |
+| Database | `shiori-cloud` |
+| Password | `64C5D5ow5D5Xiv5YLNcrnQfG` |
+
+## Preferred patterns
+
+```bash
+# File from repo
+docker exec -i shiori-postgres \
+  env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
+  psql -U dawn -d shiori-cloud \
+  < scripts/sql/production_schema_catchup.sql
+
+# Inline SQL
+docker exec -i shiori-postgres \
+  env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
+  psql -U dawn -d shiori-cloud <<'SQL'
+-- statements here
+SQL
+```
+
+Do **not** use `shiori` / `shiori` as user/db for production server commands unless the user says the local compose stack is the target.
