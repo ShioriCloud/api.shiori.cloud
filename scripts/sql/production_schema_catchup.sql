@@ -214,7 +214,7 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS channel_id text;
 CREATE TABLE IF NOT EXISTS channel_post_drafts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   anime_id uuid NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
-  episode_number integer NOT NULL,
+  episode_number numeric(8,2) NOT NULL,
   proposed_caption text NOT NULL,
   cover_file_id text,
   status text NOT NULL DEFAULT 'pending',
@@ -270,3 +270,24 @@ CREATE TABLE IF NOT EXISTS support_ticket_messages (
 
 CREATE INDEX IF NOT EXISTS idx_support_ticket_messages_ticket
   ON support_ticket_messages (ticket_id, created_at ASC);
+
+-- Allow half-episodes (2.5, 5.5, …) on episode / subtitle numbers
+ALTER TABLE episodes
+  ALTER COLUMN episode_number TYPE numeric(8,2)
+  USING episode_number::numeric(8,2);
+
+ALTER TABLE subtitles
+  ALTER COLUMN episode_number TYPE numeric(8,2)
+  USING episode_number::numeric(8,2);
+
+ALTER TABLE channel_post_drafts
+  ALTER COLUMN episode_number TYPE numeric(8,2)
+  USING episode_number::numeric(8,2);
+
+ALTER TABLE user_notifications
+  ALTER COLUMN episode_number TYPE numeric(8,2)
+  USING episode_number::numeric(8,2);
+
+ALTER TABLE notification_campaigns
+  ALTER COLUMN episode_number TYPE numeric(8,2)
+  USING episode_number::numeric(8,2);

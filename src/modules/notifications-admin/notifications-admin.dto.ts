@@ -2,6 +2,7 @@ import { Transform } from 'class-transformer';
 import {
   IsBoolean,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -22,9 +23,9 @@ export class NotifyEpisodeReleaseDto {
   @IsUUID()
   animeId!: string;
 
-  @Transform(({ value }) => Number.parseInt(String(value), 10))
-  @IsInt()
-  @Min(1)
+  @Transform(({ value }) => Number(value))
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
   episodeNumber!: number;
 
   @IsOptional()

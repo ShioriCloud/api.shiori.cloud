@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { Anime } from './anime.entity';
 import { TelegramUser } from './telegram-user.entity';
+import { decimalNumberTransformer } from './decimal-number.transformer';
 
 @Entity('notification_campaigns')
 export class NotificationCampaign {
@@ -19,7 +20,14 @@ export class NotificationCampaign {
   @Column({ type: 'uuid', name: 'anime_id', nullable: true })
   animeId: string | null;
 
-  @Column({ type: 'int', name: 'episode_number', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'episode_number',
+    nullable: true,
+    transformer: decimalNumberTransformer,
+  })
   episodeNumber: number | null;
 
   @Column({ type: 'text' })

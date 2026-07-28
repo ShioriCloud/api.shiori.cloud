@@ -1,5 +1,6 @@
 import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
 import { Anime } from './anime.entity';
+import { decimalNumberRequiredTransformer } from './decimal-number.transformer';
 
 @Entity('subtitles')
 export class AnimeSubtitle {
@@ -9,7 +10,13 @@ export class AnimeSubtitle {
   @Column({ type: 'uuid', name: 'anime_id' })
   animeId: string;
 
-  @Column({ type: 'int', name: 'episode_number' })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'episode_number',
+    transformer: decimalNumberRequiredTransformer,
+  })
   episodeNumber: number;
 
   @Column({ type: 'text', nullable: true })

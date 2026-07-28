@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { NotificationCampaign } from './notification-campaign.entity';
+import { decimalNumberTransformer } from './decimal-number.transformer';
 
 @Entity('user_notifications')
 export class UserNotification {
@@ -30,7 +31,14 @@ export class UserNotification {
   @Column({ type: 'uuid', name: 'anime_id', nullable: true })
   animeId: string | null;
 
-  @Column({ type: 'int', name: 'episode_number', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'episode_number',
+    nullable: true,
+    transformer: decimalNumberTransformer,
+  })
   episodeNumber: number | null;
 
   @Column({ type: 'uuid', name: 'campaign_id', nullable: true })

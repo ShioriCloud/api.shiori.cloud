@@ -51,12 +51,19 @@ export class AnimeAdminController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('filter') filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured',
+    @Query('year') year?: string,
+    @Query('season') season?: string,
+    @Query('sortBy')
+    sortBy?: 'updated_at' | 'created_at' | 'title' | 'year_desc' | 'year_asc',
   ) {
     return this.animeAdminService.listAnime({
       search,
       page: page ? Number(page) : undefined,
       limit: limit ? Number(limit) : undefined,
       filter,
+      year: year ? Number(year) : undefined,
+      season,
+      sortBy,
     });
   }
 

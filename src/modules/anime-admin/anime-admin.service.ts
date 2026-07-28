@@ -349,10 +349,13 @@ export class AnimeAdminService {
     page?: number;
     limit?: number;
     filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured';
+    year?: number;
+    season?: string;
+    sortBy?: 'updated_at' | 'created_at' | 'title' | 'year_desc' | 'year_asc';
   }) {
     const page = Math.max(1, params?.page ?? 1);
     const limit = Math.min(5000, Math.max(1, params?.limit ?? 50));
-    const qb = this.animeRepo.createQueryBuilder('a').orderBy('a.createdAt', 'DESC');
+    const qb = this.animeRepo.createQueryBuilder('a');
     if (params?.search?.trim()) {
       const q = `%${params.search.trim()}%`;
       qb.andWhere(
@@ -367,6 +370,36 @@ export class AnimeAdminService {
       qb.andWhere('EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
     } else if (filter === 'no-episodes') {
       qb.andWhere('NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
+    }
+    if (Number.isFinite(params?.year) && Number(params?.year) > 0) {
+      qb.andWhere('a.year = :year', { year: Number(params?.year) });
+    }
+    if (params?.season?.trim() && params.season !== 'all') {
+      qb.andWhere('UPPER(a.season) = :season', { season: params.season.trim().toUpperCase() });
+    }
+    switch (params?.sortBy ?? 'updated_at') {
+      case 'created_at':
+        qb.orderBy('a.createdAt', 'DESC').addOrderBy('a.updatedAt', 'DESC');
+        break;
+      case 'title':
+        qb.orderBy('LOWER(a.title)', 'ASC').addOrderBy('a.updatedAt', 'DESC');
+        break;
+      case 'year_asc':
+        qb
+          .orderBy('a.year', 'ASC', 'NULLS LAST')
+          .addOrderBy('LOWER(a.title)', 'ASC')
+          .addOrderBy('a.updatedAt', 'DESC');
+        break;
+      case 'year_desc':
+        qb
+          .orderBy('a.year', 'DESC', 'NULLS LAST')
+          .addOrderBy('LOWER(a.title)', 'ASC')
+          .addOrderBy('a.updatedAt', 'DESC');
+        break;
+      case 'updated_at':
+      default:
+        qb.orderBy('a.updatedAt', 'DESC').addOrderBy('a.createdAt', 'DESC');
+        break;
     }
     const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
     const genreMap = await this.loadGenresByAnimeIds(rows.map((r) => r.id));
@@ -391,11 +424,21 @@ export class AnimeAdminService {
       .select('COUNT(DISTINCT e.anime_id)', 'count')
       .getRawOne<{ count: string }>();
     const withEpisodes = Number(withEpisodesRaw?.count ?? 0);
+    const yearRows = await this.animeRepo
+      .createQueryBuilder('a')
+      .select('DISTINCT a.year', 'year')
+      .where('a.year IS NOT NULL')
+      .orderBy('a.year', 'DESC')
+      .getRawMany<{ year: string | number }>();
+    const years = yearRows
+      .map((row) => Math.trunc(Number(row.year)))
+      .filter((year) => Number.isFinite(year) && year > 0);
     return {
       total,
       featured,
       withEpisodes,
       withoutEpisodes: Math.max(0, total - withEpisodes),
+      years,
     };
   }
 
