@@ -12,7 +12,7 @@ When giving the user SQL / migration / schema commands to run on the server:
 
 | Variable | Value |
 |----------|--------|
-| Container | `shiori-postgres` (fallback: discover with `docker ps \| grep postgres`) |
+| Container | `postgres` (confirmed on prod: `docker ps \| grep postgres` → name `postgres`) |
 | Host (inside Docker network) | `postgres` |
 | Port | `5432` |
 | User | `dawn` |
@@ -23,13 +23,13 @@ When giving the user SQL / migration / schema commands to run on the server:
 
 ```bash
 # File from repo
-docker exec -i shiori-postgres \
+docker exec -i postgres \
   env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
   psql -U dawn -d shiori-cloud \
   < scripts/sql/production_schema_catchup.sql
 
 # Inline SQL
-docker exec -i shiori-postgres \
+docker exec -i postgres \
   env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
   psql -U dawn -d shiori-cloud <<'SQL'
 -- statements here

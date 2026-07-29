@@ -151,8 +151,9 @@ export class AnimeAdminController {
   async updateEpisodePack(
     @Param('animeId') animeId: string,
     @Body() body: Record<string, unknown>,
+    @Req() req: PortalAuthedRequest,
   ) {
-    await this.animeAdminService.updateEpisodePack(animeId, body);
+    await this.animeAdminService.updateEpisodePack(animeId, body, req.portalTelegramUserId);
     return { ok: true };
   }
 

@@ -163,6 +163,10 @@ export class Anime {
   @Column({ type: 'timestamptz', name: 'updated_at', default: () => 'now()' })
   updatedAt: Date;
 
+  /** Only bumped by admin panel edits — not by mini-app views or other public updates. */
+  @Column({ type: 'timestamptz', name: 'last_edited_at', nullable: true })
+  lastEditedAt: Date | null;
+
   @Column({ type: 'bigint', name: 'last_edited_by', nullable: true })
   lastEditedById: string | null;
 

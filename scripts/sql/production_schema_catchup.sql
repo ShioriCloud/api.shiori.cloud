@@ -11,6 +11,11 @@ UPDATE anime SET created_at = COALESCE(created_at, now());
 UPDATE anime SET updated_at = COALESCE(updated_at, now());
 
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS last_edited_by bigint;
+-- Admin-only "last edit" for dash list sort (not bumped by mini-app views / score sync).
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS last_edited_at timestamptz;
+UPDATE anime
+SET last_edited_at = COALESCE(last_edited_at, updated_at, created_at, now())
+WHERE last_edited_at IS NULL;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS prev_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS shiori_score numeric(4, 1);

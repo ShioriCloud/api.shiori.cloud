@@ -165,6 +165,7 @@ export class AnimeAdminService {
       video_resolution: normalizeVideoResolution(anime.videoResolution),
       video_encode: normalizeVideoEncode(anime.videoEncode),
       updated_at: anime.updatedAt?.toISOString?.() ?? null,
+      last_edited_at: anime.lastEditedAt?.toISOString?.() ?? null,
       last_edited_by: anime.lastEditedById ? Number(anime.lastEditedById) : null,
       last_editor: editor
         ? {
@@ -177,6 +178,13 @@ export class AnimeAdminService {
       prev_anime_id: anime.prevAnimeId,
       next_anime_id: anime.nextAnimeId,
     };
+  }
+
+  private markAdminEdited(anime: Anime, editorId?: string) {
+    const now = new Date();
+    anime.updatedAt = now;
+    anime.lastEditedAt = now;
+    if (editorId) anime.lastEditedById = editorId;
   }
 
   private applyAnimeFields(anime: Anime, body: Payload) {
@@ -379,26 +387,29 @@ export class AnimeAdminService {
     }
     switch (params?.sortBy ?? 'updated_at') {
       case 'created_at':
-        qb.orderBy('a.createdAt', 'DESC').addOrderBy('a.updatedAt', 'DESC');
+        qb.orderBy('a.createdAt', 'DESC').addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'title':
-        qb.orderBy('LOWER(a.title)', 'ASC').addOrderBy('a.updatedAt', 'DESC');
+        qb.orderBy('LOWER(a.title)', 'ASC').addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'year_asc':
         qb
           .orderBy('a.year', 'ASC', 'NULLS LAST')
           .addOrderBy('LOWER(a.title)', 'ASC')
-          .addOrderBy('a.updatedAt', 'DESC');
+          .addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'year_desc':
         qb
           .orderBy('a.year', 'DESC', 'NULLS LAST')
           .addOrderBy('LOWER(a.title)', 'ASC')
-          .addOrderBy('a.updatedAt', 'DESC');
+          .addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'updated_at':
       default:
-        qb.orderBy('a.updatedAt', 'DESC').addOrderBy('a.createdAt', 'DESC');
+        // Admin "آخرین ویرایش" — ignore mini-app view bumps on updated_at.
+        qb
+          .orderBy('a.lastEditedAt', 'DESC', 'NULLS LAST')
+          .addOrderBy('a.createdAt', 'DESC');
         break;
     }
     const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
@@ -465,10 +476,7 @@ export class AnimeAdminService {
       body,
     );
     await this.assertAnimeSlugAvailable(anime.slug);
-    if (editorId) {
-      anime.lastEditedById = editorId;
-      anime.updatedAt = new Date();
-    }
+    this.markAdminEdited(anime, editorId);
     const saved = await this.animeRepo.save(anime);
     const genreSlugs = this.pick<string[]>(body, 'genre_slugs', 'genreSlugs');
     if (genreSlugs) await this.replaceGenreSlugs(saved.id, genreSlugs);
@@ -482,10 +490,7 @@ export class AnimeAdminService {
     const id = anime.id;
     this.applyAnimeFields(anime, body);
     await this.assertAnimeSlugAvailable(anime.slug, id);
-    if (editorId) {
-      anime.lastEditedById = editorId;
-      anime.updatedAt = new Date();
-    }
+    this.markAdminEdited(anime, editorId);
     await this.animeRepo.save(anime);
     const genreSlugs = this.pick<string[]>(body, 'genre_slugs', 'genreSlugs');
     if (genreSlugs) await this.replaceGenreSlugs(id, genreSlugs);
@@ -662,10 +667,11 @@ export class AnimeAdminService {
     await this.episodeRepo.remove(episode);
   }
 
-  async updateEpisodePack(animeIdOrSlug: string, body: Payload) {
+  async updateEpisodePack(animeIdOrSlug: string, body: Payload, editorId?: string) {
     const anime = await this.requireAnime(animeIdOrSlug);
     anime.episodePackTitle = this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle') ?? null;
     anime.episodePackLink = this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink') ?? null;
+    this.markAdminEdited(anime, editorId);
     await this.animeRepo.save(anime);
   }
 

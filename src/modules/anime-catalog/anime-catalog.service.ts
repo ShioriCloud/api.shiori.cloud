@@ -246,12 +246,12 @@ export class AnimeCatalogService {
 
   async recordView(idOrSlug: string): Promise<{ viewCount: number }> {
     const animeId = await requireAnimeId(this.animeRepo, idOrSlug);
-    await this.animeRepo.increment({ id: animeId }, 'viewCount', 1);
-    const updated = await this.animeRepo.findOne({
-      where: { id: animeId },
-      select: { id: true, viewCount: true },
-    });
-    return { viewCount: Number(updated?.viewCount) || 0 };
+    // Only bump view_count — never touch updated_at / last_edited_at (admin list sort).
+    const rows = await this.animeRepo.query(
+      `UPDATE anime SET view_count = COALESCE(view_count, 0) + 1 WHERE id = $1 RETURNING view_count`,
+      [animeId],
+    );
+    return { viewCount: Number(rows?.[0]?.view_count) || 0 };
   }
 
   async listRecent(limit = 20): Promise<AnimeCardDto[]> {
