@@ -514,10 +514,27 @@ export class AnimeCatalogService {
 
     const liveShioriScore = await this.getLiveShioriScore(id);
 
+    // Match toCard default: null airing_status is treated as RELEASING in the UI.
+    const status = String(anime.airingStatus ?? 'RELEASING')
+      .trim()
+      .toUpperCase();
+    const anilistIdRaw = anime.anilistId != null ? Number(anime.anilistId) : NaN;
+    const anilistId =
+      Number.isFinite(anilistIdRaw) && anilistIdRaw > 0 ? anilistIdRaw : null;
+    let next_airing: { episode: number; airing_at: number } | null = null;
+    if (status === 'RELEASING' && anilistId != null) {
+      try {
+        next_airing = await this.fetchAnilistNextAiring(anilistId);
+      } catch {
+        next_airing = null;
+      }
+    }
+
     return {
       ...this.toCard(anime, genreMap.get(id) ?? []),
       // Prefer live average so UI never depends on a stale/missing cached column.
       shioriScore: liveShioriScore ?? this.num(anime.shioriScore),
+      next_airing,
       episodes: episodes.map((e) => {
         const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
         /**
@@ -822,6 +839,60 @@ export class AnimeCatalogService {
       6: 'شنبه',
     };
     return dayMap[d.getDay()] ?? '';
+  }
+
+  private async fetchAnilistNextAiring(
+    anilistId: number,
+  ): Promise<{ episode: number; airing_at: number } | null> {
+    const query = `
+      query ($id: Int) {
+        Media(id: $id, type: ANIME) {
+          nextAiringEpisode { airingAt episode }
+        }
+      }
+    `;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+
+    try {
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          variables: { id: anilistId },
+        }),
+        signal: controller.signal,
+      });
+
+      if (!res.ok) return null;
+
+      const json = (await res.json()) as {
+        errors?: Array<{ message?: string }>;
+        data?: {
+          Media?: {
+            nextAiringEpisode?: { airingAt?: number; episode?: number } | null;
+          } | null;
+        };
+      };
+      if (json?.errors?.length) return null;
+
+      const ep = json?.data?.Media?.nextAiringEpisode;
+      if (!ep) return null;
+
+      const airingAt = Number(ep.airingAt);
+      const episode = Number(ep.episode);
+      if (!Number.isFinite(airingAt) || airingAt <= 0) return null;
+      if (!Number.isFinite(episode)) return null;
+
+      return { episode, airing_at: airingAt };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private async fetchAnilistReleasingMedia(
