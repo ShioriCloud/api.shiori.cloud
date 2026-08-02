@@ -90,6 +90,19 @@ export type AnimeCardDto = {
 export class AnimeCatalogService {
   private readonly logger = new Logger(AnimeCatalogService.name);
 
+  /** In-memory airing schedule cache (shared across requests; Nest singleton). */
+  private airingScheduleCache: {
+    key: string;
+    expiresAt: number;
+    payload: {
+      schedule: ReturnType<AnimeCatalogService['buildEmptyAiringSchedule']>;
+      currentSeason: string;
+      currentYear: number;
+    };
+  } | null = null;
+
+  private readonly AIRING_SCHEDULE_TTL_MS = 2 * 60 * 60 * 1000;
+
   constructor(
     @InjectRepository(Anime) private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeGenre)
@@ -765,11 +778,31 @@ export class AnimeCatalogService {
 
   async listAiringSchedule() {
     const emptySchedule = this.buildEmptyAiringSchedule();
-    const currentSeason = this.getCurrentAiringSeason();
-    const currentYear = new Date().getFullYear();
+    const { season: currentSeason, year: currentYear } =
+      this.getCurrentAiringSeasonInTehran();
+    const cacheKey = `${currentSeason}:${currentYear}`;
+    const now = Date.now();
+
+    const freshCache =
+      this.airingScheduleCache &&
+      this.airingScheduleCache.key === cacheKey &&
+      this.airingScheduleCache.expiresAt > now
+        ? this.airingScheduleCache
+        : null;
+    if (freshCache) {
+      return freshCache.payload;
+    }
+
+    const staleCache =
+      this.airingScheduleCache && this.airingScheduleCache.key === cacheKey
+        ? this.airingScheduleCache
+        : null;
 
     try {
-      const mediaList = await this.fetchAnilistReleasingMedia(currentSeason, currentYear);
+      const mediaList = await this.fetchAnilistReleasingMedia(
+        currentSeason,
+        currentYear,
+      );
       const schedule = { ...emptySchedule };
 
       for (const m of mediaList) {
@@ -849,10 +882,26 @@ export class AnimeCatalogService {
         }
       }
 
-      return { schedule, currentSeason, currentYear };
+      const itemCount = Object.values(schedule).reduce(
+        (sum, list) => sum + list.length,
+        0,
+      );
+      const payload = { schedule, currentSeason, currentYear };
+      if (itemCount > 0) {
+        this.airingScheduleCache = {
+          key: cacheKey,
+          expiresAt: now + this.AIRING_SCHEDULE_TTL_MS,
+          payload,
+        };
+      }
+      return payload;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Airing schedule upstream failed: ${message}`);
+      if (staleCache) {
+        this.logger.warn('Serving stale airing schedule cache after upstream failure');
+        return staleCache.payload;
+      }
       return { schedule: emptySchedule, currentSeason, currentYear, degraded: true };
     }
   }
@@ -881,24 +930,44 @@ export class AnimeCatalogService {
   }
 
   private getCurrentAiringSeason(): 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL' {
-    const m = new Date().getMonth() + 1;
-    if (m >= 1 && m <= 3) return 'WINTER';
-    if (m >= 4 && m <= 6) return 'SPRING';
-    if (m >= 7 && m <= 9) return 'SUMMER';
-    return 'FALL';
+    return this.getCurrentAiringSeasonInTehran().season;
   }
 
+  private getCurrentAiringSeasonInTehran(): {
+    season: 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL';
+    year: number;
+  } {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tehran',
+      year: 'numeric',
+      month: 'numeric',
+    }).formatToParts(new Date());
+    const year = Number(parts.find((p) => p.type === 'year')?.value);
+    const month = Number(parts.find((p) => p.type === 'month')?.value);
+    const y = Number.isFinite(year) ? year : new Date().getFullYear();
+    const m = Number.isFinite(month) ? month : new Date().getMonth() + 1;
+    if (m >= 1 && m <= 3) return { season: 'WINTER', year: y };
+    if (m >= 4 && m <= 6) return { season: 'SPRING', year: y };
+    if (m >= 7 && m <= 9) return { season: 'SUMMER', year: y };
+    return { season: 'FALL', year: y };
+  }
+
+  /** Weekday label in Persian, using Asia/Tehran calendar day (not server local TZ). */
   private toPersianWeekday(d: Date): string {
-    const dayMap: Record<number, string> = {
-      0: 'یکشنبه',
-      1: 'دوشنبه',
-      2: 'سه‌شنبه',
-      3: 'چهارشنبه',
-      4: 'پنج‌شنبه',
-      5: 'جمعه',
-      6: 'شنبه',
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tehran',
+      weekday: 'short',
+    }).format(d);
+    const dayMap: Record<string, string> = {
+      Sun: 'یکشنبه',
+      Mon: 'دوشنبه',
+      Tue: 'سه‌شنبه',
+      Wed: 'چهارشنبه',
+      Thu: 'پنج‌شنبه',
+      Fri: 'جمعه',
+      Sat: 'شنبه',
     };
-    return dayMap[d.getDay()] ?? '';
+    return dayMap[weekday] ?? '';
   }
 
   private async fetchAnilistNextAiring(
