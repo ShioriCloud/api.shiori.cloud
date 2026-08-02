@@ -12,6 +12,7 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
   UserAnimeListEntry,
 } from '../../entities';
 import { AnimeCatalogController } from './anime-catalog.controller';
@@ -32,6 +33,7 @@ import { AnimeCatalogService } from './anime-catalog.service';
       AnimeTranslatorLink,
       AnimeSeriesMember,
       UserAnimeListEntry,
+      BotFile,
     ]),
   ],
   controllers: [AnimeCatalogController],

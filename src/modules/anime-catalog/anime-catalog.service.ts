@@ -24,6 +24,7 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
   UserAnimeListEntry,
 } from '../../entities';
 
@@ -113,12 +114,65 @@ export class AnimeCatalogService {
     private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
     @InjectRepository(UserAnimeListEntry)
     private readonly userListRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(BotFile)
+    private readonly botFileRepo: Repository<BotFile>,
   ) {}
 
   private num(value: string | number | null | undefined): number | undefined {
     if (value == null || value === '') return undefined;
     const n = Number(value);
     return Number.isFinite(n) ? n : undefined;
+  }
+
+  /** Extract `files.key` from `t.me/...?start=get_<key>` or bare `get_<key>`. */
+  private parseTelegramFileKeyFromLink(
+    link: string | null | undefined,
+  ): string | null {
+    const raw = String(link ?? '').trim();
+    if (!raw) return null;
+
+    const fromUrl = raw.match(/[?&]start=get_([^&]+)/i)?.[1];
+    if (fromUrl) {
+      try {
+        return decodeURIComponent(fromUrl).trim() || null;
+      } catch {
+        return fromUrl.trim() || null;
+      }
+    }
+
+    const bare = raw.match(/^get_(.+)$/i)?.[1];
+    if (!bare) return null;
+    try {
+      return decodeURIComponent(bare).trim() || null;
+    } catch {
+      return bare.trim() || null;
+    }
+  }
+
+  /** AVG(files.file_size) for episode download links that resolve to bot files. */
+  private async getAverageEpisodeSizeBytes(
+    episodes: AnimeEpisode[],
+  ): Promise<number | null> {
+    const keys = [
+      ...new Set(
+        episodes
+          .map((e) => this.parseTelegramFileKeyFromLink(e.downloadLink))
+          .filter((k): k is string => Boolean(k)),
+      ),
+    ];
+    if (keys.length === 0) return null;
+
+    const raw = await this.botFileRepo
+      .createQueryBuilder('f')
+      .select('AVG(CAST(f.fileSize AS DOUBLE PRECISION))', 'avg')
+      .where('f.key IN (:...keys)', { keys })
+      .andWhere('f.fileSize IS NOT NULL')
+      .andWhere('CAST(f.fileSize AS BIGINT) > 0')
+      .getRawOne<{ avg: string | null }>();
+
+    const avg = Number(raw?.avg);
+    if (!Number.isFinite(avg) || avg <= 0) return null;
+    return Math.round(avg);
   }
 
   /** Live average of user ratings (source of truth for shioriScore in API responses). */
@@ -513,8 +567,11 @@ export class AnimeCatalogService {
     }
 
     const liveShioriScore = await this.getLiveShioriScore(id);
+    const averageEpisodeSizeBytes =
+      await this.getAverageEpisodeSizeBytes(episodes);
 
     // Match toCard default: null airing_status is treated as RELEASING in the UI.
+    // NOT_YET_RELEASED often still has nextAiringEpisode (first episode countdown).
     const status = String(anime.airingStatus ?? 'RELEASING')
       .trim()
       .toUpperCase();
@@ -522,7 +579,9 @@ export class AnimeCatalogService {
     const anilistId =
       Number.isFinite(anilistIdRaw) && anilistIdRaw > 0 ? anilistIdRaw : null;
     let next_airing: { episode: number; airing_at: number } | null = null;
-    if (status === 'RELEASING' && anilistId != null) {
+    const shouldFetchNextAiring =
+      status === 'RELEASING' || status === 'NOT_YET_RELEASED';
+    if (shouldFetchNextAiring && anilistId != null) {
       try {
         next_airing = await this.fetchAnilistNextAiring(anilistId);
       } catch {
@@ -535,6 +594,7 @@ export class AnimeCatalogService {
       // Prefer live average so UI never depends on a stale/missing cached column.
       shioriScore: liveShioriScore ?? this.num(anime.shioriScore),
       next_airing,
+      average_episode_size_bytes: averageEpisodeSizeBytes,
       episodes: episodes.map((e) => {
         const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
         /**
