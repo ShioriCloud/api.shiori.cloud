@@ -1,6 +1,7 @@
 import {
   Column,
   Entity,
+  Index,
   JoinColumn,
   ManyToOne,
   OneToMany,
@@ -15,6 +16,9 @@ import { AnimeTranslatorLink } from './anime-translator-link.entity';
 import { TelegramUser } from './telegram-user.entity';
 
 @Entity('anime')
+@Index('idx_anime_year_season', ['year', 'season'])
+@Index('idx_anime_created_at', ['createdAt'])
+@Index('idx_anime_view_count', ['viewCount'])
 export class Anime {
   @PrimaryGeneratedColumn('uuid')
   id: string;

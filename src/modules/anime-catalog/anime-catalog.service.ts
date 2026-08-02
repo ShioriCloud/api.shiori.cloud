@@ -5,6 +5,8 @@ import {
   findAnimeByIdOrSlug,
   requireAnimeId,
 } from '../../common/anime-ref.util';
+import { isUuid } from '../../common/uuid.util';
+import { normalizeSlug } from '../../common/slug.util';
 import {
   normalizeEpisodeVideoFileType,
   normalizeHardsubLanguage,
@@ -198,7 +200,7 @@ export class AnimeCatalogService {
     return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
   }
 
-  /** Lightweight cards for a set of anime ids (My List). Max 100. */
+  /** Lightweight cards for a set of anime ids or slugs (My List / resolve). Max 100. */
   async listByIds(ids: string[]): Promise<AnimeCardDto[]> {
     const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))].slice(
       0,
@@ -206,15 +208,39 @@ export class AnimeCatalogService {
     );
     if (unique.length === 0) return [];
 
-    const rows = await this.animeRepo.find({ where: { id: In(unique) } });
+    const uuidIds = unique.filter((id) => isUuid(id));
+    const slugIds = [
+      ...new Set(
+        unique
+          .filter((id) => !isUuid(id))
+          .map((id) => normalizeSlug(id) || id)
+          .filter(Boolean),
+      ),
+    ];
+
+    const [byId, bySlug] = await Promise.all([
+      uuidIds.length > 0
+        ? this.animeRepo.find({ where: { id: In(uuidIds) } })
+        : Promise.resolve([] as Anime[]),
+      slugIds.length > 0
+        ? this.animeRepo.find({ where: { slug: In(slugIds) } })
+        : Promise.resolve([] as Anime[]),
+    ]);
+
+    const rows = [...byId, ...bySlug];
     if (rows.length === 0) return [];
 
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
-    const rowMap = new Map(rows.map((r) => [r.id, r]));
+    const byIdMap = new Map(rows.map((r) => [r.id, r]));
+    const bySlugMap = new Map(
+      rows.filter((r) => r.slug).map((r) => [String(r.slug).toLowerCase(), r]),
+    );
 
     return unique
-      .map((id) => {
-        const anime = rowMap.get(id);
+      .map((key) => {
+        const anime = isUuid(key)
+          ? byIdMap.get(key)
+          : bySlugMap.get(String(normalizeSlug(key) || key).toLowerCase());
         if (!anime) return null;
         return this.toCard(anime, genreMap.get(anime.id) ?? []);
       })

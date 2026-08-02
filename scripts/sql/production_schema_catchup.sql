@@ -21,6 +21,11 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_anime_id uuid;
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS shiori_score numeric(4, 1);
 ALTER TABLE anime ADD COLUMN IF NOT EXISTS view_count integer NOT NULL DEFAULT 0;
 
+-- Catalog search / Home rails / Explore seasonal
+CREATE INDEX IF NOT EXISTS idx_anime_year_season ON anime (year, season);
+CREATE INDEX IF NOT EXISTS idx_anime_created_at ON anime (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_anime_view_count ON anime (view_count DESC);
+
 -- Keep anime.shiori_score in sync with user_anime_list.user_rating
 CREATE OR REPLACE FUNCTION public.refresh_anime_shiori_score()
 RETURNS TRIGGER
