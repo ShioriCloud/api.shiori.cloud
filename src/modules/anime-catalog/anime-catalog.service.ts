@@ -24,7 +24,6 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
-  BotFile,
   UserAnimeListEntry,
 } from '../../entities';
 
@@ -127,81 +126,11 @@ export class AnimeCatalogService {
     private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
     @InjectRepository(UserAnimeListEntry)
     private readonly userListRepo: Repository<UserAnimeListEntry>,
-    @InjectRepository(BotFile)
-    private readonly botFileRepo: Repository<BotFile>,
   ) {}
 
   private num(value: string | number | null | undefined): number | undefined {
     if (value == null || value === '') return undefined;
     const n = Number(value);
-    return Number.isFinite(n) ? n : undefined;
-  }
-
-  /** Extract `files.key` from `t.me/...?start=get_<key>` or bare `get_<key>`. */
-  private parseTelegramFileKeyFromLink(
-    link: string | null | undefined,
-  ): string | null {
-    const raw = String(link ?? '').trim();
-    if (!raw) return null;
-
-    const fromUrl = raw.match(/[?&]start=get_([^&]+)/i)?.[1];
-    if (fromUrl) {
-      try {
-        return decodeURIComponent(fromUrl).trim() || null;
-      } catch {
-        return fromUrl.trim() || null;
-      }
-    }
-
-    const bare = raw.match(/^get_(.+)$/i)?.[1];
-    if (!bare) return null;
-    try {
-      return decodeURIComponent(bare).trim() || null;
-    } catch {
-      return bare.trim() || null;
-    }
-  }
-
-  /** AVG(files.file_size) for episode download links that resolve to bot files. */
-  private async getAverageEpisodeSizeBytes(
-    episodes: AnimeEpisode[],
-  ): Promise<number | null> {
-    const keys = [
-      ...new Set(
-        episodes
-          .map((e) => this.parseTelegramFileKeyFromLink(e.downloadLink))
-          .filter((k): k is string => Boolean(k)),
-      ),
-    ];
-    if (keys.length === 0) return null;
-
-    const raw = await this.botFileRepo
-      .createQueryBuilder('f')
-      .select('AVG(CAST(f.fileSize AS DOUBLE PRECISION))', 'avg')
-      .where('f.key IN (:...keys)', { keys })
-      .andWhere('f.fileSize IS NOT NULL')
-      .andWhere('CAST(f.fileSize AS BIGINT) > 0')
-      .getRawOne<{ avg: string | null }>();
-
-    const avg = Number(raw?.avg);
-    if (!Number.isFinite(avg) || avg <= 0) return null;
-    return Math.round(avg);
-  }
-
-  /** Live average of user ratings (source of truth for shioriScore in API responses). */
-  private async getLiveShioriScore(animeId: string): Promise<number | undefined> {
-    const raw = await this.userListRepo.manager.query(
-      `
-      SELECT ROUND(AVG(user_rating)::numeric, 1) AS avg
-      FROM user_anime_list
-      WHERE anime_id = $1
-        AND user_rating IS NOT NULL
-      `,
-      [animeId],
-    );
-    const avgRaw = Array.isArray(raw) ? raw[0]?.avg : null;
-    if (avgRaw == null || avgRaw === '') return undefined;
-    const n = Number(avgRaw);
     return Number.isFinite(n) ? n : undefined;
   }
 
@@ -522,50 +451,52 @@ export class AnimeCatalogService {
     if (!anime) throw new NotFoundException('Anime not found');
 
     const id = anime.id;
-    const genreMap = await this.loadGenresForAnimeIds([id]);
-    const episodes = await this.episodeRepo.find({
-      where: { animeId: id },
-      order: { episodeNumber: 'ASC' },
-    });
-    const subtitles = await this.subtitleRepo.find({
-      where: { animeId: id },
-      order: { episodeNumber: 'ASC' },
-    });
-    const subtitlePacks = await this.subtitlePackRepo.find({
-      where: { animeId: id },
-    });
-    const translatorLinks = await this.translatorLinkRepo.find({
-      where: { animeId: id },
-      relations: { translator: true },
-    });
-    const studioLinks = await this.studioLinkRepo.find({
-      where: { animeId: id },
-      relations: { studio: true },
-    });
-    const seriesMember = await this.seriesMemberRepo.findOne({
-      where: { animeId: id },
-      relations: { series: true },
-    });
 
-    let series: {
-      series_id: string;
-      title: string;
-      members: Array<{
-        id: string;
-        title: string;
-        image: string;
-        sort_order: number;
-        label_fa: string | null;
-      }>;
-    } | null = null;
+    const [
+      genreMap,
+      episodes,
+      subtitles,
+      subtitlePacks,
+      translatorLinks,
+      studioLinks,
+      seriesMember,
+    ] = await Promise.all([
+      this.loadGenresForAnimeIds([id]),
+      this.episodeRepo.find({
+        where: { animeId: id },
+        order: { episodeNumber: 'ASC' },
+      }),
+      this.subtitleRepo.find({
+        where: { animeId: id },
+        order: { episodeNumber: 'ASC' },
+      }),
+      this.subtitlePackRepo.find({
+        where: { animeId: id },
+      }),
+      this.translatorLinkRepo.find({
+        where: { animeId: id },
+        relations: { translator: true },
+      }),
+      this.studioLinkRepo.find({
+        where: { animeId: id },
+        relations: { studio: true },
+      }),
+      this.seriesMemberRepo.findOne({
+        where: { animeId: id },
+        relations: { series: true },
+      }),
+    ]);
 
-    if (seriesMember?.series) {
+    // Episode size AVG can be expensive (files join); keep off critical path.
+    // Client shows size when present; null is fine for first paint.
+    const series = await (async () => {
+      if (!seriesMember?.series) return null;
       const members = await this.seriesMemberRepo.find({
         where: { seriesId: seriesMember.seriesId },
         relations: { anime: true },
         order: { sortOrder: 'ASC' },
       });
-      series = {
+      return {
         series_id: seriesMember.seriesId,
         title: seriesMember.series.title,
         members: members.map((m) => ({
@@ -577,35 +508,17 @@ export class AnimeCatalogService {
           label_fa: m.labelFa,
         })),
       };
-    }
+    })();
 
-    const liveShioriScore = await this.getLiveShioriScore(id);
-    const averageEpisodeSizeBytes =
-      await this.getAverageEpisodeSizeBytes(episodes);
-
-    // next_airing is filled by the mini-app client when needed — do not block
-    // catalog detail on AniList (TTFB / skeleton).
-    const next_airing: { episode: number; airing_at: number } | null = null;
-
+    // Use cached column (maintained by ratings + weekly sync). Live AVG was
+    // blocking every detail TTFB for little benefit.
     return {
       ...this.toCard(anime, genreMap.get(id) ?? []),
-      // Prefer live average so UI never depends on a stale/missing cached column.
-      shioriScore: liveShioriScore ?? this.num(anime.shioriScore),
-      next_airing,
-      average_episode_size_bytes: averageEpisodeSizeBytes,
+      shioriScore: this.num(anime.shioriScore),
+      next_airing: null as { episode: number; airing_at: number } | null,
+      average_episode_size_bytes: null as number | null,
       episodes: episodes.map((e) => {
         const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
-        /**
-         * Launch: expose download links (open mini-app UX).
-         * Later (subscription gate): mask softsub/hardsub — only free keeps link;
-         * paid downloads go through POST /subscriptions/episode-download/claim.
-         *
-         * const MASK_PAID_DOWNLOAD_LINKS = true;
-         * const download_link =
-         *   MASK_PAID_DOWNLOAD_LINKS && video_file_type !== 'free'
-         *     ? null
-         *     : e.downloadLink;
-         */
         const download_link = e.downloadLink;
         return {
           id: e.id,
@@ -616,11 +529,6 @@ export class AnimeCatalogService {
         };
       }),
       episode_pack_title: anime.episodePackTitle,
-      /**
-       * Launch: expose pack link.
-       * Later: set episode_pack_link null + episode_pack_available true,
-       * claim via POST /subscriptions/episode-pack/claim.
-       */
       episode_pack_link: anime.episodePackLink,
       episode_pack_available: Boolean(anime.episodePackLink?.trim()),
       prev_anime_id: anime.prevAnimeId,
