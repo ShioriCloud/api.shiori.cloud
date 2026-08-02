@@ -134,12 +134,24 @@ location / {
 
 ### External scores (weekly)
 
+Batch endpoint (paginated):
+
 ```bash
-# Example: process 50 anime per run, loop offsets in your scheduler
 curl -sf -X POST \
   "https://api.example.com/api/v1/cron/sync-external-scores?limit=50&offset=0&delay_ms=400" \
   -H "x-cron-secret: $CRON_SECRET"
 ```
+
+One-shot backfill (loops until `hasMore` is false):
+
+```bash
+SHIORI_API_URL=https://api.example.com \
+CRON_SECRET="$CRON_SECRET" \
+npm run cron:sync-external-scores
+```
+
+GitHub Action: `.github/workflows/sync-external-scores.yml` (Mondays + manual).
+Repo secrets: `SHIORI_API_URL`, `CRON_SECRET`.
 
 ## 5. Health check
 

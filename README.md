@@ -64,7 +64,13 @@ curl -X POST "http://localhost:4001/api/v1/cron/sync-external-scores?limit=25&of
   -H "x-cron-secret: YOUR_CRON_SECRET"
 ```
 
-Paginate with `offset` until `hasMore` is false. Schedule weekly (system cron, GitHub Actions, etc.).
+Paginate with `offset` until `hasMore` is false, or run:
+
+```bash
+SHIORI_API_URL=https://api.shiori.cloud CRON_SECRET=... npm run cron:sync-external-scores
+```
+
+Weekly GitHub Action: `.github/workflows/sync-external-scores.yml` (secrets: `SHIORI_API_URL`, `CRON_SECRET`).
 
 ## Bot API (tel-bot)
 

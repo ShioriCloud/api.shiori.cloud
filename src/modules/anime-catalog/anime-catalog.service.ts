@@ -583,24 +583,9 @@ export class AnimeCatalogService {
     const averageEpisodeSizeBytes =
       await this.getAverageEpisodeSizeBytes(episodes);
 
-    // Match toCard default: null airing_status is treated as RELEASING in the UI.
-    // NOT_YET_RELEASED often still has nextAiringEpisode (first episode countdown).
-    const status = String(anime.airingStatus ?? 'RELEASING')
-      .trim()
-      .toUpperCase();
-    const anilistIdRaw = anime.anilistId != null ? Number(anime.anilistId) : NaN;
-    const anilistId =
-      Number.isFinite(anilistIdRaw) && anilistIdRaw > 0 ? anilistIdRaw : null;
-    let next_airing: { episode: number; airing_at: number } | null = null;
-    const shouldFetchNextAiring =
-      status === 'RELEASING' || status === 'NOT_YET_RELEASED';
-    if (shouldFetchNextAiring && anilistId != null) {
-      try {
-        next_airing = await this.fetchAnilistNextAiring(anilistId);
-      } catch {
-        next_airing = null;
-      }
-    }
+    // next_airing is filled by the mini-app client when needed — do not block
+    // catalog detail on AniList (TTFB / skeleton).
+    const next_airing: { episode: number; airing_at: number } | null = null;
 
     return {
       ...this.toCard(anime, genreMap.get(id) ?? []),
@@ -968,60 +953,6 @@ export class AnimeCatalogService {
       Sat: 'شنبه',
     };
     return dayMap[weekday] ?? '';
-  }
-
-  private async fetchAnilistNextAiring(
-    anilistId: number,
-  ): Promise<{ episode: number; airing_at: number } | null> {
-    const query = `
-      query ($id: Int) {
-        Media(id: $id, type: ANIME) {
-          nextAiringEpisode { airingAt episode }
-        }
-      }
-    `;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
-
-    try {
-      const res = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          query,
-          variables: { id: anilistId },
-        }),
-        signal: controller.signal,
-      });
-
-      if (!res.ok) return null;
-
-      const json = (await res.json()) as {
-        errors?: Array<{ message?: string }>;
-        data?: {
-          Media?: {
-            nextAiringEpisode?: { airingAt?: number; episode?: number } | null;
-          } | null;
-        };
-      };
-      if (json?.errors?.length) return null;
-
-      const ep = json?.data?.Media?.nextAiringEpisode;
-      if (!ep) return null;
-
-      const airingAt = Number(ep.airingAt);
-      const episode = Number(ep.episode);
-      if (!Number.isFinite(airingAt) || airingAt <= 0) return null;
-      if (!Number.isFinite(episode)) return null;
-
-      return { episode, airing_at: airingAt };
-    } finally {
-      clearTimeout(timeout);
-    }
   }
 
   private async fetchAnilistReleasingMedia(

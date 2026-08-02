@@ -1,0 +1,48 @@
+name: Sync external scores
+
+# Weekly batch sync of AniList/MAL scores into anime.average_score / mal_score.
+# Secrets: SHIORI_API_URL (e.g. https://api.shiori.cloud), CRON_SECRET
+
+on:
+  schedule:
+    # Mondays 03:30 UTC ≈ 07:00 Asia/Tehran (no DST)
+    - cron: '30 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Page size (1–100)
+        required: false
+        default: '50'
+        type: string
+      delay_ms:
+        description: Delay between anime within a page (ms)
+        required: false
+        default: '400'
+        type: string
+      offset:
+        description: Start offset (for resume)
+        required: false
+        default: '0'
+        type: string
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Backfill / weekly sync
+        env:
+          SHIORI_API_URL: ${{ secrets.SHIORI_API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          LIMIT: ${{ github.event.inputs.limit || '50' }}
+          DELAY_MS: ${{ github.event.inputs.delay_ms || '400' }}
+          OFFSET: ${{ github.event.inputs.offset || '0' }}
+        run: node scripts/backfill-external-scores.mjs
