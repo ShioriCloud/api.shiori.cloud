@@ -95,7 +95,7 @@ export class NotificationsAdminService {
 
   async notifyEpisodeRelease(
     dto: NotifyEpisodeReleaseDto,
-    createdBy: string,
+    createdBy: string | number | null,
   ): Promise<EpisodeReleaseNotifyResult> {
     const anime = await this.animeRepo.findOne({ where: { id: dto.animeId } });
     if (!anime) throw new NotFoundException('anime not found');
@@ -134,26 +134,43 @@ export class NotificationsAdminService {
     const message = `قسمت ${dto.episodeNumber} انیمه «${pickAnimeTitle(anime)}» آماده تماشاست.`;
     const href = `/anime/${dto.animeId}`;
 
+    const prefOn = (value: unknown): boolean => {
+      if (value === false || value === 0 || value === '0') return false;
+      if (value === 'f' || value === 'false' || value === 'FALSE') return false;
+      return true; // default true (null / true / 't')
+    };
+
     // Reminder holders ∩ channel prefs. Skip users with both channels off.
     const reminderRows = await this.remindersRepo
       .createQueryBuilder('r')
-      .innerJoin(TelegramUser, 'u', 'u.telegramUserId = r.telegramUserId')
-      .where('r.animeId = :animeId', { animeId: dto.animeId })
-      .select('r.telegramUserId', 'telegram_user_id')
-      .addSelect('u.notifyNewEpisode', 'notify_new_episode')
-      .addSelect('u.notifyTelegramDm', 'notify_telegram_dm')
+      .innerJoin(
+        TelegramUser,
+        'u',
+        'u.telegram_user_id = r.telegram_user_id',
+      )
+      .where('r.anime_id = :animeId', { animeId: dto.animeId })
+      .select('r.telegram_user_id', 'telegram_user_id')
+      .addSelect('u.notify_new_episode', 'notify_new_episode')
+      .addSelect('u.notify_telegram_dm', 'notify_telegram_dm')
       .getRawMany<{
         telegram_user_id: string;
-        notify_new_episode: boolean;
-        notify_telegram_dm: boolean;
+        notify_new_episode: unknown;
+        notify_telegram_dm: unknown;
       }>();
 
     const recipients = reminderRows.filter(
-      (row) => row.notify_new_episode !== false || row.notify_telegram_dm !== false,
+      (row) => prefOn(row.notify_new_episode) || prefOn(row.notify_telegram_dm),
     );
-    const inboxRecipients = recipients.filter(
-      (row) => row.notify_new_episode !== false,
+    const inboxRecipients = recipients.filter((row) =>
+      prefOn(row.notify_new_episode),
     );
+
+    const createdById =
+      createdBy == null || createdBy === ''
+        ? null
+        : String(createdBy).match(/^\d+$/)
+          ? String(createdBy)
+          : null;
 
     const campaign = await this.dataSource.transaction(async (manager) => {
       const savedCampaign = await manager.save(NotificationCampaign, {
@@ -164,7 +181,7 @@ export class NotificationsAdminService {
         message,
         recipientCount: inboxRecipients.length,
         telegramSentCount: 0,
-        createdBy,
+        createdBy: createdById,
       });
 
       if (inboxRecipients.length > 0) {
@@ -188,7 +205,7 @@ export class NotificationsAdminService {
     });
 
     const telegramUserIds = recipients
-      .filter((row) => row.notify_telegram_dm !== false)
+      .filter((row) => prefOn(row.notify_telegram_dm))
       .map((row) => Number(row.telegram_user_id))
       .filter((id) => Number.isFinite(id) && id > 0);
 

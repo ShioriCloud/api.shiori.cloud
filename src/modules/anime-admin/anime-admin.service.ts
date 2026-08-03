@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
@@ -37,6 +38,8 @@ type Payload = Record<string, unknown>;
 
 @Injectable()
 export class AnimeAdminService {
+  private readonly logger = new Logger(AnimeAdminService.name);
+
   constructor(
     @InjectRepository(Anime) private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeEpisode) private readonly episodeRepo: Repository<AnimeEpisode>,
@@ -597,12 +600,18 @@ export class AnimeAdminService {
 
     const episodeNumber = saved.episodeNumber ?? 0;
     if (episodeNumber > 0) {
+      // createdBy must be a telegram user id or null — 'auto' breaks bigint FK and was swallowed.
       void this.notificationsAdminService
         .notifyEpisodeRelease(
           { animeId, episodeNumber, sendTelegram: true },
-          'auto',
+          null,
         )
-        .catch(() => undefined);
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          this.logger.warn(
+            `Auto notify failed for anime=${animeId} ep=${episodeNumber}: ${msg}`,
+          );
+        });
     }
 
     let channelDraft: Awaited<
