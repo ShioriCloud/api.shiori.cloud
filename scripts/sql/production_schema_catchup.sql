@@ -301,3 +301,20 @@ ALTER TABLE user_notifications
 ALTER TABLE notification_campaigns
   ALTER COLUMN episode_number TYPE numeric(8,2)
   USING episode_number::numeric(8,2);
+
+-- Per-anime airing reminders (fanout audience for new episodes)
+CREATE TABLE IF NOT EXISTS user_anime_airing_reminders (
+  id bigserial PRIMARY KEY,
+  telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  anime_id uuid NOT NULL REFERENCES anime (id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT user_anime_airing_reminders_user_anime_unique
+    UNIQUE (telegram_user_id, anime_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_anime_airing_reminders_anime
+  ON user_anime_airing_reminders (anime_id);
+
+CREATE INDEX IF NOT EXISTS idx_notification_campaigns_anime_episode
+  ON notification_campaigns (anime_id, episode_number)
+  WHERE kind = 'new_episode';

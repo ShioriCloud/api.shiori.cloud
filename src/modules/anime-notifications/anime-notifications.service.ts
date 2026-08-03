@@ -1,8 +1,21 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { TelegramUser, UserNotification } from '../../entities';
-import { UpdateNotificationPreferencesDto } from './anime-notifications.dto';
+import { In, Repository } from 'typeorm';
+import { isUuid } from '../../common/uuid.util';
+import {
+  Anime,
+  TelegramUser,
+  UserAnimeAiringReminder,
+  UserNotification,
+} from '../../entities';
+import {
+  SyncAiringRemindersDto,
+  UpdateNotificationPreferencesDto,
+} from './anime-notifications.dto';
 
 @Injectable()
 export class AnimeNotificationsService {
@@ -11,6 +24,10 @@ export class AnimeNotificationsService {
     private readonly notificationsRepo: Repository<UserNotification>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
+    @InjectRepository(UserAnimeAiringReminder)
+    private readonly remindersRepo: Repository<UserAnimeAiringReminder>,
+    @InjectRepository(Anime)
+    private readonly animeRepo: Repository<Anime>,
   ) {}
 
   async list(telegramUserId: string, limit = 50) {
@@ -79,5 +96,91 @@ export class AnimeNotificationsService {
       notify_new_episode: user.notifyNewEpisode,
       notify_telegram_dm: user.notifyTelegramDm,
     };
+  }
+
+  async listAiringReminders(telegramUserId: string) {
+    const rows = await this.remindersRepo.find({
+      where: { telegramUserId },
+      order: { createdAt: 'DESC' },
+    });
+    return { anime_ids: rows.map((r) => r.animeId) };
+  }
+
+  async enableAiringReminder(telegramUserId: string, animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeId(animeIdOrSlug);
+    const existing = await this.remindersRepo.findOne({
+      where: { telegramUserId, animeId },
+    });
+    if (!existing) {
+      await this.remindersRepo.save(
+        this.remindersRepo.create({ telegramUserId, animeId }),
+      );
+    }
+    return { ok: true, anime_id: animeId, enabled: true };
+  }
+
+  async disableAiringReminder(telegramUserId: string, animeIdOrSlug: string) {
+    const animeId = await this.resolveAnimeId(animeIdOrSlug);
+    await this.remindersRepo.delete({ telegramUserId, animeId });
+    return { ok: true, anime_id: animeId, enabled: false };
+  }
+
+  /** One-shot migrate from device localStorage ids. */
+  async syncAiringReminders(
+    telegramUserId: string,
+    body: SyncAiringRemindersDto,
+  ) {
+    const ids = [
+      ...new Set(
+        (body.anime_ids ?? [])
+          .map((id) => String(id).trim())
+          .filter((id) => isUuid(id)),
+      ),
+    ];
+    if (ids.length === 0) {
+      return this.listAiringReminders(telegramUserId);
+    }
+
+    const existingAnime = await this.animeRepo.find({
+      where: { id: In(ids) },
+      select: { id: true },
+    });
+    const validIds = existingAnime.map((a) => a.id);
+    if (validIds.length === 0) {
+      return this.listAiringReminders(telegramUserId);
+    }
+
+    const already = await this.remindersRepo.find({
+      where: { telegramUserId, animeId: In(validIds) },
+      select: { animeId: true },
+    });
+    const alreadySet = new Set(already.map((r) => r.animeId));
+    const toInsert = validIds.filter((id) => !alreadySet.has(id));
+    if (toInsert.length > 0) {
+      await this.remindersRepo.insert(
+        toInsert.map((animeId) => ({ telegramUserId, animeId })),
+      );
+    }
+
+    return this.listAiringReminders(telegramUserId);
+  }
+
+  private async resolveAnimeId(animeIdOrSlug: string): Promise<string> {
+    const raw = String(animeIdOrSlug ?? '').trim();
+    if (!raw) throw new BadRequestException('anime id required');
+    if (isUuid(raw)) {
+      const byId = await this.animeRepo.findOne({
+        where: { id: raw },
+        select: { id: true },
+      });
+      if (!byId) throw new NotFoundException('Anime not found');
+      return byId.id;
+    }
+    const bySlug = await this.animeRepo.findOne({
+      where: { slug: raw },
+      select: { id: true },
+    });
+    if (!bySlug) throw new NotFoundException('Anime not found');
+    return bySlug.id;
   }
 }

@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -14,7 +16,10 @@ import {
   AppUserAuthGuard,
   AppUserAuthedRequest,
 } from '../../telegram/app-user-auth.guard';
-import { UpdateNotificationPreferencesDto } from './anime-notifications.dto';
+import {
+  SyncAiringRemindersDto,
+  UpdateNotificationPreferencesDto,
+} from './anime-notifications.dto';
 import { AnimeNotificationsService } from './anime-notifications.service';
 
 @ApiTags('Anime Notifications')
@@ -39,12 +44,6 @@ export class AnimeNotificationsController {
     return this.notificationsService.markAllRead(String(req.telegramUserId));
   }
 
-  @Post(':id/read')
-  @ApiOperation({ summary: 'Mark one notification as read' })
-  markRead(@Req() req: AppUserAuthedRequest, @Param('id') id: string) {
-    return this.notificationsService.markRead(String(req.telegramUserId), id);
-  }
-
   @Get('preferences')
   @ApiOperation({ summary: 'Notification preferences' })
   getPreferences(@Req() req: AppUserAuthedRequest) {
@@ -61,5 +60,57 @@ export class AnimeNotificationsController {
       String(req.telegramUserId),
       body,
     );
+  }
+
+  @Get('airing-reminders')
+  @ApiOperation({ summary: 'List anime ids with airing reminder enabled' })
+  listAiringReminders(@Req() req: AppUserAuthedRequest) {
+    return this.notificationsService.listAiringReminders(
+      String(req.telegramUserId),
+    );
+  }
+
+  @Post('airing-reminders/sync')
+  @ApiOperation({
+    summary: 'Merge local airing-reminder anime ids into server (one-shot migrate)',
+  })
+  syncAiringReminders(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: SyncAiringRemindersDto,
+  ) {
+    return this.notificationsService.syncAiringReminders(
+      String(req.telegramUserId),
+      body,
+    );
+  }
+
+  @Put('airing-reminders/:animeId')
+  @ApiOperation({ summary: 'Enable airing reminder for an anime' })
+  enableAiringReminder(
+    @Req() req: AppUserAuthedRequest,
+    @Param('animeId') animeId: string,
+  ) {
+    return this.notificationsService.enableAiringReminder(
+      String(req.telegramUserId),
+      animeId,
+    );
+  }
+
+  @Delete('airing-reminders/:animeId')
+  @ApiOperation({ summary: 'Disable airing reminder for an anime' })
+  disableAiringReminder(
+    @Req() req: AppUserAuthedRequest,
+    @Param('animeId') animeId: string,
+  ) {
+    return this.notificationsService.disableAiringReminder(
+      String(req.telegramUserId),
+      animeId,
+    );
+  }
+
+  @Post(':id/read')
+  @ApiOperation({ summary: 'Mark one notification as read' })
+  markRead(@Req() req: AppUserAuthedRequest, @Param('id') id: string) {
+    return this.notificationsService.markRead(String(req.telegramUserId), id);
   }
 }

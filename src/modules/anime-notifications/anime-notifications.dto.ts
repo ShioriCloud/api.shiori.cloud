@@ -1,4 +1,4 @@
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString } from 'class-validator';
 
 export class UpdateNotificationPreferencesDto {
   @IsOptional()
@@ -8,4 +8,10 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   notify_telegram_dm?: boolean;
+}
+
+export class SyncAiringRemindersDto {
+  @IsArray()
+  @IsString({ each: true })
+  anime_ids: string[];
 }

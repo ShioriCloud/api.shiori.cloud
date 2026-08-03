@@ -11,7 +11,7 @@ import {
   AnimeEpisode,
   NotificationCampaign,
   TelegramUser,
-  UserAnimeListEntry,
+  UserAnimeAiringReminder,
   UserNotification,
 } from '../../entities';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
@@ -35,6 +35,7 @@ export type NotificationCampaignRow = {
 
 export type EpisodeReleaseNotifyResult = {
   ok: boolean;
+  already_sent?: boolean;
   campaign_id?: string;
   inbox_created?: number;
   telegram_candidates?: number;
@@ -59,8 +60,8 @@ export class NotificationsAdminService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeEpisode)
     private readonly episodesRepo: Repository<AnimeEpisode>,
-    @InjectRepository(UserAnimeListEntry)
-    private readonly listRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(UserAnimeAiringReminder)
+    private readonly remindersRepo: Repository<UserAnimeAiringReminder>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
     private readonly telegramBot: TelegramBotService,
@@ -106,21 +107,53 @@ export class NotificationsAdminService {
       throw new BadRequestException('episode not found for this anime');
     }
 
+    if (!dto.forceResend) {
+      const existingRows = await this.campaignsRepo.find({
+        where: {
+          kind: 'new_episode',
+          animeId: dto.animeId,
+          episodeNumber: dto.episodeNumber,
+        },
+        order: { createdAt: 'DESC' },
+        take: 1,
+      });
+      const existing = existingRows[0];
+      if (existing) {
+        return {
+          ok: true,
+          already_sent: true,
+          campaign_id: existing.id,
+          inbox_created: existing.recipientCount ?? 0,
+          telegram_candidates: 0,
+          telegram_sent: existing.telegramSentCount ?? 0,
+        };
+      }
+    }
+
     const title = 'قسمت جدید منتشر شد';
     const message = `قسمت ${dto.episodeNumber} انیمه «${pickAnimeTitle(anime)}» آماده تماشاست.`;
     const href = `/anime/${dto.animeId}`;
 
-    const recipients = await this.listRepo
-      .createQueryBuilder('l')
-      .innerJoin(TelegramUser, 'u', 'u.telegramUserId = l.telegramUserId')
-      .where('l.animeId = :animeId', { animeId: dto.animeId })
-      .andWhere('u.notifyNewEpisode = true')
-      .select('l.telegramUserId', 'telegram_user_id')
+    // Reminder holders ∩ channel prefs. Skip users with both channels off.
+    const reminderRows = await this.remindersRepo
+      .createQueryBuilder('r')
+      .innerJoin(TelegramUser, 'u', 'u.telegramUserId = r.telegramUserId')
+      .where('r.animeId = :animeId', { animeId: dto.animeId })
+      .select('r.telegramUserId', 'telegram_user_id')
+      .addSelect('u.notifyNewEpisode', 'notify_new_episode')
       .addSelect('u.notifyTelegramDm', 'notify_telegram_dm')
       .getRawMany<{
         telegram_user_id: string;
+        notify_new_episode: boolean;
         notify_telegram_dm: boolean;
       }>();
+
+    const recipients = reminderRows.filter(
+      (row) => row.notify_new_episode !== false || row.notify_telegram_dm !== false,
+    );
+    const inboxRecipients = recipients.filter(
+      (row) => row.notify_new_episode !== false,
+    );
 
     const campaign = await this.dataSource.transaction(async (manager) => {
       const savedCampaign = await manager.save(NotificationCampaign, {
@@ -129,15 +162,15 @@ export class NotificationsAdminService {
         episodeNumber: dto.episodeNumber,
         title,
         message,
-        recipientCount: recipients.length,
+        recipientCount: inboxRecipients.length,
         telegramSentCount: 0,
         createdBy,
       });
 
-      if (recipients.length > 0) {
+      if (inboxRecipients.length > 0) {
         await manager.insert(
           UserNotification,
-          recipients.map((row) => ({
+          inboxRecipients.map((row) => ({
             telegramUserId: row.telegram_user_id,
             kind: 'new_episode',
             title,
@@ -191,7 +224,7 @@ export class NotificationsAdminService {
     return {
       ok: true,
       campaign_id: campaign.id,
-      inbox_created: recipients.length,
+      inbox_created: inboxRecipients.length,
       telegram_candidates: telegramUserIds.length,
       telegram_sent: telegramSent,
       telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,

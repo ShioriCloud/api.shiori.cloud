@@ -5,7 +5,7 @@ import {
   AnimeEpisode,
   NotificationCampaign,
   TelegramUser,
-  UserAnimeListEntry,
+  UserAnimeAiringReminder,
   UserNotification,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
@@ -19,7 +19,7 @@ import { NotificationsAdminService } from './notifications-admin.service';
       NotificationCampaign,
       Anime,
       AnimeEpisode,
-      UserAnimeListEntry,
+      UserAnimeAiringReminder,
       UserNotification,
       TelegramUser,
     ]),

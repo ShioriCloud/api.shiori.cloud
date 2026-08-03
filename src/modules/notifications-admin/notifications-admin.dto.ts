@@ -36,4 +36,10 @@ export class NotifyEpisodeReleaseDto {
   @IsOptional()
   @IsString()
   miniAppBaseUrl?: string;
+
+  /** When true, create another campaign even if one already exists for this episode. */
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  forceResend?: boolean;
 }
