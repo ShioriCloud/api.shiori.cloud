@@ -26,6 +26,7 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
   UserAnimeListEntry,
 } from '../../entities';
 
@@ -128,12 +129,65 @@ export class AnimeCatalogService {
     private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
     @InjectRepository(UserAnimeListEntry)
     private readonly userListRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(BotFile)
+    private readonly botFileRepo: Repository<BotFile>,
   ) {}
 
   private num(value: string | number | null | undefined): number | undefined {
     if (value == null || value === '') return undefined;
     const n = Number(value);
     return Number.isFinite(n) ? n : undefined;
+  }
+
+  /** Extract `files.key` from `t.me/...?start=get_<key>` or bare `get_<key>`. */
+  private parseTelegramFileKeyFromLink(
+    link: string | null | undefined,
+  ): string | null {
+    const raw = String(link ?? '').trim();
+    if (!raw) return null;
+
+    const fromUrl = raw.match(/[?&]start=get_([^&]+)/i)?.[1];
+    if (fromUrl) {
+      try {
+        return decodeURIComponent(fromUrl).trim() || null;
+      } catch {
+        return fromUrl.trim() || null;
+      }
+    }
+
+    const bare = raw.match(/^get_(.+)$/i)?.[1];
+    if (!bare) return null;
+    try {
+      return decodeURIComponent(bare).trim() || null;
+    } catch {
+      return bare.trim() || null;
+    }
+  }
+
+  /** AVG(files.file_size) for episode download links that resolve to bot files. */
+  private async getAverageEpisodeSizeBytes(
+    episodes: AnimeEpisode[],
+  ): Promise<number | null> {
+    const keys = [
+      ...new Set(
+        episodes
+          .map((e) => this.parseTelegramFileKeyFromLink(e.downloadLink))
+          .filter((k): k is string => Boolean(k)),
+      ),
+    ];
+    if (keys.length === 0) return null;
+
+    const raw = await this.botFileRepo
+      .createQueryBuilder('f')
+      .select('AVG(CAST(f.fileSize AS DOUBLE PRECISION))', 'avg')
+      .where('f.key IN (:...keys)', { keys })
+      .andWhere('f.fileSize IS NOT NULL')
+      .andWhere('CAST(f.fileSize AS BIGINT) > 0')
+      .getRawOne<{ avg: string | null }>();
+
+    const avg = Number(raw?.avg);
+    if (!Number.isFinite(avg) || avg <= 0) return null;
+    return Math.round(avg);
   }
 
   private async loadGenresForAnimeIds(
@@ -513,36 +567,37 @@ export class AnimeCatalogService {
       }),
     ]);
 
-    // Episode size AVG can be expensive (files join); keep off critical path.
-    // Client shows size when present; null is fine for first paint.
-    const series = await (async () => {
-      if (!seriesMember?.series) return null;
-      const members = await this.seriesMemberRepo.find({
-        where: { seriesId: seriesMember.seriesId },
-        relations: { anime: true },
-        order: { sortOrder: 'ASC' },
-      });
-      return {
-        series_id: seriesMember.seriesId,
-        title: seriesMember.series.title,
-        members: members.map((m) => ({
-          id: m.animeId,
-          slug: m.anime?.slug ?? null,
-          title: m.anime?.title ?? '',
-          image: m.anime?.coverImage ?? '',
-          sort_order: m.sortOrder,
-          label_fa: m.labelFa,
-        })),
-      };
-    })();
+    // Run series + AVG size in parallel after episodes are known (AVG needs link keys).
+    const [series, averageEpisodeSizeBytes] = await Promise.all([
+      (async () => {
+        if (!seriesMember?.series) return null;
+        const members = await this.seriesMemberRepo.find({
+          where: { seriesId: seriesMember.seriesId },
+          relations: { anime: true },
+          order: { sortOrder: 'ASC' },
+        });
+        return {
+          series_id: seriesMember.seriesId,
+          title: seriesMember.series.title,
+          members: members.map((m) => ({
+            id: m.animeId,
+            slug: m.anime?.slug ?? null,
+            title: m.anime?.title ?? '',
+            image: m.anime?.coverImage ?? '',
+            sort_order: m.sortOrder,
+            label_fa: m.labelFa,
+          })),
+        };
+      })(),
+      this.getAverageEpisodeSizeBytes(episodes),
+    ]);
 
-    // Use cached column (maintained by ratings + weekly sync). Live AVG was
-    // blocking every detail TTFB for little benefit.
+    // next_airing stays client-filled (AniList) so catalog TTFB is not blocked.
     return {
       ...this.toCard(anime, genreMap.get(id) ?? []),
       shioriScore: this.num(anime.shioriScore),
       next_airing: null as { episode: number; airing_at: number } | null,
-      average_episode_size_bytes: null as number | null,
+      average_episode_size_bytes: averageEpisodeSizeBytes,
       episodes: episodes.map((e) => {
         const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
         const download_link = e.downloadLink;
