@@ -14,6 +14,12 @@ import type {
   HomeCustomBlocksResponse,
 } from './home.types';
 
+const animeDetailPath = (anime: Pick<AnimeCardDto, 'id' | 'slug'>) => {
+  const slug = String(anime.slug ?? '').trim();
+  const segment = slug || String(anime.id);
+  return `/anime/${encodeURIComponent(segment)}`;
+};
+
 @Injectable()
 export class HomeService {
   constructor(
@@ -28,7 +34,7 @@ export class HomeService {
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
     });
 
-    const animeCardMap = await this.loadAnimeCardsForSliders(rows);
+    const animeCardMap = await this.loadAnimeCardsForBlocks(rows);
     const blocks: HomeCustomBlockPublic[] = [];
 
     for (const row of rows) {
@@ -39,16 +45,24 @@ export class HomeService {
     return { blocks };
   }
 
-  private async loadAnimeCardsForSliders(
+  private async loadAnimeCardsForBlocks(
     rows: HomeBlock[],
   ): Promise<Map<string, AnimeCardDto>> {
     const animeIds = new Set<string>();
 
     for (const row of rows) {
-      if (row.type !== 'curated_slider') continue;
-      const config = row.config as CuratedSliderConfig;
-      for (const id of config.anime_ids ?? []) {
-        if (id?.trim()) animeIds.add(id.trim());
+      if (row.type === 'curated_slider') {
+        const config = row.config as CuratedSliderConfig;
+        for (const id of config.anime_ids ?? []) {
+          if (id?.trim()) animeIds.add(id.trim());
+        }
+        continue;
+      }
+
+      if (row.type === 'cta_card') {
+        const config = row.config as CtaCardConfig;
+        const id = config.anime_id?.trim();
+        if (id) animeIds.add(id);
       }
     }
 
@@ -98,19 +112,37 @@ export class HomeService {
 
     if (row.type === 'cta_card') {
       const config = row.config as CtaCardConfig;
-      const imageUrl = config.image_url?.trim();
-      if (!row.title?.trim() || !imageUrl) return null;
+      const animeId = config.anime_id?.trim() || null;
+      const anime = animeId ? animeCardMap.get(animeId) : undefined;
+
+      if (!anime) return null;
+
+      const imageUrl =
+        config.image_url?.trim() ||
+        anime.featuredImage?.trim() ||
+        anime.image?.trim() ||
+        '';
+      if (!imageUrl) return null;
+
+      const linkUrl = config.link_url?.trim() || animeDetailPath(anime);
+      const description =
+        anime.description?.trim() || row.description?.trim() || null;
 
       return {
         type: 'cta_card',
         id: row.id,
-        title: row.title.trim(),
-        subtitle: row.subtitle,
-        description: row.description,
+        anime_id: anime.id,
+        slug: anime.slug ?? null,
+        title: anime.title,
+        description,
         image_url: imageUrl,
-        link_url: config.link_url?.trim() || null,
+        link_url: linkUrl,
         button_label: config.button_label?.trim() || null,
         open_in_new_tab: config.open_in_new_tab === true,
+        hardsub_language: anime.hardsub_language,
+        video_file_type: anime.video_file_type,
+        video_resolution: anime.video_resolution,
+        video_encode: anime.video_encode,
       };
     }
 

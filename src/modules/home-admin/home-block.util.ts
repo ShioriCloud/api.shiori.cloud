@@ -40,6 +40,8 @@ export const normalizeConfig = (
   }
 
   return {
+    anime_id:
+      typeof config.anime_id === 'string' ? config.anime_id.trim() : '',
     image_url:
       typeof config.image_url === 'string' ? config.image_url.trim() : '',
     link_url:
@@ -106,13 +108,15 @@ export const validateBlockPayload = (
   }
 
   const card = normalized as CtaCardConfig;
-  if (!title?.trim()) {
-    throw new BadRequestException('کارت CTA به عنوان نیاز دارد');
+  const animeId = card.anime_id?.trim();
+  if (!animeId || !isValidUuid(animeId)) {
+    throw new BadRequestException('کارت CTA به انتخاب انیمه نیاز دارد');
   }
-  if (!card.image_url?.trim() || !isAllowedImageUrl(card.image_url)) {
-    throw new BadRequestException('کارت CTA به تصویر معتبر نیاز دارد');
+  if (card.image_url?.trim() && !isAllowedImageUrl(card.image_url)) {
+    throw new BadRequestException('تصویر کارت نامعتبر است');
   }
   if (card.link_url && !isAllowedLinkUrl(card.link_url)) {
     throw new BadRequestException('لینک کارت نامعتبر است');
   }
+  void title;
 };

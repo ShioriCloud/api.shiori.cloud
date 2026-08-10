@@ -19,7 +19,11 @@ export type CtaBannerConfig = {
 };
 
 export type CtaCardConfig = {
+  /** Linked anime — title/synopsis/media tags resolve from catalog at serve time. */
+  anime_id?: string;
+  /** Optional poster override; falls back to anime featured/cover. */
   image_url?: string;
+  /** Optional link override; falls back to `/anime/{slug|id}`. */
   link_url?: string;
   button_label?: string;
   open_in_new_tab?: boolean;
