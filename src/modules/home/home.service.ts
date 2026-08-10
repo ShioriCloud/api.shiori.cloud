@@ -20,6 +20,30 @@ const animeDetailPath = (anime: Pick<AnimeCardDto, 'id' | 'slug'>) => {
   return `/anime/${encodeURIComponent(segment)}`;
 };
 
+/** Prefer internal `/anime/...` paths so the mini-app stays in-router. */
+const resolveCtaLinkUrl = (
+  configLink: string | null | undefined,
+  anime: Pick<AnimeCardDto, 'id' | 'slug'>,
+): string => {
+  const raw = String(configLink ?? '').trim();
+  if (!raw) return animeDetailPath(anime);
+
+  if (raw.startsWith('/anime/')) return raw;
+
+  try {
+    if (/^https?:\/\//i.test(raw)) {
+      const url = new URL(raw);
+      if (url.pathname.startsWith('/anime/')) {
+        return `${url.pathname}${url.search}${url.hash}`;
+      }
+    }
+  } catch {
+    // fall through
+  }
+
+  return raw;
+};
+
 @Injectable()
 export class HomeService {
   constructor(
@@ -124,7 +148,7 @@ export class HomeService {
         '';
       if (!imageUrl) return null;
 
-      const linkUrl = config.link_url?.trim() || animeDetailPath(anime);
+      const linkUrl = resolveCtaLinkUrl(config.link_url, anime);
       const description =
         anime.description?.trim() || row.description?.trim() || null;
 
