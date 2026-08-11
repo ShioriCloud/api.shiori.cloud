@@ -61,7 +61,38 @@ export type TelegramMessageEntity = {
   customEmojiId?: string;
 };
 
-/** Convert Telegram caption + entities to HTML (bold, links, premium emoji). */
+const openEntityTag = (ent: TelegramMessageEntity, slice: string): string => {
+  const customId = String(
+    ent.custom_emoji_id ?? ent.customEmojiId ?? '',
+  ).trim();
+  if (ent.type === 'custom_emoji' && customId) {
+    return `<tg-emoji emoji-id="${escapeHtml(customId)}">`;
+  }
+  if (ent.type === 'text_link' && ent.url) {
+    return `<a href="${escapeHtml(ent.url)}">`;
+  }
+  if (ent.type === 'url') {
+    return `<a href="${escapeHtml(slice)}">`;
+  }
+  if (ent.type === 'bold' || ent.type === 'strong') return '<b>';
+  if (ent.type === 'italic') return '<i>';
+  if (ent.type === 'code') return '<code>';
+  return '';
+};
+
+const closeEntityTag = (ent: TelegramMessageEntity): string => {
+  if (ent.type === 'custom_emoji') return '</tg-emoji>';
+  if (ent.type === 'text_link' || ent.type === 'url') return '</a>';
+  if (ent.type === 'bold' || ent.type === 'strong') return '</b>';
+  if (ent.type === 'italic') return '</i>';
+  if (ent.type === 'code') return '</code>';
+  return '';
+};
+
+/**
+ * Convert Telegram caption + entities to HTML (bold, links, premium emoji).
+ * Preserves nested entities (e.g. custom_emoji inside bold).
+ */
 export const captionEntitiesToHtml = (
   caption: string,
   entities: TelegramMessageEntity[] = [],
@@ -70,44 +101,39 @@ export const captionEntitiesToHtml = (
   if (!text) return '';
   if (!entities.length) return escapeHtml(text);
 
-  const sorted = [...entities].sort(
-    (a, b) => a.offset - b.offset || b.length - a.length,
-  );
+  type Mark = { kind: 'open' | 'close'; ent: TelegramMessageEntity };
+  const marks: Mark[][] = Array.from({ length: text.length + 1 }, () => []);
 
-  let html = '';
-  let cursor = 0;
-
-  for (const ent of sorted) {
-    const start = Math.max(0, ent.offset);
-    const end = Math.min(text.length, ent.offset + ent.length);
-    if (end <= cursor || start < cursor) continue;
-
-    html += escapeHtml(text.slice(cursor, start));
-    const slice = text.slice(start, end);
-    const escaped = escapeHtml(slice);
-    const customId = String(
-      ent.custom_emoji_id ?? ent.customEmojiId ?? '',
-    ).trim();
-
-    if (ent.type === 'custom_emoji' && customId) {
-      html += `<tg-emoji emoji-id="${escapeHtml(customId)}">${escaped}</tg-emoji>`;
-    } else if (ent.type === 'text_link' && ent.url) {
-      html += `<a href="${escapeHtml(ent.url)}">${escaped}</a>`;
-    } else if (ent.type === 'url') {
-      html += `<a href="${escapeHtml(slice)}">${escaped}</a>`;
-    } else if (ent.type === 'bold' || ent.type === 'strong') {
-      html += `<b>${escaped}</b>`;
-    } else if (ent.type === 'italic') {
-      html += `<i>${escaped}</i>`;
-    } else if (ent.type === 'code') {
-      html += `<code>${escaped}</code>`;
-    } else {
-      html += escaped;
-    }
-    cursor = end;
+  for (const ent of entities) {
+    const start = Math.max(0, Number(ent.offset) || 0);
+    const end = Math.min(text.length, start + (Number(ent.length) || 0));
+    if (end <= start) continue;
+    if (!openEntityTag(ent, text.slice(start, end))) continue;
+    marks[start].push({ kind: 'open', ent });
+    marks[end].push({ kind: 'close', ent });
   }
 
-  html += escapeHtml(text.slice(cursor));
+  let html = '';
+  for (let i = 0; i <= text.length; i++) {
+    const at = marks[i];
+    // Close inner (shorter) entities first
+    const closes = at
+      .filter((m) => m.kind === 'close')
+      .sort((a, b) => (a.ent.length || 0) - (b.ent.length || 0));
+    for (const { ent } of closes) {
+      html += closeEntityTag(ent);
+    }
+    // Open outer (longer) entities first
+    const opens = at
+      .filter((m) => m.kind === 'open')
+      .sort((a, b) => (b.ent.length || 0) - (a.ent.length || 0));
+    for (const { ent } of opens) {
+      html += openEntityTag(ent, text.slice(ent.offset, ent.offset + ent.length));
+    }
+    if (i < text.length) {
+      html += escapeHtml(text[i]!);
+    }
+  }
   return html;
 };
 
