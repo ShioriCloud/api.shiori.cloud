@@ -75,14 +75,15 @@ export class ChannelDraftsService {
     return String(this.config.get<string>('telegram.postsChannelId') ?? '').trim();
   }
 
-  private botUsername(): string {
+  private miniAppBotUsername(): string {
     return (
-      this.config.get<string>('telegram.botUsername')?.trim() || 'ShioriUploadBot'
+      this.config.get<string>('telegram.miniAppBotUsername')?.trim() ||
+      'ShioriMiniBot'
     );
   }
 
   private draftKeyboard(draftId: string, animeId: string) {
-    const miniUrl = buildMiniAppEpisodesUrl(this.botUsername(), animeId);
+    const miniUrl = buildMiniAppEpisodesUrl(this.miniAppBotUsername(), animeId);
     const successId =
       process.env.CUSTOM_EMOJI_SUCCESS?.trim() || '5206607081334906820';
     const stopId =
@@ -117,7 +118,7 @@ export class ChannelDraftsService {
         [
           {
             text: 'دانلود از مینی‌اپ',
-            url: buildMiniAppEpisodesUrl(this.botUsername(), animeId),
+            url: buildMiniAppEpisodesUrl(this.miniAppBotUsername(), animeId),
           },
         ],
       ],

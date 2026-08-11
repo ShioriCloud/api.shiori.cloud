@@ -21,6 +21,11 @@ export default () => {
       .map((value) => value.trim())
       .filter(Boolean),
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? 'ShioriUploadBot',
+    /** Mini App host bot (startapp deep links). Separate from file-delivery bot. */
+    miniAppBotUsername:
+      process.env.TELEGRAM_MINI_APP_BOT_USERNAME ??
+      process.env.MINI_APP_BOT_USERNAME ??
+      'ShioriMiniBot',
     adminUserId: process.env.ADMIN_USER_ID ?? '',
     postsChannelId:
       process.env.PUBLIC_POSTS_CHANNEL_ID ||

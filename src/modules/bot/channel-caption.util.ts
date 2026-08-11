@@ -163,7 +163,7 @@ export const buildMiniAppEpisodesUrl = (
   botUsername: string,
   catalogAnimeId: string,
 ): string => {
-  const bot = String(botUsername || 'ShioriUploadBot').replace(/^@/, '');
+  const bot = String(botUsername || 'ShioriMiniBot').replace(/^@/, '');
   const id = String(catalogAnimeId).trim();
   return `https://t.me/${bot}?startapp=${encodeURIComponent(`anime_${id}_episodes`)}`;
 };

@@ -358,8 +358,9 @@ export class AppAuthService {
 
     const botUsername = String(
       dto.bot_username?.trim() ||
+        this.config.get<string>('telegram.miniAppBotUsername') ||
         this.config.get<string>('telegram.botUsername') ||
-        'ShioriUploadBot',
+        'ShioriMiniBot',
     ).replace(/^@+/, '');
 
     const telegramUrl = `https://t.me/${botUsername}?startapp=link_${token}`;
