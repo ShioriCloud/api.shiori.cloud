@@ -128,6 +128,18 @@ export class AnimeAdminController {
     return this.animeAdminService.insertEpisode(body);
   }
 
+  @Post('anime/:animeId/channel-draft')
+  @ApiOperation({
+    summary: 'Queue channel post draft preview for an episode (delivered by tel-bot)',
+  })
+  queueChannelDraft(
+    @Param('animeId') animeId: string,
+    @Body() body: { episode_number?: number; episodeNumber?: number },
+  ) {
+    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    return this.animeAdminService.queueChannelDraftPreview(animeId, episodeNumber);
+  }
+
   @Post('anime/:animeId/episodes/batch')
   insertEpisodesBatch(
     @Param('animeId') animeId: string,

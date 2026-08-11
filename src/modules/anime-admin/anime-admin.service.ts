@@ -167,6 +167,9 @@ export class AnimeAdminService {
       video_file_type: normalizeVideoFileType(anime.videoFileType),
       video_resolution: normalizeVideoResolution(anime.videoResolution),
       video_encode: normalizeVideoEncode(anime.videoEncode),
+      has_channel_template: Boolean(
+        anime.channelCoverFileId && anime.channelCaptionHtml,
+      ),
       updated_at: anime.updatedAt?.toISOString?.() ?? null,
       last_edited_at: anime.lastEditedAt?.toISOString?.() ?? null,
       last_edited_by: anime.lastEditedById ? Number(anime.lastEditedById) : null,
@@ -614,28 +617,25 @@ export class AnimeAdminService {
         });
     }
 
-    let channelDraft: Awaited<
-      ReturnType<ChannelDraftsService['createFromEpisode']>
-    > | null = null;
-    if (episodeNumber > 0 && String(saved.downloadLink ?? '').trim()) {
-      try {
-        channelDraft = await this.channelDraftsService.createFromEpisode(
-          animeId,
-          episodeNumber,
-        );
-      } catch {
-        channelDraft = null;
-      }
-    }
-
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,
       title: saved.title,
       download_link: saved.downloadLink,
       video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
-      channel_draft: channelDraft,
     };
+  }
+
+  /**
+   * Queue a channel-post draft preview for tel-bot (manual from admin panel).
+   */
+  async queueChannelDraftPreview(animeIdOrSlug: string, episodeNumber: number) {
+    const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
+    const ep = Number(episodeNumber);
+    if (!Number.isFinite(ep) || ep <= 0) {
+      throw new BadRequestException('episode_number required');
+    }
+    return this.channelDraftsService.createFromEpisode(animeId, ep);
   }
 
   async insertEpisodesBatch(animeIdOrSlug: string, episodes: Payload[]) {

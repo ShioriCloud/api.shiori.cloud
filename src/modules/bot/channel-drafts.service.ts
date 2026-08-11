@@ -18,6 +18,7 @@ import {
   buildEpisodeCaptionLine,
   buildMiniAppEpisodesUrl,
   captionEntitiesToHtml,
+  repairTgEmojiHtml,
   upgradeKnownEmojisToPremiumHtml,
   type TelegramMessageEntity,
 } from './channel-caption.util';
@@ -206,6 +207,7 @@ export class ChannelDraftsService {
       );
     }
     captionHtml = upgradeKnownEmojisToPremiumHtml(captionHtml);
+    captionHtml = repairTgEmojiHtml(captionHtml);
     if (!captionHtml) {
       throw new BadRequestException('caption required');
     }
@@ -402,11 +404,30 @@ export class ChannelDraftsService {
       isNew: true,
     });
 
+    const templateHtml = upgradeKnownEmojisToPremiumHtml(
+      anime.channelCaptionHtml,
+    );
+    if (templateHtml !== anime.channelCaptionHtml) {
+      anime.channelCaptionHtml = templateHtml;
+      anime.updatedAt = new Date();
+      await this.animeRepo.save(anime);
+    }
+
     const proposedCaption = appendEpisodeLineToCaption(
-      upgradeKnownEmojisToPremiumHtml(anime.channelCaptionHtml),
+      templateHtml,
       episodeLine,
       episodeNumber,
     );
+
+    // Drop older undelivered previews for this anime so the bot queue cannot pile up.
+    await this.draftRepo
+      .createQueryBuilder()
+      .update(ChannelPostDraft)
+      .set({ status: 'rejected' })
+      .where('anime_id = :animeId', { animeId })
+      .andWhere('status = :status', { status: 'pending' })
+      .andWhere('admin_preview_message_id IS NULL')
+      .execute();
 
     const adminId = this.adminUserId();
     const draft = await this.draftRepo.save(

@@ -138,15 +138,60 @@ export const captionEntitiesToHtml = (
 };
 
 /**
+ * Fix nested / orphan &lt;tg-emoji&gt; tags (e.g. double-wrap from shared ❤️ fallbacks).
+ */
+export const repairTgEmojiHtml = (htmlCaption: string): string => {
+  let out = String(htmlCaption ?? '');
+  if (!out) return out;
+
+  let prev = '';
+  while (out !== prev) {
+    prev = out;
+    out = out.replace(
+      /<tg-emoji\b[^>]*>\s*(<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>)\s*<\/tg-emoji>/gi,
+      '$1',
+    );
+  }
+
+  // Drop orphan closing tags (keep balanced pairs only).
+  const tokenRe = /<tg-emoji\b[^>]*>|<\/tg-emoji>/gi;
+  let depth = 0;
+  let rebuilt = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = tokenRe.exec(out))) {
+    rebuilt += out.slice(last, m.index);
+    if (m[0].startsWith('</')) {
+      if (depth > 0) {
+        rebuilt += m[0];
+        depth -= 1;
+      }
+    } else {
+      rebuilt += m[0];
+      depth += 1;
+    }
+    last = m.index + m[0].length;
+  }
+  rebuilt += out.slice(last);
+  return rebuilt;
+};
+
+/**
  * Upgrade plain unicode schedule emojis to &lt;tg-emoji&gt; (for templates
  * bound before custom_emoji was preserved, or captions without entities).
+ * Same glyph must only wrap once (heart + donation both use ❤️).
  */
 export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => {
-  const src = String(htmlCaption ?? '');
+  const src = repairTgEmojiHtml(htmlCaption);
   if (!src) return src;
 
-  const parts = src.split(/(<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>)/g);
-  // Longer / more specific fallbacks first (e.g. ✔️ before ✅ if overlapping — they don't)
+  // Prefer donation over heart when both map to the same unicode.
+  const priority: Record<string, number> = {
+    donation: 0,
+    heart: 1,
+  };
+
+  const seenFallback = new Set<string>();
   const entries = Object.entries(PREMIUM_EMOJI_FALLBACK)
     .map(([name, fallback]) => ({
       name,
@@ -154,20 +199,40 @@ export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => 
       id: PREMIUM_EMOJI_IDS[name],
     }))
     .filter((e) => e.id && e.fallback)
-    .sort((a, b) => b.fallback.length - a.fallback.length);
+    .sort(
+      (a, b) =>
+        (priority[a.name] ?? 50) - (priority[b.name] ?? 50) ||
+        b.fallback.length - a.fallback.length,
+    )
+    .filter((e) => {
+      if (seenFallback.has(e.fallback)) return false;
+      seenFallback.add(e.fallback);
+      return true;
+    });
 
-  return parts
-    .map((part) => {
-      if (part.startsWith('<tg-emoji')) return part;
-      let out = part;
-      for (const { fallback, id } of entries) {
-        if (!out.includes(fallback)) continue;
-        const tag = `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
-        out = out.split(fallback).join(tag);
-      }
-      return out;
-    })
-    .join('');
+  const wrapOutsideTags = (chunk: string): string => {
+    const parts = chunk.split(/(<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>)/g);
+    return parts
+      .map((part) => {
+        if (part.startsWith('<tg-emoji')) return part;
+        let out = part;
+        for (const { fallback, id } of entries) {
+          if (!out.includes(fallback)) continue;
+          const tag = `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
+          // Re-split after each wrap so the emoji inside the new tag is not wrapped again.
+          out = out
+            .split(/(<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>)/g)
+            .map((sub) =>
+              sub.startsWith('<tg-emoji') ? sub : sub.split(fallback).join(tag),
+            )
+            .join('');
+        }
+        return out;
+      })
+      .join('');
+  };
+
+  return repairTgEmojiHtml(wrapOutsideTags(src));
 };
 
 /** Always Softsub in channel post template (panel media type is ignored). */
