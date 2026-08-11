@@ -145,7 +145,7 @@ export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => 
 };
 
 /** Always Softsub in channel post template (panel media type is ignored). */
-const videoLabel = (_videoFileType?: string | null) => '[1080p Softsub]';
+const videoLabel = (_videoFileType?: string | null) => '[1080p][Softsub]';
 
 /**
  * New / updated episode line:
