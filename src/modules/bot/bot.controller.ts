@@ -230,6 +230,14 @@ export class BotController {
     return this.channelDrafts.listPendingPreviews(limit ? Number(limit) : undefined);
   }
 
+  @Post('channel-drafts/clear-pending')
+  @ApiOperation({
+    summary: 'Reject all pending drafts still waiting for preview DM (clear bot queue)',
+  })
+  clearPendingPreviews() {
+    return this.channelDrafts.clearPendingPreviews();
+  }
+
   @Get('channel-drafts/:id')
   @ApiOperation({ summary: 'Get channel post draft' })
   getChannelDraft(@Param('id') id: string) {

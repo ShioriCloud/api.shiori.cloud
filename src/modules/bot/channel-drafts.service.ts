@@ -446,6 +446,21 @@ export class ChannelDraftsService {
     return this.toDraftDto(draft);
   }
 
+  /** Reject pending drafts that still await admin preview DM (clear bot queue). */
+  async clearPendingPreviews() {
+    const result = await this.draftRepo
+      .createQueryBuilder()
+      .update(ChannelPostDraft)
+      .set({ status: 'rejected' })
+      .where('status = :status', { status: 'pending' })
+      .andWhere('admin_preview_message_id IS NULL')
+      .execute();
+
+    const cleared = Number(result.affected ?? 0);
+    this.logger.log(`cleared ${cleared} pending channel draft preview(s)`);
+    return { ok: true as const, cleared };
+  }
+
   /**
    * Prepare publish payload for tel-bot. Does not call Telegram from API.
    */

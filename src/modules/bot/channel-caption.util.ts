@@ -144,13 +144,8 @@ export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => 
     .join('');
 };
 
-/** e.g. [1080p Softsub] — linked to the episode file */
-const videoLabel = (videoFileType?: string | null) => {
-  const t = String(videoFileType ?? 'softsub').toLowerCase();
-  if (t === 'hardsub') return '[1080p Hardsub]';
-  if (t === 'free') return '[1080p Free]';
-  return '[1080p Softsub]';
-};
+/** Always Softsub in channel post template (panel media type is ignored). */
+const videoLabel = (_videoFileType?: string | null) => '[1080p Softsub]';
 
 /**
  * New / updated episode line:
