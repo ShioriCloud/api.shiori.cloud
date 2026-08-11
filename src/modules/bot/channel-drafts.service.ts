@@ -83,17 +83,28 @@ export class ChannelDraftsService {
 
   private draftKeyboard(draftId: string, animeId: string) {
     const miniUrl = buildMiniAppEpisodesUrl(this.botUsername(), animeId);
+    const successId =
+      process.env.CUSTOM_EMOJI_SUCCESS?.trim() || '5206607081334906820';
+    const stopId =
+      process.env.CUSTOM_EMOJI_STOP?.trim() || '5260293700088511294';
     return {
       inline_keyboard: [
         [
-          { text: '✅ انتشار در کانال', callback_data: `chdraft_ok_${draftId}` },
-          { text: '❌ رد', callback_data: `chdraft_no_${draftId}` },
+          {
+            text: 'انتشار در کانال',
+            callback_data: `chdraft_ok_${draftId}`,
+            icon_custom_emoji_id: successId,
+          },
+          {
+            text: 'رد',
+            callback_data: `chdraft_no_${draftId}`,
+            icon_custom_emoji_id: stopId,
+          },
         ],
         [
           {
             text: 'دانلود از مینی‌اپ',
             url: miniUrl,
-            style: 'primary',
           },
         ],
       ],
@@ -107,7 +118,6 @@ export class ChannelDraftsService {
           {
             text: 'دانلود از مینی‌اپ',
             url: buildMiniAppEpisodesUrl(this.botUsername(), animeId),
-            style: 'primary',
           },
         ],
       ],

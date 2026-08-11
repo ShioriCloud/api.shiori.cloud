@@ -2,6 +2,24 @@
  * Build / mutate TheShioriSub-style HTML captions for channel drafts.
  */
 
+/** Same IDs as tel-bot premiumEmojiDefaults (override via CUSTOM_EMOJI_* on API). */
+const PREMIUM_EMOJI_IDS: Record<string, string> = {
+  check: process.env.CUSTOM_EMOJI_CHECK?.trim() || '5206607081334906820',
+  arrowDown: process.env.CUSTOM_EMOJI_ARROWDOWN?.trim() || '5406745015365943482',
+};
+
+const PREMIUM_EMOJI_FALLBACK: Record<string, string> = {
+  check: '✔️',
+  arrowDown: '⬇️',
+};
+
+const premiumEmoji = (name: 'check' | 'arrowDown') => {
+  const fallback = PREMIUM_EMOJI_FALLBACK[name] ?? '';
+  const id = PREMIUM_EMOJI_IDS[name];
+  if (!id) return fallback;
+  return `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
+};
+
 const escapeHtml = (value: string) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -64,13 +82,19 @@ export const captionEntitiesToHtml = (
   return html;
 };
 
+/** e.g. [1080p Softsub] — linked to the episode file */
 const videoLabel = (videoFileType?: string | null) => {
   const t = String(videoFileType ?? 'softsub').toLowerCase();
-  if (t === 'hardsub') return '[1080p][Hardsub]';
-  if (t === 'free') return '[1080p][Free]';
-  return '[1080p][Softsub]';
+  if (t === 'hardsub') return '[1080p Hardsub]';
+  if (t === 'free') return '[1080p Free]';
+  return '[1080p Softsub]';
 };
 
+/**
+ * New / updated episode line:
+ * ⬇️ <b>E05</b>: <a>[1080p Softsub]</a> | <a>Subtitle</a>
+ * Subtitle segment omitted when subtitleUrl is empty.
+ */
 export const buildEpisodeCaptionLine = (opts: {
   episodeNumber: number;
   videoUrl: string;
@@ -79,7 +103,8 @@ export const buildEpisodeCaptionLine = (opts: {
   isNew?: boolean;
 }): string => {
   const epLabel = String(opts.episodeNumber).padStart(2, '0');
-  const marker = opts.isNew === false ? '✅' : '⬇️';
+  const marker =
+    opts.isNew === false ? premiumEmoji('check') : premiumEmoji('arrowDown');
   const video = tgLink(opts.videoUrl, videoLabel(opts.videoFileType));
   if (opts.subtitleUrl?.trim()) {
     return `${marker} <b>E${epLabel}</b>: ${video} | ${tgLink(opts.subtitleUrl.trim(), 'Subtitle')}`;
