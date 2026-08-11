@@ -7,9 +7,10 @@ import {
   Patch,
   Post,
   Put,
+  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiHeader, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { BotAuthGuard } from './bot-auth.guard';
 import {
   BotArchiveLinkResponseDto,
@@ -150,6 +151,21 @@ export class BotController {
     @Body() body: AttributeSponsorJoinDto,
   ) {
     return this.sponsorCampaigns.attributeJoin(id, body);
+  }
+
+  @Get('anime/search')
+  @ApiOperation({ summary: 'Search catalog anime for channel template bind' })
+  @ApiQuery({ name: 'q', required: true })
+  @ApiQuery({ name: 'limit', required: false })
+  searchAnime(
+    @Query('q') q?: string,
+    @Query('query') query?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.channelDrafts.searchAnime(
+      String(q ?? query ?? ''),
+      limit ? Number(limit) : undefined,
+    );
   }
 
   @Put('anime/:idOrSlug/channel-template')

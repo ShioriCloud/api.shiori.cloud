@@ -134,6 +134,52 @@ export class ChannelDraftsService {
     };
   }
 
+  /**
+   * Lightweight anime search for bot bind picker.
+   * Matches title / title_romaji / slug (ILIKE).
+   */
+  async searchAnime(query: string, limitRaw?: number) {
+    const q = String(query ?? '').trim();
+    if (!q) {
+      throw new BadRequestException('query required');
+    }
+
+    const limit = Math.min(20, Math.max(1, Number(limitRaw) || 8));
+    const pattern = `%${q}%`;
+
+    const rows = await this.animeRepo
+      .createQueryBuilder('a')
+      .select([
+        'a.id',
+        'a.slug',
+        'a.title',
+        'a.year',
+        'a.coverImage',
+        'a.channelCoverFileId',
+        'a.channelCaptionHtml',
+      ])
+      .where(
+        '(a.title ILIKE :q OR a.title_romaji ILIKE :q OR a.slug ILIKE :q)',
+        { q: pattern },
+      )
+      .orderBy('a.updatedAt', 'DESC')
+      .take(limit)
+      .getMany();
+
+    return {
+      items: rows.map((a) => ({
+        id: a.id,
+        slug: a.slug,
+        title: a.title,
+        year: a.year,
+        cover_image: a.coverImage,
+        has_channel_template: Boolean(
+          a.channelCoverFileId && a.channelCaptionHtml,
+        ),
+      })),
+    };
+  }
+
   async bindTemplate(dto: BindChannelTemplateDto) {
     const anime = await this.resolveAnime(dto.animeIdOrSlug);
     const coverFileId = String(dto.coverFileId ?? '').trim();
