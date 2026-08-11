@@ -18,6 +18,7 @@ import {
   buildEpisodeCaptionLine,
   buildMiniAppEpisodesUrl,
   captionEntitiesToHtml,
+  upgradeKnownEmojisToPremiumHtml,
   type TelegramMessageEntity,
 } from './channel-caption.util';
 
@@ -204,6 +205,7 @@ export class ChannelDraftsService {
         dto.captionEntities ?? [],
       );
     }
+    captionHtml = upgradeKnownEmojisToPremiumHtml(captionHtml);
     if (!captionHtml) {
       throw new BadRequestException('caption required');
     }
@@ -401,7 +403,7 @@ export class ChannelDraftsService {
     });
 
     const proposedCaption = appendEpisodeLineToCaption(
-      anime.channelCaptionHtml,
+      upgradeKnownEmojisToPremiumHtml(anime.channelCaptionHtml),
       episodeLine,
       episodeNumber,
     );

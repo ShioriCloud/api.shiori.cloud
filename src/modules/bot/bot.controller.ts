@@ -185,12 +185,16 @@ export class BotController {
         offset: number;
         length: number;
         url?: string;
+        custom_emoji_id?: string;
+        customEmojiId?: string;
       }>;
       captionEntities?: Array<{
         type: string;
         offset: number;
         length: number;
         url?: string;
+        custom_emoji_id?: string;
+        customEmojiId?: string;
       }>;
       channel_id?: string;
       channelId?: string;
