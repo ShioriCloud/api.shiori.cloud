@@ -219,14 +219,53 @@ export class BotController {
     return this.channelDrafts.createFromEpisode(animeId, episodeNumber);
   }
 
+  @Get('channel-drafts/pending-preview')
+  @ApiOperation({ summary: 'List channel drafts waiting for bot to send admin preview DM' })
+  @ApiQuery({ name: 'limit', required: false })
+  listPendingPreviews(@Query('limit') limit?: string) {
+    return this.channelDrafts.listPendingPreviews(limit ? Number(limit) : undefined);
+  }
+
   @Get('channel-drafts/:id')
   @ApiOperation({ summary: 'Get channel post draft' })
   getChannelDraft(@Param('id') id: string) {
     return this.channelDrafts.getDraft(id);
   }
 
+  @Post('channel-drafts/:id/ack-preview')
+  @ApiOperation({ summary: 'Ack that tel-bot delivered the admin preview DM' })
+  ackChannelDraftPreview(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      chat_id?: string | number;
+      chatId?: string | number;
+      message_id?: string | number;
+      messageId?: string | number;
+    },
+  ) {
+    return this.channelDrafts.ackPreview(id, body);
+  }
+
+  @Post('channel-drafts/:id/mark-published')
+  @ApiOperation({ summary: 'Mark draft published after tel-bot sent the channel post' })
+  markChannelDraftPublished(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      published_message_id?: string | number;
+      publishedMessageId?: string | number;
+      channel_id?: string;
+      channelId?: string;
+    },
+  ) {
+    return this.channelDrafts.markPublished(id, body);
+  }
+
   @Post('channel-drafts/:id/publish')
-  @ApiOperation({ summary: 'Publish channel post draft to posts channel' })
+  @ApiOperation({
+    summary: 'Prepare channel draft publish payload for tel-bot (does not call Telegram)',
+  })
   publishChannelDraft(@Param('id') id: string) {
     return this.channelDrafts.publishDraft(id);
   }

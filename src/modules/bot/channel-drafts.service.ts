@@ -6,14 +6,13 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import {
   Anime,
   AnimeEpisode,
   AnimeSubtitle,
   ChannelPostDraft,
 } from '../../entities';
-import { TelegramBotService } from '../../telegram/telegram-bot.service';
 import {
   appendEpisodeLineToCaption,
   buildEpisodeCaptionLine,
@@ -44,7 +43,6 @@ export class ChannelDraftsService {
     private readonly subtitleRepo: Repository<AnimeSubtitle>,
     @InjectRepository(ChannelPostDraft)
     private readonly draftRepo: Repository<ChannelPostDraft>,
-    private readonly telegram: TelegramBotService,
     private readonly config: ConfigService,
   ) {}
 
@@ -238,9 +236,114 @@ export class ChannelDraftsService {
     return this.toDraftDto(draft, draft.anime);
   }
 
+  /** Drafts waiting for tel-bot to DM the admin preview. */
+  async listPendingPreviews(limitRaw?: number) {
+    const limit = Math.min(20, Math.max(1, Number(limitRaw) || 10));
+    const drafts = await this.draftRepo.find({
+      where: {
+        status: 'pending',
+        adminPreviewMessageId: IsNull(),
+      },
+      relations: { anime: true },
+      order: { createdAt: 'ASC' },
+      take: limit,
+    });
+
+    return {
+      items: drafts
+        .filter((d) => Boolean(d.coverFileId))
+        .map((d) => ({
+          ...this.toDraftDto(d, d.anime),
+          admin_user_id: this.adminUserId(),
+          draft_keyboard: this.draftKeyboard(d.id, d.animeId),
+        })),
+    };
+  }
+
+  async ackPreview(
+    id: string,
+    body: {
+      chat_id?: string | number;
+      chatId?: string | number;
+      message_id?: string | number;
+      messageId?: string | number;
+    },
+  ) {
+    const draft = await this.draftRepo.findOne({
+      where: { id },
+      relations: { anime: true },
+    });
+    if (!draft) throw new NotFoundException('Draft not found');
+
+    const chatId = String(body.chat_id ?? body.chatId ?? '').trim();
+    const messageId = String(body.message_id ?? body.messageId ?? '').trim();
+    if (!chatId || !messageId) {
+      throw new BadRequestException('chat_id and message_id required');
+    }
+
+    draft.adminPreviewChatId = chatId;
+    draft.adminPreviewMessageId = messageId;
+    await this.draftRepo.save(draft);
+    return this.toDraftDto(draft, draft.anime);
+  }
+
   /**
-   * Build draft from a newly inserted episode and DM preview to admin.
-   * Returns null when anime has no channel template (non-fatal).
+   * Mark draft published after tel-bot already sent the channel post.
+   */
+  async markPublished(
+    id: string,
+    body: {
+      published_message_id?: string | number;
+      publishedMessageId?: string | number;
+      channel_id?: string;
+      channelId?: string;
+    },
+  ) {
+    const draft = await this.draftRepo.findOne({
+      where: { id },
+      relations: { anime: true },
+    });
+    if (!draft) throw new NotFoundException('Draft not found');
+    if (draft.status === 'published') {
+      return this.toDraftDto(draft, draft.anime);
+    }
+    if (draft.status !== 'pending') {
+      throw new BadRequestException(`Draft status is ${draft.status}`);
+    }
+
+    const anime = draft.anime;
+    if (!anime) throw new NotFoundException('Anime not found for draft');
+
+    const messageId = String(
+      body.published_message_id ?? body.publishedMessageId ?? '',
+    ).trim();
+    if (!messageId) {
+      throw new BadRequestException('published_message_id required');
+    }
+
+    const channelId =
+      String(body.channel_id ?? body.channelId ?? '').trim() ||
+      this.postsChannelId(anime);
+    const cover = draft.coverFileId || anime.channelCoverFileId;
+
+    draft.status = 'published';
+    draft.publishedMessageId = messageId;
+    await this.draftRepo.save(draft);
+
+    anime.channelCaptionHtml = draft.proposedCaption;
+    if (cover) anime.channelCoverFileId = cover;
+    anime.channelLatestMessageId = messageId;
+    if (channelId) anime.channelId = channelId;
+    anime.updatedAt = new Date();
+    await this.animeRepo.save(anime);
+
+    return this.toDraftDto(draft, anime);
+  }
+
+  /**
+   * Build draft from a newly inserted episode.
+   * Preview DM is delivered by tel-bot (polls pending-preview) because the API
+   * host often cannot reach api.telegram.org.
    */
   async createFromEpisode(animeId: string, episodeNumber: number) {
     const anime = await this.animeRepo.findOne({ where: { id: animeId } });
@@ -292,6 +395,7 @@ export class ChannelDraftsService {
       episodeNumber,
     );
 
+    const adminId = this.adminUserId();
     const draft = await this.draftRepo.save(
       this.draftRepo.create({
         animeId,
@@ -299,59 +403,20 @@ export class ChannelDraftsService {
         proposedCaption,
         coverFileId: anime.channelCoverFileId,
         status: 'pending',
+        adminPreviewChatId: adminId != null ? String(adminId) : null,
       }),
     );
 
-    const adminId = this.adminUserId();
-    if (!adminId) {
-      this.logger.warn('ADMIN_USER_ID not set — draft saved without DM preview');
-      return {
-        skipped: false as const,
-        draft: this.toDraftDto(draft, anime),
-        preview_sent: false,
-        reason: 'admin_not_configured',
-      };
-    }
-
-    const previewNotice = await this.telegram.sendMessage({
-      chatId: adminId,
-      text:
-        `پیش‌نویس پست کانال\n` +
-        `<b>${anime.title}</b> — قسمت ${episodeNumber}\n` +
-        `تأیید → انتشار در کانال`,
-      parseMode: 'HTML',
-    });
-
-    const preview = await this.telegram.sendPhoto({
-      chatId: adminId,
-      photo: draft.coverFileId!,
-      caption: proposedCaption,
-      parseMode: 'HTML',
-      replyMarkup: this.draftKeyboard(draft.id, anime.id),
-      disableWebPagePreview: true,
-    });
-
-    if (!preview.ok || !preview.result?.message_id) {
-      this.logger.warn(
-        `Failed to send channel draft preview: ${preview.description}`,
-      );
-      return {
-        skipped: false as const,
-        draft: this.toDraftDto(draft, anime),
-        preview_sent: false,
-        reason: preview.description ?? 'sendPhoto_failed',
-        notice_sent: Boolean(previewNotice.ok),
-      };
-    }
-
-    draft.adminPreviewChatId = String(adminId);
-    draft.adminPreviewMessageId = String(preview.result.message_id);
-    await this.draftRepo.save(draft);
+    this.logger.log(
+      `channel draft queued for bot preview draft=${draft.id} anime=${animeId} ep=${episodeNumber}`,
+    );
 
     return {
       skipped: false as const,
       draft: this.toDraftDto(draft, anime),
-      preview_sent: true,
+      preview_sent: false,
+      preview_queued: true,
+      reason: adminId ? 'queued_for_bot' : 'admin_not_configured',
     };
   }
 
@@ -364,18 +429,13 @@ export class ChannelDraftsService {
 
     draft.status = 'rejected';
     await this.draftRepo.save(draft);
-
-    if (draft.adminPreviewChatId && draft.adminPreviewMessageId) {
-      await this.telegram.editMessageReplyMarkup({
-        chatId: draft.adminPreviewChatId,
-        messageId: Number(draft.adminPreviewMessageId),
-        replyMarkup: { inline_keyboard: [] },
-      });
-    }
-
+    // Keyboard clear is done by tel-bot (API often cannot reach Telegram).
     return this.toDraftDto(draft);
   }
 
+  /**
+   * Prepare publish payload for tel-bot. Does not call Telegram from API.
+   */
   async publishDraft(id: string) {
     const draft = await this.draftRepo.findOne({
       where: { id },
@@ -383,7 +443,11 @@ export class ChannelDraftsService {
     });
     if (!draft) throw new NotFoundException('Draft not found');
     if (draft.status === 'published') {
-      return this.toDraftDto(draft, draft.anime);
+      return {
+        needs_bot_send: false as const,
+        already_published: true as const,
+        draft: this.toDraftDto(draft, draft.anime),
+      };
     }
     if (draft.status !== 'pending') {
       throw new BadRequestException(`Draft status is ${draft.status}`);
@@ -400,47 +464,14 @@ export class ChannelDraftsService {
     const cover = draft.coverFileId || anime.channelCoverFileId;
     if (!cover) throw new BadRequestException('cover file id missing');
 
-    const sent = await this.telegram.sendPhoto({
-      chatId: channelId,
-      photo: cover,
+    return {
+      needs_bot_send: true as const,
+      draft: this.toDraftDto(draft, anime),
+      channel_id: channelId,
+      cover_file_id: cover,
       caption: draft.proposedCaption,
-      parseMode: 'HTML',
-      replyMarkup: this.channelKeyboard(anime.id),
-      disableWebPagePreview: true,
-    });
-
-    if (!sent.ok || !sent.result?.message_id) {
-      throw new BadRequestException(
-        sent.description ?? 'Failed to publish channel post',
-      );
-    }
-
-    draft.status = 'published';
-    draft.publishedMessageId = String(sent.result.message_id);
-    await this.draftRepo.save(draft);
-
-    anime.channelCaptionHtml = draft.proposedCaption;
-    anime.channelCoverFileId = cover;
-    anime.channelLatestMessageId = String(sent.result.message_id);
-    anime.channelId = channelId;
-    anime.updatedAt = new Date();
-    await this.animeRepo.save(anime);
-
-    if (draft.adminPreviewChatId && draft.adminPreviewMessageId) {
-      await this.telegram.editMessageReplyMarkup({
-        chatId: draft.adminPreviewChatId,
-        messageId: Number(draft.adminPreviewMessageId),
-        replyMarkup: { inline_keyboard: [] },
-      });
-      await this.telegram.sendMessage({
-        chatId: draft.adminPreviewChatId,
-        text:
-          `✅ پست در کانال منتشر شد.\n` +
-          `message_id: ${sent.result.message_id}`,
-        parseMode: 'HTML',
-      });
-    }
-
-    return this.toDraftDto(draft, anime);
+      reply_markup: this.channelKeyboard(anime.id),
+      anime_id: anime.id,
+    };
   }
 }
