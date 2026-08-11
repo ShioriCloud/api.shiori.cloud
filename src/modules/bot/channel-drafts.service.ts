@@ -264,14 +264,32 @@ export class ChannelDraftsService {
       take: limit,
     });
 
+    // Auto-reject undeliverable rows so they cannot clog the queue forever.
+    const undeliverable = drafts.filter(
+      (d) => !d.coverFileId || !String(d.proposedCaption ?? '').trim(),
+    );
+    if (undeliverable.length) {
+      await this.draftRepo
+        .createQueryBuilder()
+        .update(ChannelPostDraft)
+        .set({ status: 'rejected' })
+        .whereInIds(undeliverable.map((d) => d.id))
+        .execute();
+      this.logger.warn(
+        `auto-rejected ${undeliverable.length} undeliverable channel draft(s)`,
+      );
+    }
+
+    const deliverable = drafts.filter(
+      (d) => d.coverFileId && String(d.proposedCaption ?? '').trim(),
+    );
+
     return {
-      items: drafts
-        .filter((d) => Boolean(d.coverFileId))
-        .map((d) => ({
-          ...this.toDraftDto(d, d.anime),
-          admin_user_id: this.adminUserId(),
-          draft_keyboard: this.draftKeyboard(d.id, d.animeId),
-        })),
+      items: deliverable.map((d) => ({
+        ...this.toDraftDto(d, d.anime),
+        admin_user_id: this.adminUserId(),
+        draft_keyboard: this.draftKeyboard(d.id, d.animeId),
+      })),
     };
   }
 
