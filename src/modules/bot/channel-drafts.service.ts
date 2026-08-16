@@ -20,6 +20,7 @@ import {
   repairTgEmojiHtml,
   replaceEpisodeLinesInCaption,
   upgradeKnownEmojisToPremiumHtml,
+  upgradeSeasonEpisodePackEmoji,
   type TelegramMessageEntity,
 } from './channel-caption.util';
 
@@ -215,6 +216,7 @@ export class ChannelDraftsService {
       );
     }
     captionHtml = upgradeKnownEmojisToPremiumHtml(captionHtml);
+    captionHtml = upgradeSeasonEpisodePackEmoji(captionHtml);
     captionHtml = repairTgEmojiHtml(captionHtml);
     if (!captionHtml) {
       throw new BadRequestException('caption required');
@@ -462,8 +464,8 @@ export class ChannelDraftsService {
       );
     }
 
-    const templateHtml = upgradeKnownEmojisToPremiumHtml(
-      anime.channelCaptionHtml,
+    const templateHtml = upgradeSeasonEpisodePackEmoji(
+      upgradeKnownEmojisToPremiumHtml(anime.channelCaptionHtml),
     );
     if (templateHtml !== anime.channelCaptionHtml) {
       anime.channelCaptionHtml = templateHtml;
@@ -471,9 +473,8 @@ export class ChannelDraftsService {
       await this.animeRepo.save(anime);
     }
 
-    const proposedCaption = replaceEpisodeLinesInCaption(
-      templateHtml,
-      episodeLines,
+    const proposedCaption = upgradeSeasonEpisodePackEmoji(
+      replaceEpisodeLinesInCaption(templateHtml, episodeLines),
     );
 
     // Drop older undelivered previews for this anime so the bot queue cannot pile up.

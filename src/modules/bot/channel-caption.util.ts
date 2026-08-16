@@ -19,6 +19,9 @@ const PREMIUM_EMOJI_IDS: Record<string, string> = {
   chat: process.env.CUSTOM_EMOJI_CHAT?.trim() || '5215334566549540768',
   flag: process.env.CUSTOM_EMOJI_FLAG?.trim() || '5190604119089358564',
   stop: process.env.CUSTOM_EMOJI_STOP?.trim() || '5260293700088511294',
+  /** Marker before "S01: Episode [01-12]" pack line */
+  seasonEpisode:
+    process.env.CUSTOM_EMOJI_SEASON_EPISODE?.trim() || '5350572310627632617',
 };
 
 const PREMIUM_EMOJI_FALLBACK: Record<string, string> = {
@@ -36,6 +39,7 @@ const PREMIUM_EMOJI_FALLBACK: Record<string, string> = {
   chat: '💬',
   flag: '🚩',
   stop: '⛔️',
+  seasonEpisode: '✅',
 };
 
 const premiumEmoji = (name: keyof typeof PREMIUM_EMOJI_FALLBACK) => {
@@ -236,6 +240,32 @@ export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => 
   };
 
   return repairTgEmojiHtml(wrapOutsideTags(src));
+};
+
+/**
+ * Force the marker before "S##: Episode …" pack lines to the season-episode premium emoji.
+ * Channel templates often reuse ✅ here, which would otherwise map to the generic success id.
+ */
+export const upgradeSeasonEpisodePackEmoji = (htmlCaption: string): string => {
+  const src = String(htmlCaption ?? '');
+  if (!src) return src;
+  const id = PREMIUM_EMOJI_IDS.seasonEpisode;
+  const fallback = PREMIUM_EMOJI_FALLBACK.seasonEpisode;
+  if (!id || !fallback) return src;
+  const tag = `<tg-emoji emoji-id="${id}">${fallback}</tg-emoji>`;
+
+  return src
+    .split('\n')
+    .map((line) => {
+      if (!/S\d{2}:\s*Episode\b/i.test(line)) return line;
+      const replaced = line.replace(
+        /^(?:<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>\s*)+/,
+        `${tag} `,
+      );
+      if (replaced !== line) return replaced;
+      return line.replace(/^[^\s<]+\s*(?=S\d{2}:)/i, `${tag} `);
+    })
+    .join('\n');
 };
 
 /** Always Softsub in channel post template (panel media type is ignored). */
