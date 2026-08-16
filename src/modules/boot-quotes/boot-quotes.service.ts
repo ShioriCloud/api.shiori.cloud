@@ -19,7 +19,7 @@ export class BootQuotesService {
     const rows = await this.quoteRepo.find({
       where: { isActive: true },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
-      select: ['text', 'attribution'],
+      select: { text: true, attribution: true },
     });
 
     return {
