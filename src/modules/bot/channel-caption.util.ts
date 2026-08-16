@@ -245,6 +245,7 @@ export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => 
 /**
  * Force the marker before "S##: Episode …" pack lines to the season-episode premium emoji.
  * Channel templates often reuse ✅ here, which would otherwise map to the generic success id.
+ * Matches mid-line too (e.g. inside &lt;b&gt;), not only a leading token.
  */
 export const upgradeSeasonEpisodePackEmoji = (htmlCaption: string): string => {
   const src = String(htmlCaption ?? '');
@@ -258,12 +259,14 @@ export const upgradeSeasonEpisodePackEmoji = (htmlCaption: string): string => {
     .split('\n')
     .map((line) => {
       if (!/S\d{2}:\s*Episode\b/i.test(line)) return line;
-      const replaced = line.replace(
-        /^(?:<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>\s*)+/,
+      // Prefer an existing <tg-emoji>…</tg-emoji> immediately before S##:; else a plain glyph.
+      const withMarker = line.replace(
+        /(?:<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>|[^\s<>]+)\s*(?=S\d{2}:\s*Episode\b)/i,
         `${tag} `,
       );
-      if (replaced !== line) return replaced;
-      return line.replace(/^[^\s<]+\s*(?=S\d{2}:)/i, `${tag} `);
+      if (withMarker !== line) return withMarker;
+      // No marker — insert the season-episode emoji before S##:
+      return line.replace(/(?=S\d{2}:\s*Episode\b)/i, `${tag} `);
     })
     .join('\n');
 };
