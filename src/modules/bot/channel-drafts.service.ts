@@ -65,10 +65,18 @@ export class ChannelDraftsService {
     throw new NotFoundException('Anime not found');
   }
 
+  private adminUserIds(): number[] {
+    const raw = String(this.config.get<string>('telegram.adminUserId') ?? '').trim();
+    if (!raw) return [];
+    return raw
+      .split(/[,;\s]+/)
+      .map((part) => Number(part.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  /** Primary admin (first configured id). */
   private adminUserId(): number | null {
-    const raw = this.config.get<string>('telegram.adminUserId')?.trim();
-    const n = Number(raw);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    return this.adminUserIds()[0] ?? null;
   }
 
   private postsChannelId(anime?: Anime | null): string {
@@ -288,6 +296,7 @@ export class ChannelDraftsService {
       items: deliverable.map((d) => ({
         ...this.toDraftDto(d, d.anime),
         admin_user_id: this.adminUserId(),
+        admin_user_ids: this.adminUserIds(),
         draft_keyboard: this.draftKeyboard(d.id, d.animeId),
       })),
     };
