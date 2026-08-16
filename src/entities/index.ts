@@ -25,6 +25,7 @@ export { FilePackItem } from './file-pack-item.entity';
 export { MediaAsset } from './media-asset.entity';
 export { DownloadTokenLedger } from './download-token-ledger.entity';
 export { HomeBlock } from './home-block.entity';
+export { BootQuote } from './boot-quote.entity';
 export { SponsorCampaign } from './sponsor-campaign.entity';
 export { SponsorJoinEvent } from './sponsor-join-event.entity';
 export { ChannelPostDraft } from './channel-post-draft.entity';

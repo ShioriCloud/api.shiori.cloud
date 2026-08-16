@@ -318,3 +318,48 @@ CREATE INDEX IF NOT EXISTS idx_user_anime_airing_reminders_anime
 CREATE INDEX IF NOT EXISTS idx_notification_campaigns_anime_episode
   ON notification_campaigns (anime_id, episode_number)
   WHERE kind = 'new_episode';
+
+-- Mini-app boot splash dialogues (IGN-style quote panel)
+CREATE TABLE IF NOT EXISTS boot_quotes (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  text text NOT NULL,
+  attribution text NOT NULL,
+  sort_order integer NOT NULL DEFAULT 0,
+  is_active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_boot_quotes_sort_order ON boot_quotes (sort_order ASC);
+CREATE INDEX IF NOT EXISTS idx_boot_quotes_active_sort ON boot_quotes (is_active, sort_order ASC);
+
+INSERT INTO boot_quotes (text, attribution, sort_order, is_active)
+SELECT v.text, v.attribution, v.sort_order, true
+FROM (
+  VALUES
+    ('من نمی‌تونم شنا کنم، ولی شنا می‌کنم!', 'سورو · وان پیس', 1),
+    ('وقتی تسلیم شی، همون‌جاست که داستان تموم می‌شه.', 'ناروتو اوزوماکی · ناروتو', 2),
+    ('قدرتِ واقعی یعنی محافظت از چیزی که برات مهمه.', 'هیشوکا · هانتر × هانتر', 3),
+    ('دنیای بیرون ممکنه بی‌رحم باشه، ولی تو تنها نیستی.', 'ادوارد الریک · فول‌متال آلکیمیست', 4),
+    ('اسمت رو می‌نویسم… و تموم.', 'لایت یاگامی · دث‌نوت', 5),
+    ('ترسیدن اشکالی نداره؛ جا زدن اشکال داره.', 'ارن یگر · اتک آن تایتان', 6),
+    ('من هنوز زنده‌ام، پس هنوز شانس دارم.', 'گوتس · برزرک', 7),
+    ('عشق یعنی وقتی برای یکی دیگه، خودت رو فراموش می‌کنی.', 'ویولت · ویولت اورگاردن', 8),
+    ('هیچ‌کس قهرمان به دنیا نمیاد؛ قهرمان ساخته می‌شه.', 'آل‌مایت · مای هیرو آکادمیا', 9),
+    ('حتی اگه دنیا تموم بشه، من دست از تلاش برنمی‌دارم.', 'گکو مورا · وان پانچ من', 10),
+    ('تو همون کسی هستی که تصمیم می‌گیری چی باشی.', 'لوفی · وان پیس', 11),
+    ('اشک‌ها نشونه‌ی ضعفن نیستن؛ نشونه‌ی اینن که هنوز قلب داری.', 'هیناتا · ناروتو', 12),
+    ('منتظر معجزه نباش؛ خودت معجزه شو.', 'کی‌یومارو · بلیچ', 13),
+    ('گاهی سخت‌ترین مبارزه‌ها، با خودته.', 'تانجیرو · شیطان‌کش', 14),
+    ('اگر جلو نری، همون‌جایی که هستی می‌مونی.', 'آسونا · سورد آرت آنلاین', 15),
+    ('دنیا جای بی‌رحمیه، ولی هنوز زیبایی توش هست.', 'ماکیما · چینسامن', 16),
+    ('من نمی‌خوام قوی‌ترین باشم؛ می‌خوام کسی باشم که بتونه نجات بده.', 'ایزکو میدورییا · مای هیرو آکادمیا', 17),
+    ('هر پایان، یه شروع جدیده.', 'سنکوکو · وان پیس', 18),
+    ('باشه که مسیر تاریک باشه؛ من چراغ خودمم.', 'یوجی ایتادوری · جوجوتسو کایسن', 19),
+    ('آرزو داشتن کافی نیست؛ باید براش بجنگی.', 'گون فریکس · هانتر × هانتر', 20),
+    ('من از مرگ نمی‌ترسم؛ از یه زندگی بی‌معنی می‌ترسم.', 'لایت یاگامی · دث‌نوت', 21),
+    ('گاهی سکوت، بلندترین فریاده.', 'لوی · اتک آن تایتان', 22),
+    ('اگر بتونی بخندی، هنوز نشکستی.', 'سایتاما · وان پانچ من', 23),
+    ('دوست یعنی کسی که تو تاریکی هم پیدات می‌کنه.', 'ساکورا · ناروتو', 24)
+) AS v(text, attribution, sort_order)
+WHERE NOT EXISTS (SELECT 1 FROM boot_quotes LIMIT 1);

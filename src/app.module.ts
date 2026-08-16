@@ -30,6 +30,7 @@ import {
   UserPortalSession,
   DownloadTokenLedger,
   HomeBlock,
+  BootQuote,
   SponsorCampaign,
   SponsorJoinEvent,
   ChannelPostDraft,
@@ -38,6 +39,8 @@ import {
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
+import { BootQuotesModule } from './modules/boot-quotes/boot-quotes.module';
+import { BootQuotesAdminModule } from './modules/boot-quotes-admin/boot-quotes-admin.module';
 import { AnimeCatalogModule } from './modules/anime-catalog/anime-catalog.module';
 import { AnimeNotificationsModule } from './modules/anime-notifications/anime-notifications.module';
 import { AppAuthModule } from './modules/app-auth/app-auth.module';
@@ -98,6 +101,7 @@ import { TelegramModule } from './telegram/telegram.module';
           MediaAsset,
           DownloadTokenLedger,
           HomeBlock,
+          BootQuote,
           SponsorCampaign,
           SponsorJoinEvent,
           ChannelPostDraft,
@@ -108,6 +112,8 @@ import { TelegramModule } from './telegram/telegram.module';
     }),
     HomeModule,
     HomeAdminModule,
+    BootQuotesModule,
+    BootQuotesAdminModule,
     TelegramModule,
     HealthModule,
     AnimeCatalogModule,
