@@ -278,8 +278,15 @@ export class BotController {
   @ApiOperation({
     summary: 'Prepare channel draft publish payload for tel-bot (does not call Telegram)',
   })
-  publishChannelDraft(@Param('id') id: string) {
-    return this.channelDrafts.publishDraft(id);
+  publishChannelDraft(
+    @Param('id') id: string,
+    @Body()
+    body?: {
+      channel_id?: string;
+      channelId?: string;
+    },
+  ) {
+    return this.channelDrafts.publishDraft(id, body);
   }
 
   @Post('channel-drafts/:id/reject')

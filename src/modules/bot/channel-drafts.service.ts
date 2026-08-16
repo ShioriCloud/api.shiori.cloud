@@ -543,7 +543,10 @@ export class ChannelDraftsService {
   /**
    * Prepare publish payload for tel-bot. Does not call Telegram from API.
    */
-  async publishDraft(id: string) {
+  async publishDraft(
+    id: string,
+    body?: { channel_id?: string; channelId?: string },
+  ) {
     const draft = await this.draftRepo.findOne({
       where: { id },
       relations: { anime: true },
@@ -563,9 +566,12 @@ export class ChannelDraftsService {
     const anime = draft.anime;
     if (!anime) throw new NotFoundException('Anime not found for draft');
 
-    const channelId = this.postsChannelId(anime);
+    const requested = String(body?.channel_id ?? body?.channelId ?? '').trim();
+    const channelId = requested || this.postsChannelId(anime);
     if (!channelId) {
-      throw new BadRequestException('PUBLIC_POSTS_CHANNEL_ID / anime.channel_id not set');
+      throw new BadRequestException(
+        'channel_id required (or set PUBLIC_POSTS_CHANNEL_ID / anime.channel_id)',
+      );
     }
 
     const cover = draft.coverFileId || anime.channelCoverFileId;
