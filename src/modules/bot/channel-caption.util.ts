@@ -15,6 +15,8 @@ const PREMIUM_EMOJI_IDS: Record<string, string> = {
   heart: process.env.CUSTOM_EMOJI_HEART?.trim() || '5222079954421818267',
   donation: process.env.CUSTOM_EMOJI_DONATION?.trim() || '5267102644886853973',
   speech: process.env.CUSTOM_EMOJI_SPEECH?.trim() || '5460795800101594035',
+  /** Speech-bubble used before @TheShioriSub in channel posts */
+  chat: process.env.CUSTOM_EMOJI_CHAT?.trim() || '5215334566549540768',
   flag: process.env.CUSTOM_EMOJI_FLAG?.trim() || '5190604119089358564',
   stop: process.env.CUSTOM_EMOJI_STOP?.trim() || '5260293700088511294',
 };
@@ -31,6 +33,7 @@ const PREMIUM_EMOJI_FALLBACK: Record<string, string> = {
   heart: '❤️',
   donation: '❤️',
   speech: '🗣️',
+  chat: '💬',
   flag: '🚩',
   stop: '⛔️',
 };
@@ -242,6 +245,7 @@ const videoLabel = (_videoFileType?: string | null) => '[1080p][Softsub]';
  * New / updated episode line:
  * ⬇️ <b>E05</b>: <a>[1080p Softsub]</a> | <a>Subtitle</a>
  * Subtitle segment omitted when subtitleUrl is empty.
+ * Older episodes use green check (✅); the focused/new episode uses arrowDown.
  */
 export const buildEpisodeCaptionLine = (opts: {
   episodeNumber: number;
@@ -252,7 +256,7 @@ export const buildEpisodeCaptionLine = (opts: {
 }): string => {
   const epLabel = String(opts.episodeNumber).padStart(2, '0');
   const marker =
-    opts.isNew === false ? premiumEmoji('check') : premiumEmoji('arrowDown');
+    opts.isNew === false ? premiumEmoji('success') : premiumEmoji('arrowDown');
   const video = tgLink(opts.videoUrl, videoLabel(opts.videoFileType));
   if (opts.subtitleUrl?.trim()) {
     return `${marker} <b>E${epLabel}</b>: ${video} | ${tgLink(opts.subtitleUrl.trim(), 'Subtitle')}`;
@@ -260,9 +264,63 @@ export const buildEpisodeCaptionLine = (opts: {
   return `${marker} <b>E${epLabel}</b>: ${video}`;
 };
 
+/** True for per-episode lines like "… E05: …", not season packs ("Episode [01-12]"). */
+export const isEpisodeCaptionLine = (line: string): boolean => {
+  const raw = String(line ?? '');
+  if (/\bEpisode\b/i.test(raw)) return false;
+  return /(?:^|>)\s*E\d{2}\b/i.test(raw) || /<b>\s*E\d{2}\s*<\/b>/i.test(raw);
+};
+
+export const extractEpisodeNumberFromCaptionLine = (
+  line: string,
+): number | null => {
+  const m = String(line ?? '').match(/E(\d{2})\b/i);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) ? n : null;
+};
+
+/**
+ * Replace the episode-line block in a caption with a full rebuilt list.
+ * Keeps header / season-pack / footer lines intact.
+ */
+export const replaceEpisodeLinesInCaption = (
+  captionHtml: string,
+  episodeLines: string[],
+): string => {
+  const raw = String(captionHtml ?? '').trimEnd();
+  if (!episodeLines.length) return raw;
+  if (!raw) return episodeLines.join('\n');
+
+  const lines = raw.split(/\n/);
+  const epIndexes: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (isEpisodeCaptionLine(lines[i] ?? '')) epIndexes.push(i);
+  }
+
+  if (epIndexes.length === 0) {
+    const footerRe = /(Donation|Synopsis|#|@TheShioriSub)/i;
+    const footerIndex = lines.findIndex((l) => footerRe.test(l));
+    if (footerIndex > 0) {
+      const insertAt =
+        lines[footerIndex - 1]?.trim() === '' ? footerIndex - 1 : footerIndex;
+      lines.splice(insertAt, 0, ...episodeLines, '');
+      return lines.join('\n');
+    }
+    return `${raw}\n${episodeLines.join('\n')}`;
+  }
+
+  const first = epIndexes[0]!;
+  const last = epIndexes[epIndexes.length - 1]!;
+  const before = lines.slice(0, first);
+  const after = lines.slice(last + 1);
+  return [...before, ...episodeLines, ...after].join('\n');
+};
+
 /**
  * Insert (or replace) an episode line in an existing HTML caption.
  * Places the new line after the last E## line when possible.
+ * Prefer {@link replaceEpisodeLinesInCaption} when syncing from catalog.
  */
 export const appendEpisodeLineToCaption = (
   captionHtml: string,
@@ -274,14 +332,34 @@ export const appendEpisodeLineToCaption = (
 
   const epLabel = String(episodeNumber).padStart(2, '0');
   const lines = raw.split(/\n/);
-  const epLineRe = /E(\d{2})\b/i;
   const thisEpRe = new RegExp(`E${epLabel}\\b`, 'i');
 
   let lastEpIndex = -1;
   let thisEpIndex = -1;
   for (let i = 0; i < lines.length; i++) {
-    if (epLineRe.test(lines[i])) lastEpIndex = i;
-    if (thisEpRe.test(lines[i])) thisEpIndex = i;
+    if (isEpisodeCaptionLine(lines[i] ?? '')) lastEpIndex = i;
+    if (thisEpRe.test(lines[i] ?? '') && isEpisodeCaptionLine(lines[i] ?? '')) {
+      thisEpIndex = i;
+    }
+  }
+
+  // Mark earlier episode lines as checked when inserting/updating a newer one.
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? '';
+    if (!isEpisodeCaptionLine(line)) continue;
+    const n = extractEpisodeNumberFromCaptionLine(line);
+    if (n == null || n >= episodeNumber) continue;
+    lines[i] = line.replace(
+      /^(?:<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>\s*)+/,
+      `${premiumEmoji('success')} `,
+    );
+    // Plain unicode / leftover markers before E##
+    if (!lines[i]!.startsWith('<tg-emoji')) {
+      lines[i] = lines[i]!.replace(
+        /^[^\s<]*\s*(?=(?:<b>)?E\d{2}\b)/i,
+        `${premiumEmoji('success')} `,
+      );
+    }
   }
 
   if (thisEpIndex >= 0) {
@@ -294,12 +372,11 @@ export const appendEpisodeLineToCaption = (
     return lines.join('\n');
   }
 
-  // Insert before donation / synopsis / hashtag footer when present.
   const footerRe = /(Donation|Synopsis|#)/i;
-  let footerIndex = lines.findIndex((l) => footerRe.test(l));
+  const footerIndex = lines.findIndex((l) => footerRe.test(l));
   if (footerIndex > 0) {
-    // Keep a blank line before footer if missing.
-    const insertAt = lines[footerIndex - 1]?.trim() === '' ? footerIndex - 1 : footerIndex;
+    const insertAt =
+      lines[footerIndex - 1]?.trim() === '' ? footerIndex - 1 : footerIndex;
     lines.splice(insertAt, 0, episodeLine, '');
     return lines.join('\n');
   }

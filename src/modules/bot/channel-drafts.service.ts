@@ -14,11 +14,11 @@ import {
   ChannelPostDraft,
 } from '../../entities';
 import {
-  appendEpisodeLineToCaption,
   buildEpisodeCaptionLine,
   buildMiniAppEpisodesUrl,
   captionEntitiesToHtml,
   repairTgEmojiHtml,
+  replaceEpisodeLinesInCaption,
   upgradeKnownEmojisToPremiumHtml,
   type TelegramMessageEntity,
 } from './channel-caption.util';
@@ -418,18 +418,49 @@ export class ChannelDraftsService {
       };
     }
 
-    const subtitle = await this.subtitleRepo.findOne({
-      where: { animeId, episodeNumber },
+    // Rebuild all episode lines from catalog (≤ focus) so earlier eps are not dropped
+    // when the bound template is stale, and mark prior eps with green check.
+    const catalogEps = await this.episodeRepo.find({
+      where: { animeId },
+      order: { episodeNumber: 'ASC' },
     });
-    const subtitleUrl = String(subtitle?.subtitleLink ?? '').trim() || null;
+    const subtitles = await this.subtitleRepo.find({ where: { animeId } });
+    const subByEp = new Map<number, string>();
+    for (const sub of subtitles) {
+      const n = Number(sub.episodeNumber);
+      const link = String(sub.subtitleLink ?? '').trim();
+      if (Number.isFinite(n) && link) subByEp.set(n, link);
+    }
 
-    const episodeLine = buildEpisodeCaptionLine({
-      episodeNumber,
-      videoUrl,
-      subtitleUrl,
-      videoFileType: episode.videoFileType,
-      isNew: true,
-    });
+    const focus = Number(episodeNumber);
+    const episodeLines: string[] = [];
+    for (const ep of catalogEps) {
+      const n = Number(ep.episodeNumber);
+      if (!Number.isFinite(n) || n > focus) continue;
+      const link = String(ep.downloadLink ?? '').trim();
+      if (!link) continue;
+      episodeLines.push(
+        buildEpisodeCaptionLine({
+          episodeNumber: n,
+          videoUrl: link,
+          subtitleUrl: subByEp.get(n) ?? null,
+          videoFileType: ep.videoFileType,
+          isNew: n === focus,
+        }),
+      );
+    }
+
+    if (!episodeLines.length) {
+      episodeLines.push(
+        buildEpisodeCaptionLine({
+          episodeNumber,
+          videoUrl,
+          subtitleUrl: subByEp.get(focus) ?? null,
+          videoFileType: episode.videoFileType,
+          isNew: true,
+        }),
+      );
+    }
 
     const templateHtml = upgradeKnownEmojisToPremiumHtml(
       anime.channelCaptionHtml,
@@ -440,10 +471,9 @@ export class ChannelDraftsService {
       await this.animeRepo.save(anime);
     }
 
-    const proposedCaption = appendEpisodeLineToCaption(
+    const proposedCaption = replaceEpisodeLinesInCaption(
       templateHtml,
-      episodeLine,
-      episodeNumber,
+      episodeLines,
     );
 
     // Drop older undelivered previews for this anime so the bot queue cannot pile up.
