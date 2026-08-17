@@ -210,6 +210,72 @@ export class ChannelDraftsService {
     };
   }
 
+  /**
+   * Resolve mini-app keyboard for a channel photo post (hidden forwards included).
+   */
+  async resolveMiniAppMarkup(body: {
+    caption?: string;
+    origin_channel_id?: string;
+    originChannelId?: string;
+    origin_message_id?: string | number;
+    originMessageId?: string | number;
+  }) {
+    const originChat = String(
+      body.origin_channel_id ?? body.originChannelId ?? '',
+    ).trim();
+    const originMsg = String(
+      body.origin_message_id ?? body.originMessageId ?? '',
+    ).trim();
+
+    if (originChat && originMsg) {
+      const byBind = await this.animeRepo.findOne({
+        where: {
+          channelId: originChat,
+          channelLatestMessageId: originMsg,
+        },
+      });
+      if (byBind) {
+        return {
+          matched: true as const,
+          anime_id: byBind.id,
+          slug: byBind.slug,
+          reply_markup: this.channelKeyboard(byBind.id),
+        };
+      }
+    }
+
+    const caption = String(body.caption ?? '');
+    if (!caption.trim()) return { matched: false as const };
+
+    const candidates = await this.animeRepo
+      .createQueryBuilder('a')
+      .where('a.channelCaptionHtml IS NOT NULL')
+      .andWhere("a.channelCaptionHtml <> ''")
+      .getMany();
+
+    const cap = caption.toLowerCase();
+    let best: Anime | null = null;
+    let bestLen = 0;
+    for (const a of candidates) {
+      for (const needle of [a.title, a.titleRomaji, a.slug]) {
+        const n = String(needle ?? '').trim();
+        if (n.length < 4) continue;
+        if (cap.includes(n.toLowerCase()) && n.length > bestLen) {
+          best = a;
+          bestLen = n.length;
+        }
+      }
+    }
+
+    if (!best) return { matched: false as const };
+    return {
+      matched: true as const,
+      anime_id: best.id,
+      slug: best.slug,
+      reply_markup: this.channelKeyboard(best.id),
+    };
+  }
+
   async bindTemplate(dto: BindChannelTemplateDto) {
     const anime = await this.resolveAnime(dto.animeIdOrSlug);
     const coverFileId = String(dto.coverFileId ?? '').trim();

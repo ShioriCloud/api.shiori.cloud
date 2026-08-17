@@ -168,6 +168,23 @@ export class BotController {
     );
   }
 
+  @Post('channel-posts/mini-app-markup')
+  @ApiOperation({
+    summary: 'Resolve mini-app keyboard for a channel post caption/origin',
+  })
+  resolveMiniAppMarkup(
+    @Body()
+    body: {
+      caption?: string;
+      origin_channel_id?: string;
+      originChannelId?: string;
+      origin_message_id?: string | number;
+      originMessageId?: string | number;
+    },
+  ) {
+    return this.channelDrafts.resolveMiniAppMarkup(body);
+  }
+
   @Put('anime/:idOrSlug/channel-template')
   @ApiOperation({ summary: 'Bind channel post template to catalog anime' })
   bindChannelTemplate(
