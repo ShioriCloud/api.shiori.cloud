@@ -365,9 +365,6 @@ export class ChannelDraftsService {
       throw new BadRequestException('published_message_id required');
     }
 
-    const channelId =
-      String(body.channel_id ?? body.channelId ?? '').trim() ||
-      this.postsChannelId(anime);
     const cover = draft.coverFileId || anime.channelCoverFileId;
 
     draft.status = 'published';
@@ -376,8 +373,9 @@ export class ChannelDraftsService {
 
     anime.channelCaptionHtml = draft.proposedCaption;
     if (cover) anime.channelCoverFileId = cover;
-    anime.channelLatestMessageId = messageId;
-    if (channelId) anime.channelId = channelId;
+    // Keep bind template chat/message as the copy source. Overwriting them with
+    // a bot sendPhoto post (or a different publish channel) drops premium emoji
+    // on the next publish.
     anime.updatedAt = new Date();
     await this.animeRepo.save(anime);
 
@@ -577,6 +575,9 @@ export class ChannelDraftsService {
     const cover = draft.coverFileId || anime.channelCoverFileId;
     if (!cover) throw new BadRequestException('cover file id missing');
 
+    const sourceChatId = String(anime.channelId ?? '').trim();
+    const sourceMessageId = String(anime.channelLatestMessageId ?? '').trim();
+
     return {
       needs_bot_send: true as const,
       draft: this.toDraftDto(draft, anime),
@@ -585,6 +586,8 @@ export class ChannelDraftsService {
       caption: draft.proposedCaption,
       reply_markup: this.channelKeyboard(anime.id),
       anime_id: anime.id,
+      source_chat_id: sourceChatId || null,
+      source_message_id: sourceMessageId || null,
     };
   }
 }
