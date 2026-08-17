@@ -123,6 +123,15 @@ export class ChannelDraftsService {
     };
   }
 
+  private shouldAttachMiniAppButton(channelId: string): boolean {
+    const main = String(
+      this.config.get<string>('telegram.postsChannelId') ?? '',
+    ).trim();
+    // Main TheShioriSub posts: no glass mini-app button until launch.
+    if (main && channelId === main) return false;
+    return true;
+  }
+
   private channelKeyboard(animeId: string) {
     return {
       inline_keyboard: [
@@ -584,7 +593,9 @@ export class ChannelDraftsService {
       channel_id: channelId,
       cover_file_id: cover,
       caption: draft.proposedCaption,
-      reply_markup: this.channelKeyboard(anime.id),
+      reply_markup: this.shouldAttachMiniAppButton(channelId)
+        ? this.channelKeyboard(anime.id)
+        : undefined,
       anime_id: anime.id,
       source_chat_id: sourceChatId || null,
       source_message_id: sourceMessageId || null,
