@@ -324,11 +324,14 @@ CREATE TABLE IF NOT EXISTS boot_quotes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   text text NOT NULL,
   attribution text NOT NULL,
+  image_url text,
   sort_order integer NOT NULL DEFAULT 0,
   is_active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE boot_quotes ADD COLUMN IF NOT EXISTS image_url text;
 
 CREATE INDEX IF NOT EXISTS idx_boot_quotes_sort_order ON boot_quotes (sort_order ASC);
 CREATE INDEX IF NOT EXISTS idx_boot_quotes_active_sort ON boot_quotes (is_active, sort_order ASC);

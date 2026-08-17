@@ -17,6 +17,9 @@ export class BootQuote {
   @Column({ type: 'text' })
   attribution: string;
 
+  @Column({ type: 'text', name: 'image_url', nullable: true })
+  imageUrl: string | null;
+
   @Column({ type: 'int', name: 'sort_order', default: 0 })
   sortOrder: number;
 

@@ -25,6 +25,11 @@ export class CreateBootQuoteDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  image_url?: string | null;
 }
 
 export class UpdateBootQuoteDto {
@@ -43,6 +48,11 @@ export class UpdateBootQuoteDto {
   @IsOptional()
   @IsBoolean()
   is_active?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  image_url?: string | null;
 }
 
 export class ReorderBootQuotesDto {

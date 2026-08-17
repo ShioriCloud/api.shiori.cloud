@@ -16,6 +16,7 @@ export type BootQuoteAdminItem = {
   id: string;
   text: string;
   attribution: string;
+  image_url: string | null;
   sort_order: number;
   is_active: boolean;
   created_at: string;
@@ -54,6 +55,7 @@ export class BootQuotesAdminService {
       const row = manager.create(BootQuote, {
         text: body.text.trim(),
         attribution: body.attribution.trim(),
+        imageUrl: normalizeImageUrl(body.image_url),
         isActive: body.is_active ?? true,
         sortOrder,
       });
@@ -72,6 +74,7 @@ export class BootQuotesAdminService {
 
     if (body.text !== undefined) row.text = body.text.trim();
     if (body.attribution !== undefined) row.attribution = body.attribution.trim();
+    if (body.image_url !== undefined) row.imageUrl = normalizeImageUrl(body.image_url);
     if (body.is_active !== undefined) row.isActive = body.is_active;
 
     const saved = await this.quoteRepo.save(row);
@@ -126,10 +129,16 @@ export class BootQuotesAdminService {
       id: row.id,
       text: row.text,
       attribution: row.attribution,
+      image_url: row.imageUrl ?? null,
       sort_order: row.sortOrder,
       is_active: row.isActive,
       created_at: row.createdAt.toISOString(),
       updated_at: row.updatedAt.toISOString(),
     };
   }
+}
+
+function normalizeImageUrl(raw: string | null | undefined): string | null {
+  const value = String(raw ?? '').trim();
+  return value || null;
 }
