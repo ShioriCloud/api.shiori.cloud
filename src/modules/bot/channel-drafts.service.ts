@@ -18,6 +18,7 @@ import {
   buildMiniAppEpisodesUrl,
   captionEntitiesToHtml,
   repairTgEmojiHtml,
+  repairHtmlCaption,
   replaceEpisodeLinesInCaption,
   upgradeKnownEmojisToPremiumHtml,
   upgradeSeasonEpisodePackEmoji,
@@ -226,7 +227,7 @@ export class ChannelDraftsService {
     }
     captionHtml = upgradeKnownEmojisToPremiumHtml(captionHtml);
     captionHtml = upgradeSeasonEpisodePackEmoji(captionHtml);
-    captionHtml = repairTgEmojiHtml(captionHtml);
+    captionHtml = repairHtmlCaption(captionHtml);
     if (!captionHtml) {
       throw new BadRequestException('caption required');
     }
@@ -480,8 +481,10 @@ export class ChannelDraftsService {
       await this.animeRepo.save(anime);
     }
 
-    const proposedCaption = upgradeSeasonEpisodePackEmoji(
-      replaceEpisodeLinesInCaption(templateHtml, episodeLines),
+    const proposedCaption = repairHtmlCaption(
+      upgradeSeasonEpisodePackEmoji(
+        replaceEpisodeLinesInCaption(templateHtml, episodeLines),
+      ),
     );
 
     // Drop older undelivered previews for this anime so the bot queue cannot pile up.
@@ -592,7 +595,7 @@ export class ChannelDraftsService {
       draft: this.toDraftDto(draft, anime),
       channel_id: channelId,
       cover_file_id: cover,
-      caption: draft.proposedCaption,
+      caption: repairHtmlCaption(draft.proposedCaption),
       reply_markup: this.shouldAttachMiniAppButton(channelId)
         ? this.channelKeyboard(anime.id)
         : undefined,

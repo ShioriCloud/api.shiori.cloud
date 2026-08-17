@@ -183,6 +183,45 @@ export const repairTgEmojiHtml = (htmlCaption: string): string => {
   return rebuilt;
 };
 
+function balanceSimpleHtmlTags(html: string, tagNames: string[]): string {
+  let out = String(html ?? '');
+  for (const tag of tagNames) {
+    const tokenRe = new RegExp(`<${tag}\\b[^>]*>|</${tag}>`, 'gi');
+    let depth = 0;
+    let rebuilt = '';
+    let last = 0;
+    let m: RegExpExecArray | null;
+    while ((m = tokenRe.exec(out))) {
+      rebuilt += out.slice(last, m.index);
+      if (m[0].startsWith('</')) {
+        if (depth > 0) {
+          rebuilt += m[0];
+          depth -= 1;
+        }
+      } else {
+        rebuilt += m[0];
+        depth += 1;
+      }
+      last = m.index + m[0].length;
+    }
+    rebuilt += out.slice(last);
+    while (depth > 0) {
+      rebuilt += `</${tag}>`;
+      depth -= 1;
+    }
+    out = rebuilt;
+  }
+  return out;
+}
+
+/** Balance &lt;a&gt;/&lt;b&gt; and tg-emoji tags so Telegram HTML parse_mode accepts the caption. */
+export const repairHtmlCaption = (htmlCaption: string): string => {
+  let out = repairTgEmojiHtml(htmlCaption);
+  if (!out) return out;
+  out = balanceSimpleHtmlTags(out, ['a', 'b']);
+  return repairTgEmojiHtml(out);
+};
+
 /**
  * Upgrade plain unicode schedule emojis to &lt;tg-emoji&gt; (for templates
  * bound before custom_emoji was preserved, or captions without entities).
