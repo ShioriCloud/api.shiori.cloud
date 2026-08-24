@@ -12,6 +12,7 @@ import {
   NotificationCampaign,
   TelegramUser,
   UserAnimeAiringReminder,
+  UserAnimeListEntry,
   UserNotification,
 } from '../../entities';
 import { TelegramBotService } from '../../telegram/telegram-bot.service';
@@ -304,6 +305,14 @@ export class NotificationsAdminService {
         select: { telegramUserId: true },
       });
       recipientIds = rows.map((r) => r.telegramUserId);
+    } else if (audience === 'in_list') {
+      if (!dto.animeId) {
+        throw new BadRequestException('animeId required for in_list audience');
+      }
+      const rows = await this.dataSource
+        .getRepository(UserAnimeListEntry)
+        .find({ where: { animeId: dto.animeId }, select: { telegramUserId: true } });
+      recipientIds = [...new Set(rows.map((r) => r.telegramUserId))];
     } else {
       // all users
       const rows = await this.dataSource

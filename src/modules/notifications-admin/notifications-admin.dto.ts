@@ -34,7 +34,7 @@ export class SendBroadcastDto {
   @IsString()
   href?: string;
 
-  /** 'all' | 'airing_reminder' — who receives the notification */
+  /** 'all' | 'airing_reminder' | 'in_list' — who receives the notification */
   @IsOptional()
   @IsString()
   audience?: string;
