@@ -30,25 +30,45 @@ export class AnimeNotificationsService {
     private readonly animeRepo: Repository<Anime>,
   ) {}
 
-  async list(telegramUserId: string, limit = 50) {
+  async list(telegramUserId: string, limit = 50, before?: string) {
     const take = Math.min(Math.max(limit, 1), 100);
-    const rows = await this.notificationsRepo.find({
-      where: { telegramUserId },
-      order: { createdAt: 'DESC' },
-      take,
-    });
 
-    return rows.map((row) => ({
-      id: row.id,
-      kind: row.kind,
-      title: row.title,
-      message: row.message,
-      href: row.href,
-      anime_id: row.animeId,
-      episode_number: row.episodeNumber,
-      is_read: row.isRead,
-      created_at: row.createdAt.toISOString(),
-    }));
+    const qb = this.notificationsRepo
+      .createQueryBuilder('n')
+      .where('n.telegram_user_id = :telegramUserId', { telegramUserId })
+      .orderBy('n.created_at', 'DESC')
+      .take(take + 1);
+
+    if (before) {
+      qb.andWhere('n.created_at < :before', { before });
+    }
+
+    const rows = await qb.getMany();
+    const hasMore = rows.length > take;
+    if (hasMore) rows.pop();
+
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        message: row.message,
+        href: row.href,
+        anime_id: row.animeId,
+        episode_number: row.episodeNumber,
+        is_read: row.isRead,
+        created_at: row.createdAt.toISOString(),
+      })),
+      has_more: hasMore,
+      next_before: hasMore ? rows[rows.length - 1].createdAt.toISOString() : null,
+    };
+  }
+
+  async unreadCount(telegramUserId: string) {
+    const count = await this.notificationsRepo.count({
+      where: { telegramUserId, isRead: false },
+    });
+    return { unread_count: count };
   }
 
   async markRead(telegramUserId: string, notificationId: string) {

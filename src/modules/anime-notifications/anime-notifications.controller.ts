@@ -30,12 +30,23 @@ export class AnimeNotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'Inbox notifications for current user' })
-  list(@Req() req: AppUserAuthedRequest, @Query('limit') limit?: string) {
+  list(
+    @Req() req: AppUserAuthedRequest,
+    @Query('limit') limit?: string,
+    @Query('before') before?: string,
+  ) {
     const parsed = limit ? Number(limit) : 50;
     return this.notificationsService.list(
       String(req.telegramUserId),
       Number.isFinite(parsed) ? parsed : 50,
+      before,
     );
+  }
+
+  @Get('unread-count')
+  @ApiOperation({ summary: 'Unread notification count' })
+  unreadCount(@Req() req: AppUserAuthedRequest) {
+    return this.notificationsService.unreadCount(String(req.telegramUserId));
   }
 
   @Post('read-all')

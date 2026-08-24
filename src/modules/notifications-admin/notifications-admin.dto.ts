@@ -17,6 +17,10 @@ export class ListNotificationCampaignsQueryDto {
   @Min(1)
   @Max(100)
   limit?: number;
+
+  @IsOptional()
+  @IsString()
+  before?: string;
 }
 
 export class NotifyEpisodeReleaseDto {

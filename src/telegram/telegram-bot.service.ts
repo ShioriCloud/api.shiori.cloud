@@ -49,7 +49,7 @@ export class TelegramBotService {
     chatIds: number[];
     text: string;
     webAppUrl?: string | null;
-  }): Promise<{ sent: number; errors: TelegramSendError[] }> {
+  }): Promise<{ sent: number; sentChatIds: number[]; errors: TelegramSendError[] }> {
     const replyMarkup =
       payload.webAppUrl != null
         ? {
@@ -60,31 +60,49 @@ export class TelegramBotService {
         : undefined;
 
     let sent = 0;
+    const sentChatIds: number[] = [];
     const errors: TelegramSendError[] = [];
 
     for (const chatId of payload.chatIds) {
       if (!Number.isFinite(chatId)) continue;
 
-      const json = await this.callApi<{ message_id?: number }>('sendMessage', {
-        chat_id: chatId,
-        text: payload.text,
-        disable_web_page_preview: true,
-        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-      });
-
-      if (json.ok) {
-        sent += 1;
-      } else {
-        errors.push({
+      let success = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const json = await this.callApi<{ message_id?: number }>('sendMessage', {
           chat_id: chatId,
-          message: json.description ?? 'sendMessage failed',
+          text: payload.text,
+          disable_web_page_preview: true,
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
         });
+
+        if (json.ok) {
+          success = true;
+          break;
+        }
+
+        // Don't retry on permanent errors (user blocked bot, chat not found, etc.)
+        const desc = json.description ?? '';
+        if (/block|deactivat|not found|rights/i.test(desc)) {
+          errors.push({ chat_id: chatId, message: desc });
+          break;
+        }
+
+        if (attempt < 2) {
+          await sleep(500 * (attempt + 1));
+        } else {
+          errors.push({ chat_id: chatId, message: desc || 'sendMessage failed after retries' });
+        }
+      }
+
+      if (success) {
+        sent += 1;
+        sentChatIds.push(chatId);
       }
 
       await sleep(55);
     }
 
-    return { sent, errors };
+    return { sent, sentChatIds, errors };
   }
 
   async sendPhoto(payload: {

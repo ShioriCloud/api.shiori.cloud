@@ -70,16 +70,28 @@ export class NotificationsAdminService {
 
   async listCampaigns(
     query: ListNotificationCampaignsQueryDto,
-  ): Promise<NotificationCampaignRow[]> {
+  ): Promise<{
+    items: NotificationCampaignRow[];
+    has_more: boolean;
+    next_before: string | null;
+  }> {
     const limit = query.limit && query.limit > 0 ? query.limit : 50;
 
-    const campaigns = await this.campaignsRepo.find({
-      relations: { anime: true },
-      order: { createdAt: 'DESC' },
-      take: limit,
-    });
+    const qb = this.campaignsRepo
+      .createQueryBuilder('c')
+      .leftJoinAndSelect('c.anime', 'anime')
+      .orderBy('c.createdAt', 'DESC')
+      .take(limit + 1);
 
-    return campaigns.map((campaign) => ({
+    if (query.before) {
+      qb.where('c.createdAt < :before', { before: query.before });
+    }
+
+    const campaigns = await qb.getMany();
+    const hasMore = campaigns.length > limit;
+    if (hasMore) campaigns.pop();
+
+    const items = campaigns.map((campaign) => ({
       id: campaign.id,
       kind: campaign.kind ?? 'new_episode',
       anime_id: campaign.animeId,
@@ -91,6 +103,14 @@ export class NotificationsAdminService {
       telegram_sent_count: campaign.telegramSentCount ?? 0,
       created_at: campaign.createdAt?.toISOString?.() ?? '',
     }));
+
+    return {
+      items,
+      has_more: hasMore,
+      next_before: hasMore
+        ? campaigns[campaigns.length - 1].createdAt?.toISOString?.() ?? null
+        : null,
+    };
   }
 
   async notifyEpisodeRelease(
@@ -235,6 +255,19 @@ export class NotificationsAdminService {
         await this.campaignsRepo.update(campaign.id, {
           telegramSentCount: telegramSent,
         });
+
+        // Mark telegram_sent_at on inbox rows for successfully notified users
+        if (result.sentChatIds.length > 0) {
+          await this.dataSource
+            .createQueryBuilder()
+            .update(UserNotification)
+            .set({ telegramSentAt: () => 'now()' })
+            .where('campaign_id = :campaignId', { campaignId: campaign.id })
+            .andWhere('telegram_user_id IN (:...ids)', {
+              ids: result.sentChatIds.map(String),
+            })
+            .execute();
+        }
       }
     }
 
