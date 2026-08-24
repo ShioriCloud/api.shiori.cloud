@@ -23,6 +23,33 @@ export class ListNotificationCampaignsQueryDto {
   before?: string;
 }
 
+export class SendBroadcastDto {
+  @IsString()
+  title!: string;
+
+  @IsString()
+  message!: string;
+
+  @IsOptional()
+  @IsString()
+  href?: string;
+
+  /** 'all' | 'airing_reminder' — who receives the notification */
+  @IsOptional()
+  @IsString()
+  audience?: string;
+
+  /** Required when audience = 'airing_reminder' */
+  @IsOptional()
+  @IsUUID()
+  animeId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value !== 'false' && value !== false)
+  @IsBoolean()
+  sendTelegram?: boolean;
+}
+
 export class NotifyEpisodeReleaseDto {
   @IsUUID()
   animeId!: string;

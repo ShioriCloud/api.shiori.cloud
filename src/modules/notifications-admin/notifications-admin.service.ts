@@ -18,6 +18,7 @@ import { TelegramBotService } from '../../telegram/telegram-bot.service';
 import {
   ListNotificationCampaignsQueryDto,
   NotifyEpisodeReleaseDto,
+  SendBroadcastDto,
 } from './notifications-admin.dto';
 
 export type NotificationCampaignRow = {
@@ -276,6 +277,124 @@ export class NotificationsAdminService {
       campaign_id: campaign.id,
       inbox_created: inboxRecipients.length,
       telegram_candidates: telegramUserIds.length,
+      telegram_sent: telegramSent,
+      telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
+    };
+  }
+
+  async sendBroadcast(
+    dto: SendBroadcastDto,
+    createdBy: string | number | null,
+  ) {
+    const title = dto.title.trim();
+    const message = dto.message.trim();
+    if (!title || !message) {
+      throw new BadRequestException('title and message are required');
+    }
+
+    const audience = dto.audience || 'all';
+    let recipientIds: string[];
+
+    if (audience === 'airing_reminder') {
+      if (!dto.animeId) {
+        throw new BadRequestException('animeId required for airing_reminder audience');
+      }
+      const rows = await this.remindersRepo.find({
+        where: { animeId: dto.animeId },
+        select: { telegramUserId: true },
+      });
+      recipientIds = rows.map((r) => r.telegramUserId);
+    } else {
+      // all users
+      const rows = await this.dataSource
+        .getRepository(TelegramUser)
+        .find({ select: { telegramUserId: true } });
+      recipientIds = rows.map((r) => r.telegramUserId);
+    }
+
+    if (recipientIds.length === 0) {
+      return { ok: true, inbox_created: 0, telegram_sent: 0 };
+    }
+
+    const createdById =
+      createdBy == null || createdBy === ''
+        ? null
+        : String(createdBy).match(/^\d+$/)
+          ? String(createdBy)
+          : null;
+
+    const campaign = await this.dataSource.transaction(async (manager) => {
+      const savedCampaign = await manager.save(NotificationCampaign, {
+        kind: 'broadcast',
+        animeId: dto.animeId ?? null,
+        episodeNumber: null,
+        title,
+        message,
+        recipientCount: recipientIds.length,
+        telegramSentCount: 0,
+        createdBy: createdById,
+      });
+
+      await manager.insert(
+        UserNotification,
+        recipientIds.map((id) => ({
+          telegramUserId: id,
+          kind: 'broadcast',
+          title,
+          message,
+          href: dto.href ?? null,
+          animeId: dto.animeId ?? null,
+          episodeNumber: null,
+          campaignId: savedCampaign.id,
+          isRead: false,
+        })),
+      );
+
+      return savedCampaign;
+    });
+
+    let telegramSent = 0;
+    let telegramErrors: Array<{ chat_id: number; message: string }> = [];
+
+    if (dto.sendTelegram !== false) {
+      const chatIds = recipientIds
+        .map(Number)
+        .filter((id) => Number.isFinite(id) && id > 0);
+
+      if (chatIds.length > 0) {
+        const result = await this.telegramBot.sendEpisodeNotifications({
+          chatIds,
+          text: `${title}\n${message}`,
+          webAppUrl: null,
+        });
+
+        telegramSent = result.sent;
+        telegramErrors = result.errors.slice(0, 10);
+
+        if (telegramSent > 0) {
+          await this.campaignsRepo.update(campaign.id, {
+            telegramSentCount: telegramSent,
+          });
+
+          if (result.sentChatIds.length > 0) {
+            await this.dataSource
+              .createQueryBuilder()
+              .update(UserNotification)
+              .set({ telegramSentAt: () => 'now()' })
+              .where('campaign_id = :campaignId', { campaignId: campaign.id })
+              .andWhere('telegram_user_id IN (:...ids)', {
+                ids: result.sentChatIds.map(String),
+              })
+              .execute();
+          }
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      campaign_id: campaign.id,
+      inbox_created: recipientIds.length,
       telegram_sent: telegramSent,
       telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
     };

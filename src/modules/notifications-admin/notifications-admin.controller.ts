@@ -7,6 +7,7 @@ import {
 import {
   ListNotificationCampaignsQueryDto,
   NotifyEpisodeReleaseDto,
+  SendBroadcastDto,
 } from './notifications-admin.dto';
 import { NotificationsAdminService } from './notifications-admin.service';
 
@@ -29,6 +30,18 @@ export class NotificationsAdminController {
     @Body() body: NotifyEpisodeReleaseDto,
   ) {
     return this.notificationsAdminService.notifyEpisodeRelease(
+      body,
+      req.portalTelegramUserId,
+    );
+  }
+
+  @Post('broadcast')
+  @ApiOperation({ summary: 'Send a broadcast notification to users' })
+  sendBroadcast(
+    @Req() req: PortalAuthedRequest,
+    @Body() body: SendBroadcastDto,
+  ) {
+    return this.notificationsAdminService.sendBroadcast(
       body,
       req.portalTelegramUserId,
     );
