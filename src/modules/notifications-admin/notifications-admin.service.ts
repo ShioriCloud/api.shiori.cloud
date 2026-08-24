@@ -235,13 +235,10 @@ export class NotificationsAdminService {
     let telegramErrors: Array<{ chat_id: number; message: string }> = [];
 
     if (dto.sendTelegram !== false && telegramUserIds.length > 0) {
-      const miniAppBaseUrl =
-        dto.miniAppBaseUrl?.trim() ||
-        this.config.get<string>('miniApp.baseUrl')?.trim() ||
-        '';
+      const miniAppBaseUrl = this.resolveMiniAppBaseUrl(dto.miniAppBaseUrl);
       const webAppUrl =
         miniAppBaseUrl.length > 0
-          ? `${miniAppBaseUrl.replace(/\/$/, '')}${href}`
+          ? `${miniAppBaseUrl}${href}`
           : null;
 
       const result = await this.telegramBot.sendEpisodeNotifications({
@@ -281,6 +278,24 @@ export class NotificationsAdminService {
       telegram_sent: telegramSent,
       telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
     };
+  }
+
+  private resolveMiniAppBaseUrl(dtoUrl?: string | null): string {
+    const sanitize = (raw: string): string => {
+      const trimmed = raw.trim();
+      if (!trimmed) return '';
+      try {
+        const host = new URL(trimmed).hostname.toLowerCase();
+        if (host.includes('dash.')) return '';
+        return trimmed.replace(/\/$/, '');
+      } catch {
+        return '';
+      }
+    };
+    return (
+      sanitize(this.config.get<string>('miniApp.baseUrl') ?? '') ||
+      sanitize(dtoUrl ?? '')
+    );
   }
 
   async sendBroadcast(

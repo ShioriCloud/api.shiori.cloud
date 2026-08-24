@@ -21,11 +21,21 @@ export class TelegramBotService {
     return this.config.get<string>('telegram.botToken')?.trim() ?? '';
   }
 
+  /** Prefer Mini App host bot so DMs go to the bot users actually open. */
+  private getNotificationTokens(): string[] {
+    const mini = this.config.get<string>('telegram.miniAppBotToken')?.trim() ?? '';
+    const extras = (this.config.get<string[]>('telegram.botTokens') ?? []).map(
+      (token) => String(token).trim(),
+    );
+    const primary = this.getToken();
+    return [...new Set([mini, ...extras, primary].filter(Boolean))];
+  }
+
   private async callApi<T = unknown>(
     method: string,
     body: Record<string, unknown>,
+    token = this.getToken(),
   ): Promise<TelegramApiResult<T>> {
-    const token = this.getToken();
     if (!token) {
       return { ok: false, description: 'TELEGRAM_BOT_TOKEN not configured' };
     }
@@ -50,6 +60,19 @@ export class TelegramBotService {
     text: string;
     webAppUrl?: string | null;
   }): Promise<{ sent: number; sentChatIds: number[]; errors: TelegramSendError[] }> {
+    const tokens = this.getNotificationTokens();
+    if (tokens.length === 0) {
+      this.logger.warn('Skipping Telegram DMs — no bot token configured');
+      return {
+        sent: 0,
+        sentChatIds: [],
+        errors: payload.chatIds.map((chat_id) => ({
+          chat_id,
+          message: 'TELEGRAM_BOT_TOKEN not configured',
+        })),
+      };
+    }
+
     const replyMarkup =
       payload.webAppUrl != null
         ? {
@@ -62,41 +85,71 @@ export class TelegramBotService {
     let sent = 0;
     const sentChatIds: number[] = [];
     const errors: TelegramSendError[] = [];
+    let preferredToken = tokens[0];
 
     for (const chatId of payload.chatIds) {
       if (!Number.isFinite(chatId)) continue;
 
+      const orderedTokens = [
+        preferredToken,
+        ...tokens.filter((token) => token !== preferredToken),
+      ];
+      let lastError = 'sendMessage failed';
       let success = false;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        const json = await this.callApi<{ message_id?: number }>('sendMessage', {
-          chat_id: chatId,
-          text: payload.text,
-          disable_web_page_preview: true,
-          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
-        });
+
+      for (const token of orderedTokens) {
+        const json = await this.callApi<{ message_id?: number }>(
+          'sendMessage',
+          {
+            chat_id: chatId,
+            text: payload.text,
+            disable_web_page_preview: true,
+            ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+          },
+          token,
+        );
 
         if (json.ok) {
           success = true;
+          preferredToken = token;
           break;
         }
 
-        // Don't retry on permanent errors (user blocked bot, chat not found, etc.)
-        const desc = json.description ?? '';
-        if (/block|deactivat|not found|rights/i.test(desc)) {
-          errors.push({ chat_id: chatId, message: desc });
-          break;
+        lastError = json.description ?? lastError;
+        const desc = lastError;
+
+        if (/BUTTON|web_app|URL_INVALID/i.test(desc) && replyMarkup) {
+          const retry = await this.callApi<{ message_id?: number }>(
+            'sendMessage',
+            {
+              chat_id: chatId,
+              text: payload.text,
+              disable_web_page_preview: true,
+            },
+            token,
+          );
+          if (retry.ok) {
+            success = true;
+            preferredToken = token;
+            this.logger.warn(
+              `Telegram DM sent without web_app button (chat ${chatId}): ${desc}`,
+            );
+            break;
+          }
+          lastError = retry.description ?? lastError;
         }
 
-        if (attempt < 2) {
-          await sleep(500 * (attempt + 1));
-        } else {
-          errors.push({ chat_id: chatId, message: desc || 'sendMessage failed after retries' });
+        if (/429|retry after/i.test(lastError)) {
+          await sleep(1000);
         }
       }
 
       if (success) {
         sent += 1;
         sentChatIds.push(chatId);
+      } else {
+        this.logger.warn(`Telegram DM failed for chat ${chatId}: ${lastError}`);
+        errors.push({ chat_id: chatId, message: lastError });
       }
 
       await sleep(55);

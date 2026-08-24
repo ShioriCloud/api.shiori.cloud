@@ -20,6 +20,8 @@ export default () => {
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean),
+    /** Token of the Mini App host bot — used for DM notifications. */
+    miniAppBotToken: process.env.TELEGRAM_MINI_APP_BOT_TOKEN ?? '',
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? 'ShioriUploadBot',
     /** Mini App host bot (startapp deep links). Separate from file-delivery bot. */
     miniAppBotUsername:
