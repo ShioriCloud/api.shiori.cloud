@@ -47,6 +47,24 @@ export class AnimeNotificationsService {
     const hasMore = rows.length > take;
     if (hasMore) rows.pop();
 
+    const animeIds = [
+      ...new Set(
+        rows
+          .map((row) => row.animeId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const coverByAnimeId = new Map<string, string | null>();
+    if (animeIds.length > 0) {
+      const animes = await this.animeRepo.find({
+        where: { id: In(animeIds) },
+        select: { id: true, coverImage: true },
+      });
+      for (const anime of animes) {
+        coverByAnimeId.set(anime.id, anime.coverImage ?? null);
+      }
+    }
+
     return {
       items: rows.map((row) => ({
         id: row.id,
@@ -55,6 +73,9 @@ export class AnimeNotificationsService {
         message: row.message,
         href: row.href,
         anime_id: row.animeId,
+        anime_cover_image: row.animeId
+          ? (coverByAnimeId.get(row.animeId) ?? null)
+          : null,
         episode_number: row.episodeNumber,
         is_read: row.isRead,
         created_at: row.createdAt.toISOString(),
