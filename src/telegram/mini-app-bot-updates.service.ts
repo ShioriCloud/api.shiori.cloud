@@ -43,7 +43,9 @@ export class MiniAppBotUpdatesService implements OnModuleInit, OnModuleDestroy {
     const enabled =
       this.config.get<boolean>('telegram.miniAppBotUpdatesEnabled') !== false;
     if (!enabled) {
-      this.logger.log('Mini App bot updates polling disabled by config');
+      this.logger.log(
+        'Mini App bot /start polling disabled (set MINI_APP_BOT_UPDATES_ENABLED=true to enable on API; prefer tel-bot)',
+      );
       return;
     }
 

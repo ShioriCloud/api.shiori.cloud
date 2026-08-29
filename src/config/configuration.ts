@@ -22,9 +22,9 @@ export default () => {
       .filter(Boolean),
     /** Token of the Mini App host bot — used for DM notifications + /start welcome. */
     miniAppBotToken: process.env.TELEGRAM_MINI_APP_BOT_TOKEN ?? '',
-    /** Long-poll @ShioriMiniBot for /start (set false if another service owns updates). */
+    /** Long-poll @ShioriMiniBot for /start — off by default; use tel-bot on hosts without Telegram egress. */
     miniAppBotUpdatesEnabled:
-      process.env.MINI_APP_BOT_UPDATES_ENABLED !== 'false',
+      process.env.MINI_APP_BOT_UPDATES_ENABLED === 'true',
     botUsername: process.env.TELEGRAM_BOT_USERNAME ?? 'ShioriUploadBot',
     /** Mini App host bot (startapp deep links). Separate from file-delivery bot. */
     miniAppBotUsername:
