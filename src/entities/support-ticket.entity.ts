@@ -11,6 +11,7 @@ export type SupportTicketCategory =
   | 'bug_report'
   | 'app_improvement'
   | 'feature_request'
+  | 'translation_request'
   | 'account_issue'
   | 'other';
 
