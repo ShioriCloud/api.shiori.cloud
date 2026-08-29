@@ -305,7 +305,7 @@ export class AnimeCatalogService {
     const rows = await this.animeRepo.find({
       where: { isFeatured: true },
       order: { createdAt: 'DESC' },
-      take: limit,
+      ...(limit > 0 ? { take: limit } : {}),
     });
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
     return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));

@@ -14,8 +14,15 @@ export class AnimeCatalogController {
 
   @Get('featured')
   @ApiOperation({ summary: 'Featured anime for home slider' })
-  listFeatured(@Query('limit') limit?: number) {
-    return this.animeCatalogService.listFeatured(limit ? Number(limit) : 10);
+  listFeatured(@Query('limit') limit?: string) {
+    if (limit === undefined || limit === '') {
+      return this.animeCatalogService.listFeatured(10);
+    }
+    const parsed = Number(limit);
+    if (!Number.isFinite(parsed)) {
+      return this.animeCatalogService.listFeatured(10);
+    }
+    return this.animeCatalogService.listFeatured(parsed);
   }
 
   @Get('popular')
