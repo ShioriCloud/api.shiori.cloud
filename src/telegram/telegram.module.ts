@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserPortalSession } from '../entities';
 import { AppUserAuthGuard } from './app-user-auth.guard';
 import { AppUserAuthService } from './app-user-auth.service';
-import { MiniAppBotUpdatesService } from './mini-app-bot-updates.service';
 import { TelegramAuthGuard } from './telegram-auth.guard';
 import { TelegramBotService } from './telegram-bot.service';
 
@@ -15,7 +14,6 @@ import { TelegramBotService } from './telegram-bot.service';
     TelegramAuthGuard,
     AppUserAuthGuard,
     TelegramBotService,
-    MiniAppBotUpdatesService,
   ],
   exports: [
     TypeOrmModule,

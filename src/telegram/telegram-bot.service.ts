@@ -21,45 +21,11 @@ export class TelegramBotService {
     return this.config.get<string>('telegram.botToken')?.trim() ?? '';
   }
 
-  getMiniAppBotToken(): string {
+  private getMiniAppBotToken(): string {
     const dedicated =
       this.config.get<string>('telegram.miniAppBotToken')?.trim() ?? '';
     if (dedicated) return dedicated;
-    // Production often sets only TELEGRAM_BOT_TOKEN (mini-app host per DEPLOY.md).
     return this.getToken();
-  }
-
-  async callMiniAppBotApi<T = unknown>(
-    method: string,
-    body: Record<string, unknown>,
-  ): Promise<TelegramApiResult<T>> {
-    return this.callApi(method, body, this.getMiniAppBotToken());
-  }
-
-  async ensureMiniAppBotPollingMode(): Promise<void> {
-    const json = await this.callMiniAppBotApi('deleteWebhook', {
-      drop_pending_updates: false,
-    });
-    if (!json.ok) {
-      this.logger.warn(
-        `Mini App bot deleteWebhook: ${json.description ?? 'failed'}`,
-      );
-    }
-  }
-
-  async sendMiniAppBotMessage(payload: {
-    chatId: number | string;
-    text: string;
-    parseMode?: 'HTML' | 'Markdown';
-    replyMarkup?: Record<string, unknown>;
-  }): Promise<TelegramApiResult<{ message_id: number }>> {
-    return this.callMiniAppBotApi<{ message_id: number }>('sendMessage', {
-      chat_id: payload.chatId,
-      text: payload.text,
-      disable_web_page_preview: true,
-      ...(payload.parseMode ? { parse_mode: payload.parseMode } : {}),
-      ...(payload.replyMarkup ? { reply_markup: payload.replyMarkup } : {}),
-    });
   }
 
   /** Prefer Mini App host bot so DMs go to the bot users actually open. */
