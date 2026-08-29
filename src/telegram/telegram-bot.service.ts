@@ -22,7 +22,11 @@ export class TelegramBotService {
   }
 
   getMiniAppBotToken(): string {
-    return this.config.get<string>('telegram.miniAppBotToken')?.trim() ?? '';
+    const dedicated =
+      this.config.get<string>('telegram.miniAppBotToken')?.trim() ?? '';
+    if (dedicated) return dedicated;
+    // Production often sets only TELEGRAM_BOT_TOKEN (mini-app host per DEPLOY.md).
+    return this.getToken();
   }
 
   async callMiniAppBotApi<T = unknown>(
@@ -60,7 +64,7 @@ export class TelegramBotService {
 
   /** Prefer Mini App host bot so DMs go to the bot users actually open. */
   private getNotificationTokens(): string[] {
-    const mini = this.config.get<string>('telegram.miniAppBotToken')?.trim() ?? '';
+    const mini = this.getMiniAppBotToken();
     const extras = (this.config.get<string[]>('telegram.botTokens') ?? []).map(
       (token) => String(token).trim(),
     );

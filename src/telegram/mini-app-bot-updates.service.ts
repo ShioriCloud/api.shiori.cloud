@@ -35,15 +35,13 @@ export class MiniAppBotUpdatesService implements OnModuleInit, OnModuleDestroy {
     const token = this.telegram.getMiniAppBotToken();
     if (!token) {
       this.logger.log(
-        'TELEGRAM_MINI_APP_BOT_TOKEN not set — Mini App bot /start handler disabled',
+        'No Mini App bot token — /start welcome disabled (set TELEGRAM_MINI_APP_BOT_TOKEN or TELEGRAM_BOT_TOKEN)',
       );
       return;
     }
 
     const enabled =
-      String(
-        this.config.get<string>('telegram.miniAppBotUpdatesEnabled') ?? 'true',
-      ).toLowerCase() !== 'false';
+      this.config.get<boolean>('telegram.miniAppBotUpdatesEnabled') !== false;
     if (!enabled) {
       this.logger.log('Mini App bot updates polling disabled by config');
       return;
@@ -137,12 +135,31 @@ export class MiniAppBotUpdatesService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async sendWelcome(chatId: number): Promise<void> {
-    await this.telegram.sendMiniAppBotMessage({
+    const replyMarkup = this.welcomeMarkup();
+    const result = await this.telegram.sendMiniAppBotMessage({
       chatId,
       text: buildMiniAppWelcomeText(),
       parseMode: 'HTML',
-      replyMarkup: this.welcomeMarkup(),
+      replyMarkup,
     });
+
+    if (result.ok) return;
+
+    const desc = result.description ?? 'sendMessage failed';
+    this.logger.warn(`Welcome send failed for chat ${chatId}: ${desc}`);
+
+    if (/BUTTON|web_app|URL_INVALID/i.test(desc)) {
+      const retry = await this.telegram.sendMiniAppBotMessage({
+        chatId,
+        text: buildMiniAppWelcomeText(),
+        parseMode: 'HTML',
+      });
+      if (!retry.ok) {
+        this.logger.warn(
+          `Welcome retry without button failed for chat ${chatId}: ${retry.description ?? 'unknown'}`,
+        );
+      }
+    }
   }
 
   private sleep(ms: number): Promise<void> {
