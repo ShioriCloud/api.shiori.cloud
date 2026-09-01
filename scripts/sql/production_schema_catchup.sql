@@ -332,6 +332,7 @@ CREATE TABLE IF NOT EXISTS boot_quotes (
 );
 
 ALTER TABLE boot_quotes ADD COLUMN IF NOT EXISTS image_url text;
+UPDATE boot_quotes SET image_url = NULL WHERE image_url IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_boot_quotes_sort_order ON boot_quotes (sort_order ASC);
 CREATE INDEX IF NOT EXISTS idx_boot_quotes_active_sort ON boot_quotes (is_active, sort_order ASC);
