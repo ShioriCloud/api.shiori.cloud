@@ -922,7 +922,9 @@ export class AnimeCatalogService {
     },
   >(payload: T, nowMs = Date.now()): T {
     const cutoffSec = Math.floor((nowMs - this.AIRING_GRACE_MS) / 1000);
-    const schedule: T['schedule'] = { ...payload.schedule };
+    const schedule: Record<string, Array<{ airing_at?: number }>> = {
+      ...payload.schedule,
+    };
     for (const day of Object.keys(schedule)) {
       schedule[day] = (schedule[day] ?? []).filter((item) => {
         if (item.airing_at == null) return true;
