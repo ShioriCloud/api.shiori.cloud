@@ -103,7 +103,9 @@ export class AnimeCatalogService {
     };
   } | null = null;
 
-  private readonly AIRING_SCHEDULE_TTL_MS = 2 * 60 * 60 * 1000;
+  private readonly AIRING_SCHEDULE_TTL_MS = 30 * 60 * 1000;
+  /** Keep items that aired very recently so "on air now" still appears. */
+  private readonly AIRING_GRACE_MS = 30 * 60 * 1000;
 
   constructor(
     @InjectRepository(Anime) private readonly animeRepo: Repository<Anime>,
@@ -754,7 +756,8 @@ export class AnimeCatalogService {
     const emptySchedule = this.buildEmptyAiringSchedule();
     const { season: currentSeason, year: currentYear } =
       this.getCurrentAiringSeasonInTehran();
-    const cacheKey = `${currentSeason}:${currentYear}`;
+    // v2: upcoming-only schedule (skips stale nextAiringEpisode with past airingAt)
+    const cacheKey = `v2:${currentSeason}:${currentYear}`;
     const now = Date.now();
 
     const freshCache =
@@ -764,7 +767,7 @@ export class AnimeCatalogService {
         ? this.airingScheduleCache
         : null;
     if (freshCache) {
-      return freshCache.payload;
+      return this.prunePastAiringEntries(freshCache.payload, now);
     }
 
     const staleCache =
@@ -778,6 +781,8 @@ export class AnimeCatalogService {
         currentYear,
       );
       const schedule = { ...emptySchedule };
+      const nowSec = Math.floor(now / 1000);
+      const graceSec = Math.floor(this.AIRING_GRACE_MS / 1000);
 
       for (const m of mediaList) {
         const allowedFormats = new Set(['TV', 'ONA', 'OVA', 'SPECIAL']);
@@ -785,14 +790,10 @@ export class AnimeCatalogService {
           typeof m?.format === 'string' ? m.format.trim().toUpperCase() : '';
         if (!allowedFormats.has(format)) continue;
 
-        const ep = m?.nextAiringEpisode as
-          | { airingAt?: number; episode?: number }
-          | undefined;
-        if (!ep || typeof ep.airingAt !== 'number') continue;
+        const ep = this.resolveUpcomingAiring(m, nowSec, graceSec);
+        if (!ep) continue;
 
         const airingAtMs = ep.airingAt * 1000;
-        if (!Number.isFinite(airingAtMs)) continue;
-
         const d = new Date(airingAtMs);
         const day = this.toPersianWeekday(d);
         if (!schedule[day]) continue;
@@ -825,6 +826,7 @@ export class AnimeCatalogService {
             .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
             .map((g) => ({ slug: g.trim().toLowerCase(), name_en: g })),
           localId: null,
+          airing_at: ep.airingAt,
         });
       }
 
@@ -874,10 +876,60 @@ export class AnimeCatalogService {
       this.logger.warn(`Airing schedule upstream failed: ${message}`);
       if (staleCache) {
         this.logger.warn('Serving stale airing schedule cache after upstream failure');
-        return staleCache.payload;
+        return this.prunePastAiringEntries(staleCache.payload, now);
       }
       return { schedule: emptySchedule, currentSeason, currentYear, degraded: true };
     }
+  }
+
+  /**
+   * Prefer live airingSchedule(notYetAired) over cached nextAiringEpisode.
+   * Drop entries whose airingAt is already in the past (AniList lag).
+   */
+  private resolveUpcomingAiring(
+    media: Record<string, unknown>,
+    nowSec: number,
+    graceSec: number,
+  ): { airingAt: number; episode: number } | null {
+    const scheduleNodes = (
+      media?.airingSchedule as
+        | { nodes?: Array<{ airingAt?: number; episode?: number }> }
+        | undefined
+    )?.nodes;
+    const fromSchedule = Array.isArray(scheduleNodes) ? scheduleNodes[0] : null;
+    const fromNext = media?.nextAiringEpisode as
+      | { airingAt?: number; episode?: number }
+      | undefined;
+
+    const candidates = [fromSchedule, fromNext];
+    for (const candidate of candidates) {
+      if (!candidate || typeof candidate.airingAt !== 'number') continue;
+      const airingAt = Number(candidate.airingAt);
+      const episode = Number(candidate.episode);
+      if (!Number.isFinite(airingAt) || airingAt <= 0) continue;
+      if (airingAt + graceSec < nowSec) continue;
+      if (!Number.isFinite(episode) || episode <= 0) continue;
+      return { airingAt, episode };
+    }
+    return null;
+  }
+
+  private prunePastAiringEntries<
+    T extends {
+      schedule: Record<string, Array<{ airing_at?: number }>>;
+      currentSeason: string;
+      currentYear: number;
+    },
+  >(payload: T, nowMs = Date.now()): T {
+    const cutoffSec = Math.floor((nowMs - this.AIRING_GRACE_MS) / 1000);
+    const schedule: T['schedule'] = { ...payload.schedule };
+    for (const day of Object.keys(schedule)) {
+      schedule[day] = (schedule[day] ?? []).filter((item) => {
+        if (item.airing_at == null) return true;
+        return Number(item.airing_at) >= cutoffSec;
+      });
+    }
+    return { ...payload, schedule };
   }
 
   private buildEmptyAiringSchedule() {
@@ -899,6 +951,7 @@ export class AnimeCatalogService {
         image: string;
         genres: { slug: string; name_en?: string }[];
         localId: string | null;
+        airing_at?: number;
       }>
     >;
   }
@@ -964,6 +1017,9 @@ export class AnimeCatalogService {
             coverImage { large }
             genres
             nextAiringEpisode { airingAt episode }
+            airingSchedule(notYetAired: true, perPage: 1) {
+              nodes { airingAt episode }
+            }
           }
         }
       }
