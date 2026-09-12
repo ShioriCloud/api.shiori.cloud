@@ -14,6 +14,8 @@ import {
   TelegramLinkToken,
   TelegramUser,
   UserAnimeListEntry,
+  UserCustomList,
+  UserCustomListItem,
   UserNotification,
   UserPortalSession,
 } from '../../entities';
@@ -213,6 +215,65 @@ export class AppAuthService {
         { telegramUserId: webUserId },
         { telegramUserId },
       );
+
+      const webLists = await manager.find(UserCustomList, {
+        where: { telegramUserId: webUserId },
+        relations: { items: true },
+        order: { createdAt: 'ASC' },
+      });
+      const tgLists = await manager.find(UserCustomList, {
+        where: { telegramUserId },
+        relations: { items: true },
+        order: { createdAt: 'ASC' },
+      });
+      const listNameKey = (name: string) => name.trim().toLowerCase();
+
+      for (const webList of webLists) {
+        const match = tgLists.find(
+          (list) => listNameKey(list.name) === listNameKey(webList.name),
+        );
+        const target = match ?? (tgLists.length < 5 ? null : tgLists[0]);
+
+        if (!match && tgLists.length < 5) {
+          await manager.update(
+            UserCustomList,
+            { id: webList.id },
+            { telegramUserId, updatedAt: new Date() },
+          );
+          tgLists.push({ ...webList, telegramUserId } as UserCustomList);
+          continue;
+        }
+
+        if (!target) continue;
+
+        const existingIds = new Set(
+          (target.items ?? []).map((item) => item.animeId),
+        );
+        let position = (target.items ?? []).reduce(
+          (max, item) => Math.max(max, item.position),
+          -1,
+        );
+        for (const item of [...(webList.items ?? [])].sort(
+          (a, b) => a.position - b.position,
+        )) {
+          if (existingIds.has(item.animeId)) continue;
+          position += 1;
+          await manager.save(
+            UserCustomListItem,
+            manager.create(UserCustomListItem, {
+              listId: target.id,
+              animeId: item.animeId,
+              position,
+            }),
+          );
+          existingIds.add(item.animeId);
+          target.items = [
+            ...(target.items ?? []),
+            { animeId: item.animeId, position } as UserCustomListItem,
+          ];
+        }
+        await manager.delete(UserCustomList, { id: webList.id });
+      }
 
       await manager.delete(UserPortalSession, { telegramUserId: webUserId });
 

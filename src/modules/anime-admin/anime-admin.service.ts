@@ -37,6 +37,7 @@ import {
   AnimeTranslator,
   AnimeTranslatorLink,
   UserAnimeListEntry,
+  UserCustomListItem,
   UserNotification,
 } from '../../entities';
 import { NotificationsAdminService } from '../notifications-admin/notifications-admin.service';
@@ -748,6 +749,50 @@ export class AnimeAdminService {
     return { existed: false, ...created };
   }
 
+  async fillFromAnilist(body: Payload) {
+    const anilistId = normalizeExternalId(
+      this.pick<unknown>(body, 'anilist_id', 'anilistId'),
+    );
+    if (!anilistId) {
+      throw new BadRequestException('شناسه AniList نامعتبر است');
+    }
+
+    const media = await fetchAnilistAnimeById(anilistId).catch((err) =>
+      this.throwAnilistUnavailable(err),
+    );
+    if (!media) {
+      throw new NotFoundException('این اثر در AniList پیدا نشد');
+    }
+
+    const [genres, studios] = await Promise.all([
+      this.genreRepo.find(),
+      this.studioRepo.find(),
+    ]);
+    const genreSlugs = this.matchLocalGenreSlugs(media.anilist_genres, genres);
+    const studioMatch = this.matchLocalStudioSlugs(media.anilist_studios, studios);
+
+    return {
+      anilist_id: media.anilist_id,
+      mal_id: media.mal_id,
+      title: media.title,
+      title_romaji: media.title_romaji,
+      synopsis: media.synopsis,
+      cover_image: media.cover_image,
+      featured_image: media.featured_image,
+      format: media.format,
+      season: media.season,
+      year: media.year,
+      airing_status: media.airing_status,
+      episodes_count: media.episodes_count,
+      average_score: media.average_score,
+      start_date: media.start_date,
+      end_date: media.end_date,
+      studio: studioMatch.displayName,
+      genre_slugs: genreSlugs,
+      studio_slugs: studioMatch.slugs,
+    };
+  }
+
   async createAnime(body: Payload, editorId?: string) {
     const title = this.pick<string>(body, 'title', 'title');
     if (!title?.trim()) throw new BadRequestException('title is required');
@@ -791,6 +836,7 @@ export class AnimeAdminService {
 
     await this.dataSource.transaction(async (manager) => {
       await manager.delete(UserAnimeListEntry, { animeId });
+      await manager.delete(UserCustomListItem, { animeId });
       await manager.delete(UserNotification, { animeId });
       await manager.delete(AnimeEpisode, { animeId });
       await manager.delete(AnimeSubtitle, { animeId });

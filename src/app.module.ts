@@ -26,6 +26,8 @@ import {
   TelegramUser,
   UserAnimeAiringReminder,
   UserAnimeListEntry,
+  UserCustomList,
+  UserCustomListItem,
   UserNotification,
   UserPortalSession,
   DownloadTokenLedger,
@@ -47,6 +49,7 @@ import { AppAuthModule } from './modules/app-auth/app-auth.module';
 import { HealthModule } from './modules/health/health.module';
 import { TelegramUsersModule } from './modules/telegram-users/telegram-users.module';
 import { UserAnimeListModule } from './modules/user-anime-list/user-anime-list.module';
+import { UserCustomListsModule } from './modules/user-custom-lists/user-custom-lists.module';
 import { AnimeAdminModule } from './modules/anime-admin/anime-admin.module';
 import { PortalAuthModule } from './modules/portal-auth/portal-auth.module';
 import { FilesAdminModule } from './modules/files-admin/files-admin.module';
@@ -88,6 +91,8 @@ import { TelegramModule } from './telegram/telegram.module';
           AnimeSeriesMember,
           UserAnimeAiringReminder,
           UserAnimeListEntry,
+          UserCustomList,
+          UserCustomListItem,
           TelegramUser,
           UserNotification,
           UserPortalSession,
@@ -119,6 +124,7 @@ import { TelegramModule } from './telegram/telegram.module';
     AnimeCatalogModule,
     TelegramUsersModule,
     UserAnimeListModule,
+    UserCustomListsModule,
     AnimeNotificationsModule,
     AppAuthModule,
     PortalAuthModule,

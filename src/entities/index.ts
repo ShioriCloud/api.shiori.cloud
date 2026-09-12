@@ -11,6 +11,8 @@ export { AnimeSubtitlePack } from './anime-subtitle-pack.entity';
 export { AnimeTranslator } from './anime-translator.entity';
 export { AnimeTranslatorLink } from './anime-translator-link.entity';
 export { UserAnimeListEntry } from './user-anime-list-entry.entity';
+export { UserCustomList } from './user-custom-list.entity';
+export { UserCustomListItem } from './user-custom-list-item.entity';
 export { UserAnimeAiringReminder } from './user-anime-airing-reminder.entity';
 export { TelegramUser } from './telegram-user.entity';
 export { UserNotification } from './user-notification.entity';

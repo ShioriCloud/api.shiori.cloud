@@ -38,6 +38,12 @@ export class AnimeAdminController {
     return this.animeAdminService.importFromAnilist(body, req.portalTelegramUserId);
   }
 
+  @Post('anilist/fill')
+  @ApiOperation({ summary: 'Preview AniList fields to fill empty local values (admin)' })
+  fillAnilist(@Body() body: Record<string, unknown>) {
+    return this.animeAdminService.fillFromAnilist(body);
+  }
+
   @Get('list-stats')
   @ApiOperation({ summary: 'Anime list aggregate stats (admin)' })
   getListStats() {
