@@ -8,6 +8,10 @@ import {
 import { isUuid } from '../../common/uuid.util';
 import { normalizeSlug } from '../../common/slug.util';
 import {
+  SHIORI_WEEKDAYS,
+  resolveShioriNextAiring,
+} from '../../common/shiori-next-airing.util';
+import {
   normalizeEpisodeVideoFileType,
   normalizeHardsubLanguage,
   normalizeVideoEncode,
@@ -594,11 +598,23 @@ export class AnimeCatalogService {
       this.getAverageEpisodeSizeBytes(episodes),
     ]);
 
-    // next_airing stays client-filled (AniList) so catalog TTFB is not blocked.
+    let maxPublishedEpisode: number | null = null;
+    for (const episode of episodes) {
+      const n = Number(episode.episodeNumber);
+      if (Number.isFinite(n) && n > (maxPublishedEpisode ?? 0)) {
+        maxPublishedEpisode = n;
+      }
+    }
+
     return {
       ...this.toCard(anime, genreMap.get(id) ?? []),
       shioriScore: this.num(anime.shioriScore),
-      next_airing: null as { episode: number; airing_at: number } | null,
+      next_airing: resolveShioriNextAiring({
+        airingStatus: anime.airingStatus,
+        airingWeekday: anime.airingWeekday,
+        airingTime: anime.airingTime,
+        maxPublishedEpisode,
+      }),
       average_episode_size_bytes: averageEpisodeSizeBytes,
       episodes: episodes.map((e) => {
         const video_file_type = normalizeEpisodeVideoFileType(e.videoFileType);
@@ -752,16 +768,6 @@ export class AnimeCatalogService {
     return this.userListRepo.count({ where: { animeId } });
   }
 
-  private static readonly SHIORI_WEEKDAYS = [
-    'شنبه',
-    'یکشنبه',
-    'دوشنبه',
-    'سه‌شنبه',
-    'چهارشنبه',
-    'پنج‌شنبه',
-    'جمعه',
-  ] as const;
-
   /**
    * Catalog-only weekly schedule: RELEASING titles with airing_weekday set.
    * Independent of AniList availability.
@@ -802,7 +808,7 @@ export class AnimeCatalogService {
     }
 
     const schedule = { ...emptySchedule };
-    const weekdaySet = new Set<string>(AnimeCatalogService.SHIORI_WEEKDAYS);
+    const weekdaySet = new Set<string>(SHIORI_WEEKDAYS);
 
     for (const anime of rows) {
       const day = String(anime.airingWeekday ?? '').trim();
