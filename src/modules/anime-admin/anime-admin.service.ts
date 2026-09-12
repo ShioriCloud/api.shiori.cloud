@@ -3,11 +3,19 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
+import {
+  AnilistClientError,
+  fetchAnilistAnimeById,
+  searchAnilistAnime,
+  type AnilistMappedMedia,
+} from '../../common/anilist.client';
+import { normalizeExternalId } from '../../common/external-score.util';
 import {
   normalizeEpisodeVideoFileType,
   normalizeHardsubLanguage,
@@ -534,6 +542,210 @@ export class AnimeAdminService {
   async getAnimeAdmin(idOrSlug: string) {
     const anime = await this.requireAnime(idOrSlug);
     return this.toAnimeAdminRow(anime);
+  }
+
+  private throwAnilistUnavailable(err: unknown): never {
+    const message =
+      err instanceof AnilistClientError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : 'AniList request failed';
+    this.logger.warn(`AniList request failed: ${message}`);
+    throw new ServiceUnavailableException(
+      message.includes('429')
+        ? 'AniList موقتاً شلوغ است؛ کمی بعد دوباره تلاش کنید'
+        : 'ارتباط با AniList برقرار نشد',
+    );
+  }
+
+  private uniqueNorm(value: string): string {
+    return value.trim().toLowerCase();
+  }
+
+  private matchLocalGenreSlugs(
+    names: string[],
+    genres: AnimeGenre[],
+  ): string[] {
+    const slugs: string[] = [];
+    for (const name of names) {
+      const key = this.uniqueNorm(name);
+      const slugKey = normalizeSlug(name);
+      const match = genres.find((genre) => {
+        const en = this.uniqueNorm(genre.nameEn ?? '');
+        const fa = this.uniqueNorm(genre.nameFa ?? '');
+        const slug = this.uniqueNorm(genre.slug ?? '');
+        return Boolean(key) && (en === key || fa === key || slug === slugKey || slug === key);
+      });
+      if (match?.slug) slugs.push(match.slug);
+    }
+    return [...new Set(slugs)];
+  }
+
+  private matchLocalStudioSlugs(
+    names: string[],
+    studios: AnimeStudio[],
+  ): { slugs: string[]; displayName: string | null } {
+    const slugs: string[] = [];
+    let displayName: string | null = null;
+    for (const name of names) {
+      const key = this.uniqueNorm(name);
+      const slugKey = normalizeSlug(name);
+      const match = studios.find((studio) => {
+        const studioName = this.uniqueNorm(studio.name ?? '');
+        const slug = this.uniqueNorm(studio.slug ?? '');
+        return Boolean(key) && (studioName === key || slug === slugKey || slug === key);
+      });
+      if (match?.slug) {
+        slugs.push(match.slug);
+        if (!displayName) displayName = match.name;
+      }
+    }
+    return {
+      slugs: [...new Set(slugs)],
+      displayName: displayName ?? names[0] ?? null,
+    };
+  }
+
+  private toAnilistSearchItem(
+    media: AnilistMappedMedia,
+    local?: { id: string; slug: string | null } | null,
+  ) {
+    return {
+      anilist_id: media.anilist_id,
+      mal_id: media.mal_id,
+      title: media.title,
+      title_romaji: media.title_romaji,
+      title_native: media.title_native,
+      cover_image: media.cover_image,
+      format: media.format,
+      season: media.season,
+      year: media.year,
+      status: media.airing_status,
+      genres: media.anilist_genres,
+      local_anime_id: local?.id ?? null,
+      local_slug: local?.slug ?? null,
+    };
+  }
+
+  private async uniqueImportSlug(base: string, anilistId: number): Promise<string> {
+    const fallback = `anilist-${anilistId}`;
+    const primary = normalizeSlug(base) || fallback;
+    const existing = await this.animeRepo.findOne({
+      where: { slug: primary },
+      select: { id: true },
+    });
+    if (!existing) return primary;
+
+    const withId = normalizeSlug(`${primary}-${anilistId}`) || fallback;
+    const existingWithId = await this.animeRepo.findOne({
+      where: { slug: withId },
+      select: { id: true },
+    });
+    if (!existingWithId) return withId;
+    return fallback;
+  }
+
+  async searchAnilist(query?: string) {
+    const q = String(query ?? '').trim();
+    if (q.length < 2) {
+      throw new BadRequestException('حداقل ۲ حرف برای جستجو لازم است');
+    }
+
+    const media = await searchAnilistAnime(q, 12).catch((err) =>
+      this.throwAnilistUnavailable(err),
+    );
+
+    const anilistIds = media.map((item) => item.anilist_id);
+    const locals =
+      anilistIds.length > 0
+        ? await this.animeRepo.find({
+            where: { anilistId: In(anilistIds) },
+            select: { id: true, slug: true, anilistId: true },
+          })
+        : [];
+    const localByAnilist = new Map(
+      locals
+        .filter((row) => row.anilistId != null)
+        .map((row) => [Number(row.anilistId), { id: row.id, slug: row.slug }]),
+    );
+
+    return {
+      items: media.map((item) =>
+        this.toAnilistSearchItem(item, localByAnilist.get(item.anilist_id) ?? null),
+      ),
+    };
+  }
+
+  async importFromAnilist(body: Payload, editorId?: string) {
+    const anilistId = normalizeExternalId(
+      this.pick<unknown>(body, 'anilist_id', 'anilistId'),
+    );
+    if (!anilistId) {
+      throw new BadRequestException('شناسه AniList نامعتبر است');
+    }
+
+    const existing = await this.animeRepo.findOne({
+      where: { anilistId },
+      relations: { lastEditedBy: true },
+    });
+    if (existing) {
+      return { existed: true, ...this.toAnimeAdminRow(existing) };
+    }
+
+    const media = await fetchAnilistAnimeById(anilistId).catch((err) =>
+      this.throwAnilistUnavailable(err),
+    );
+    if (!media) {
+      throw new NotFoundException('این اثر در AniList پیدا نشد');
+    }
+
+    const already = await this.animeRepo.findOne({
+      where: { anilistId: media.anilist_id },
+      relations: { lastEditedBy: true },
+    });
+    if (already) {
+      return { existed: true, ...this.toAnimeAdminRow(already) };
+    }
+
+    const [genres, studios] = await Promise.all([
+      this.genreRepo.find(),
+      this.studioRepo.find(),
+    ]);
+    const genreSlugs = this.matchLocalGenreSlugs(media.anilist_genres, genres);
+    const studioMatch = this.matchLocalStudioSlugs(media.anilist_studios, studios);
+    const slug = await this.uniqueImportSlug(
+      media.title_romaji ?? media.title,
+      media.anilist_id,
+    );
+
+    const created = await this.createAnime(
+      {
+        title: media.title,
+        title_romaji: media.title_romaji,
+        slug,
+        synopsis: media.synopsis,
+        cover_image: media.cover_image,
+        featured_image: media.featured_image,
+        format: media.format,
+        season: media.season,
+        year: media.year,
+        airing_status: media.airing_status,
+        episodes_count: media.episodes_count,
+        average_score: media.average_score,
+        anilist_id: media.anilist_id,
+        mal_id: media.mal_id,
+        start_date: media.start_date,
+        end_date: media.end_date,
+        studio: studioMatch.displayName,
+        genre_slugs: genreSlugs,
+        studio_slugs: studioMatch.slugs,
+        is_featured: false,
+      },
+      editorId,
+    );
+
+    return { existed: false, ...created };
   }
 
   async createAnime(body: Payload, editorId?: string) {

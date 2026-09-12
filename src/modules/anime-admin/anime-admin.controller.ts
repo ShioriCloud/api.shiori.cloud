@@ -26,6 +26,18 @@ export class AnimeAdminController {
     private readonly externalScoresService: ExternalScoresService,
   ) {}
 
+  @Get('anilist/search')
+  @ApiOperation({ summary: 'Search AniList anime by title (admin)' })
+  searchAnilist(@Query('q') q?: string, @Query('search') search?: string) {
+    return this.animeAdminService.searchAnilist(q ?? search);
+  }
+
+  @Post('anilist/import')
+  @ApiOperation({ summary: 'Import AniList anime into local catalog (admin)' })
+  importAnilist(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
+    return this.animeAdminService.importFromAnilist(body, req.portalTelegramUserId);
+  }
+
   @Get('list-stats')
   @ApiOperation({ summary: 'Anime list aggregate stats (admin)' })
   getListStats() {

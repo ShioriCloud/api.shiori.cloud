@@ -216,6 +216,21 @@ const requestJsonWithRetry = async (
   return requestJsonWithRetry(url, init, attempt + 1);
 };
 
+/** Shared AniList GraphQL POST (same transport as score sync + retries). */
+export const anilistGraphqlRequest = async (
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> =>
+  requestJsonWithRetry('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+    body: JSON.stringify({ query, variables }),
+    insecureTls: insecureTlsEnabled(),
+  });
+
 export const fetchAnilistScorePercent = async (
   anilistId: number,
 ): Promise<{ score: number | null; error?: string }> => {
