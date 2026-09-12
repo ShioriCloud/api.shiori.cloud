@@ -30,6 +30,9 @@ export class AnimeEpisode {
   @Column({ type: 'text', name: 'video_file_type', default: 'softsub' })
   videoFileType: string;
 
+  @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
+  createdAt: Date;
+
   @ManyToOne(() => Anime, (anime) => anime.episodes, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'anime_id' })
   anime: Anime;

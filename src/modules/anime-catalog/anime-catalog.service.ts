@@ -9,6 +9,7 @@ import { isUuid } from '../../common/uuid.util';
 import { normalizeSlug } from '../../common/slug.util';
 import {
   SHIORI_WEEKDAYS,
+  resolveShioriAiringPlan,
   resolveShioriNextAiring,
 } from '../../common/shiori-next-airing.util';
 import {
@@ -599,10 +600,15 @@ export class AnimeCatalogService {
     ]);
 
     let maxPublishedEpisode: number | null = null;
+    let lastPublishedAt: Date | null = null;
     for (const episode of episodes) {
       const n = Number(episode.episodeNumber);
       if (Number.isFinite(n) && n > (maxPublishedEpisode ?? 0)) {
         maxPublishedEpisode = n;
+      }
+      const created = episode.createdAt ? new Date(episode.createdAt) : null;
+      if (created && !Number.isNaN(created.getTime())) {
+        if (!lastPublishedAt || created > lastPublishedAt) lastPublishedAt = created;
       }
     }
 
@@ -613,7 +619,9 @@ export class AnimeCatalogService {
         airingStatus: anime.airingStatus,
         airingWeekday: anime.airingWeekday,
         airingTime: anime.airingTime,
+        nextAiringDate: anime.nextAiringDate,
         maxPublishedEpisode,
+        lastPublishedAt,
       }),
       average_episode_size_bytes: averageEpisodeSizeBytes,
       episodes: episodes.map((e) => {
@@ -797,44 +805,60 @@ export class AnimeCatalogService {
       .createQueryBuilder('ep')
       .select('ep.anime_id', 'animeId')
       .addSelect('MAX(ep.episode_number)', 'maxEpisode')
+      .addSelect('MAX(ep.created_at)', 'lastPublishedAt')
       .where('ep.anime_id IN (:...ids)', { ids })
       .groupBy('ep.anime_id')
-      .getRawMany<{ animeId: string; maxEpisode: string | null }>();
+      .getRawMany<{
+        animeId: string;
+        maxEpisode: string | null;
+        lastPublishedAt: Date | string | null;
+      }>();
 
     const maxByAnime = new Map<string, number>();
+    const lastPublishedByAnime = new Map<string, Date | string>();
     for (const row of episodeMaxRows) {
       const n = Number(row.maxEpisode);
       if (Number.isFinite(n) && n > 0) maxByAnime.set(String(row.animeId), n);
+      if (row.lastPublishedAt) {
+        lastPublishedByAnime.set(String(row.animeId), row.lastPublishedAt);
+      }
     }
 
     const schedule = { ...emptySchedule };
     const weekdaySet = new Set<string>(SHIORI_WEEKDAYS);
 
     for (const anime of rows) {
-      const day = String(anime.airingWeekday ?? '').trim();
-      if (!weekdaySet.has(day) || !schedule[day]) continue;
-
       const maxEp = maxByAnime.get(anime.id);
-      const nextEpisode =
-        maxEp != null ? String(Math.floor(maxEp) + 1) : '';
+      const plan = resolveShioriAiringPlan({
+        airingStatus: anime.airingStatus,
+        airingWeekday: anime.airingWeekday,
+        airingTime: anime.airingTime,
+        nextAiringDate: anime.nextAiringDate,
+        maxPublishedEpisode: maxEp ?? null,
+        lastPublishedAt: lastPublishedByAnime.get(anime.id) ?? null,
+      });
+      if (!plan || !weekdaySet.has(plan.weekday) || !schedule[plan.weekday]) {
+        continue;
+      }
 
       const timeRaw = String(anime.airingTime ?? '').trim();
       const displayTime = timeRaw ? this.formatAiringTimeFa(timeRaw) : '';
 
-      schedule[day].push({
+      schedule[plan.weekday].push({
         id:
           anime.anilistId && anime.anilistId > 0
             ? anime.anilistId
             : this.stableNumericId(anime.id),
         title: anime.title || 'بدون عنوان',
         time: displayTime,
-        episode: nextEpisode,
+        episode: String(plan.episode),
         image: anime.coverImage || anime.featuredImage || '',
         genres: (genreMap.get(anime.id) ?? []).map((g) => ({
           slug: g.slug,
           name_en: g.name_en,
         })),
         localId: anime.id,
+        airing_at: plan.airing_at,
       });
     }
 

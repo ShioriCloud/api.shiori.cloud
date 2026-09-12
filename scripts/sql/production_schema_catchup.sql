@@ -77,6 +77,10 @@ CREATE INDEX IF NOT EXISTS idx_anime_airing_slot
   ON anime (airing_status, airing_weekday)
   WHERE airing_weekday IS NOT NULL;
 
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_airing_date date;
+ALTER TABLE episodes ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
+UPDATE episodes SET created_at = COALESCE(created_at, now()) WHERE created_at IS NULL;
+
 -- Existing anime with soft-subs → Persian hardsub badge
 UPDATE anime a
 SET hardsub_language = 'fa'

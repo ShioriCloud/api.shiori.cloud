@@ -90,22 +90,79 @@ describe('resolveShioriNextAiring', () => {
   });
 
   it('hints next episode as max published + 1', () => {
-    const result = resolveShioriNextAiring({
-      airingStatus: 'RELEASING',
-      airingWeekday: 'شنبه',
-      airingTime: '22:00',
-      maxPublishedEpisode: 5,
-    });
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        maxPublishedEpisode: 5,
+        lastPublishedAt: SAT_MORNING_TEHRAN_MS,
+      },
+      SAT_MORNING_TEHRAN_MS,
+    );
     expect(result?.episode).toBe(6);
     expect(result?.airing_at).toBeGreaterThan(0);
   });
 
   it('defaults episode to 1 when none are published', () => {
-    const result = resolveShioriNextAiring({
-      airingStatus: 'releasing',
-      airingWeekday: 'جمعه',
-      airingTime: '00:00',
-    });
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'releasing',
+        airingWeekday: 'جمعه',
+        airingTime: '00:00',
+      },
+      SAT_MORNING_TEHRAN_MS,
+    );
     expect(result?.episode).toBe(1);
+  });
+
+  it('does not roll a mid-season miss to next week', () => {
+    const sundayMorning = Date.UTC(2026, 8, 13, 6, 30); // 10:00 Tehran
+    const previousSaturdayNight = Date.UTC(2026, 8, 5, 19, 30); // 23:00 Tehran 5 Sep
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        maxPublishedEpisode: 4,
+        lastPublishedAt: previousSaturdayNight,
+      },
+      sundayMorning,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('resumes the weekly slot after a late upload', () => {
+    const mondayMorning = Date.UTC(2026, 8, 14, 6, 30);
+    const sundayUpload = Date.UTC(2026, 8, 13, 18, 0);
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        maxPublishedEpisode: 5,
+        lastPublishedAt: sundayUpload,
+      },
+      mondayMorning,
+    );
+    expect(result?.episode).toBe(6);
+    expect(result?.airing_at).toBeGreaterThan(mondayMorning / 1000);
+  });
+
+  it('uses a future manual date instead of the next weekly slot', () => {
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        nextAiringDate: '2026-09-26',
+        maxPublishedEpisode: 4,
+        lastPublishedAt: Date.UTC(2026, 8, 5, 19, 30),
+      },
+      SAT_MORNING_TEHRAN_MS,
+    );
+    expect(result?.airing_at).toBe(
+      Math.floor(Date.UTC(2026, 8, 26, 18, 30) / 1000),
+    );
   });
 });

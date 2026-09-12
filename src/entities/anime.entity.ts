@@ -58,6 +58,10 @@ export class Anime {
   @Column({ type: 'text', name: 'airing_time', nullable: true })
   airingTime: string | null;
 
+  /** One-off next episode date (YYYY-MM-DD, Tehran). Empty resumes the weekly slot. */
+  @Column({ type: 'date', name: 'next_airing_date', nullable: true })
+  nextAiringDate: string | null;
+
   @Column({
     type: 'numeric',
     precision: 5,

@@ -132,6 +132,19 @@ export class AnimeAdminService {
     return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
   }
 
+  private normalizeNextAiringDate(
+    value: string | null | undefined,
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value == null) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      throw new BadRequestException('invalid next_airing_date (use YYYY-MM-DD)');
+    }
+    return trimmed;
+  }
+
   private toGenre(g: AnimeGenre) {
     return {
       id: g.id,
@@ -217,6 +230,7 @@ export class AnimeAdminService {
       airing_status: anime.airingStatus,
       airing_weekday: anime.airingWeekday,
       airing_time: anime.airingTime,
+      next_airing_date: anime.nextAiringDate,
       average_score: this.numOrNull(anime.averageScore),
       episodes_count: anime.episodesCount,
       studio: anime.studio,
@@ -285,6 +299,12 @@ export class AnimeAdminService {
     assign(
       'airingTime',
       this.normalizeAiringTime(this.pick<string | null>(body, 'airing_time', 'airingTime')),
+    );
+    assign(
+      'nextAiringDate',
+      this.normalizeNextAiringDate(
+        this.pick<string | null>(body, 'next_airing_date', 'nextAiringDate'),
+      ),
     );
     assign('season', this.pick<string | null>(body, 'season', 'season'));
     assign('year', this.pick<number | null>(body, 'year', 'year'));

@@ -89,29 +89,168 @@ export function nextTehranOccurrenceUnixSec(
   return Math.floor(utcMs / 1000);
 }
 
-export function resolveShioriNextAiring(input: {
-  airingStatus?: string | null;
-  airingWeekday?: string | null;
-  airingTime?: string | null;
-  maxPublishedEpisode?: number | null;
-}): NextAiringDto | null {
+/** Most recent weekly slot that has already started (next occurrence minus 7 days). */
+export function lastTehranOccurrenceUnixSec(
+  weekday: string,
+  hour: number,
+  minute: number,
+  nowMs = Date.now(),
+): number | null {
+  const next = nextTehranOccurrenceUnixSec(weekday, hour, minute, nowMs);
+  if (next == null) return null;
+  const parts = getTehranDateParts(next * 1000);
+  if (!parts) return null;
+  const prev = addUtcCalendarDays(parts.year, parts.month, parts.day, -7);
+  const utcMs = tehranWallTimeToUtcMs(
+    prev.year,
+    prev.month,
+    prev.day,
+    hour,
+    minute,
+  );
+  if (utcMs == null) return null;
+  return Math.floor(utcMs / 1000);
+}
+
+export function parseIsoDateYmd(
+  value: string | null | undefined,
+): { year: number; month: number; day: number } | null {
+  const match = String(value ?? '')
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+export function tehranDateHhmmToUnixSec(
+  dateYmd: string,
+  hour: number,
+  minute: number,
+): number | null {
+  const date = parseIsoDateYmd(dateYmd);
+  if (!date) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  const utcMs = tehranWallTimeToUtcMs(
+    date.year,
+    date.month,
+    date.day,
+    hour,
+    minute,
+  );
+  if (utcMs == null) return null;
+  return Math.floor(utcMs / 1000);
+}
+
+export function persianWeekdayFromUnixSec(unixSec: number): ShioriWeekday | '' {
+  const weekday = persianWeekdayInTehran(unixSec * 1000);
+  return (SHIORI_WEEKDAYS as readonly string[]).includes(weekday)
+    ? (weekday as ShioriWeekday)
+    : '';
+}
+
+export type ShioriAiringPlan = NextAiringDto & {
+  weekday: ShioriWeekday;
+};
+
+/** Treat an upload up to 12h before the slot as covering that slot. */
+const SLOT_COVER_GRACE_MS = 12 * 60 * 60 * 1000;
+
+function toEpochMs(value: Date | string | number | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value < 1e12 ? value * 1000 : value;
+  }
+  const ms = Date.parse(String(value));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+export function resolveShioriAiringPlan(
+  input: {
+    airingStatus?: string | null;
+    airingWeekday?: string | null;
+    airingTime?: string | null;
+    nextAiringDate?: string | null;
+    maxPublishedEpisode?: number | null;
+    lastPublishedAt?: Date | string | number | null;
+  },
+  nowMs = Date.now(),
+): ShioriAiringPlan | null {
   const status = String(input.airingStatus ?? '')
     .trim()
     .toUpperCase();
   if (status !== 'RELEASING') return null;
 
-  const weekday = String(input.airingWeekday ?? '').trim();
   const time = parseAiringTimeHhmm(input.airingTime);
   if (!time) return null;
-
-  const airingAt = nextTehranOccurrenceUnixSec(weekday, time.hour, time.minute);
-  if (airingAt == null || airingAt <= 0) return null;
 
   const maxEp = Number(input.maxPublishedEpisode);
   const episode =
     Number.isFinite(maxEp) && maxEp > 0 ? Math.floor(maxEp) + 1 : 1;
+  const hasPublished = Number.isFinite(maxEp) && maxEp > 0;
+  const lastPublishedMs = toEpochMs(input.lastPublishedAt);
 
-  return { episode, airing_at: airingAt };
+  const overrideAt = tehranDateHhmmToUnixSec(
+    String(input.nextAiringDate ?? ''),
+    time.hour,
+    time.minute,
+  );
+  if (overrideAt != null && overrideAt * 1000 > nowMs) {
+    const weekday = persianWeekdayFromUnixSec(overrideAt);
+    if (!weekday) return null;
+    return { episode, airing_at: overrideAt, weekday };
+  }
+
+  const weekday = String(input.airingWeekday ?? '').trim();
+  if (!(SHIORI_WEEKDAYS as readonly string[]).includes(weekday)) return null;
+
+  const airingAt = nextTehranOccurrenceUnixSec(
+    weekday,
+    time.hour,
+    time.minute,
+    nowMs,
+  );
+  if (airingAt == null || airingAt <= 0) return null;
+
+  if (hasPublished) {
+    const lastSlot = lastTehranOccurrenceUnixSec(
+      weekday,
+      time.hour,
+      time.minute,
+      nowMs,
+    );
+    if (lastSlot != null) {
+      const coverAfter = lastSlot * 1000 - SLOT_COVER_GRACE_MS;
+      const covered =
+        lastPublishedMs != null && lastPublishedMs >= coverAfter;
+      if (!covered) return null;
+    }
+  }
+
+  return {
+    episode,
+    airing_at: airingAt,
+    weekday: weekday as ShioriWeekday,
+  };
+}
+
+export function resolveShioriNextAiring(
+  input: Parameters<typeof resolveShioriAiringPlan>[0],
+  nowMs = Date.now(),
+): NextAiringDto | null {
+  const plan = resolveShioriAiringPlan(input, nowMs);
+  if (!plan) return null;
+  return { episode: plan.episode, airing_at: plan.airing_at };
 }
 
 function persianWeekdayInTehran(nowMs: number): string {
