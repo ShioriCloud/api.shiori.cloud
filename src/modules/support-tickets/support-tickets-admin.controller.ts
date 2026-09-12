@@ -28,11 +28,13 @@ export class SupportTicketsAdminController {
   constructor(private readonly supportTicketsService: SupportTicketsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List all support tickets' })
+  @ApiOperation({ summary: 'Paginated support tickets for admin panel' })
   list(@Query() query: ListSupportTicketsAdminQueryDto) {
     return this.supportTicketsService.listAdmin({
       status: query.status,
       category: query.category,
+      page: query.page,
+      limit: query.limit,
     });
   }
 

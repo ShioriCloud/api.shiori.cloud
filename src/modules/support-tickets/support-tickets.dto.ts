@@ -1,8 +1,12 @@
+import { Type } from 'class-transformer';
 import {
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 
@@ -52,4 +56,17 @@ export class ListSupportTicketsAdminQueryDto {
   @IsOptional()
   @IsIn([...SUPPORT_TICKET_CATEGORIES])
   category?: (typeof SUPPORT_TICKET_CATEGORIES)[number];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  limit?: number;
 }

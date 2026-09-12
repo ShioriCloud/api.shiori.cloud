@@ -47,6 +47,21 @@ export type SupportTicketAdminListItem = SupportTicketListItem & {
   user_username: string | null;
 };
 
+export type SupportTicketAdminListSummary = {
+  open: number;
+  answered: number;
+  closed: number;
+};
+
+export type SupportTicketAdminListResult = {
+  items: SupportTicketAdminListItem[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  summary: SupportTicketAdminListSummary;
+};
+
 export type SupportTicketAdminDetail = SupportTicketAdminListItem & {
   messages: SupportTicketMessageItem[];
 };
@@ -146,7 +161,11 @@ export class SupportTicketsService {
   async listAdmin(filters: {
     status?: SupportTicketStatus;
     category?: SupportTicketCategory;
-  }): Promise<SupportTicketAdminListItem[]> {
+    page?: number;
+    limit?: number;
+  }): Promise<SupportTicketAdminListResult> {
+    const page = filters.page && filters.page > 0 ? filters.page : 1;
+    const limit = filters.limit && filters.limit > 0 ? filters.limit : 10;
     const where: {
       status?: SupportTicketStatus;
       category?: SupportTicketCategory;
@@ -154,25 +173,34 @@ export class SupportTicketsService {
     if (filters.status) where.status = filters.status;
     if (filters.category) where.category = filters.category;
 
-    const tickets = await this.ticketRepo.find({
+    const [tickets, total] = await this.ticketRepo.findAndCount({
       where,
       order: { updatedAt: 'DESC' },
-      take: 200,
+      skip: (page - 1) * limit,
+      take: limit,
     });
 
     const list = await this.toListItems(tickets);
     const users = await this.loadUsers(tickets.map((t) => t.telegramUserId));
+    const summary = await this.loadAdminSummary(filters.category);
 
-    return list.map((item, i) => {
-      const ticket = tickets[i];
-      const user = users.get(String(ticket.telegramUserId));
-      return {
-        ...item,
-        telegram_user_id: String(ticket.telegramUserId),
-        user_display_name: this.displayName(user),
-        user_username: user?.username ?? null,
-      };
-    });
+    return {
+      items: list.map((item, i) => {
+        const ticket = tickets[i];
+        const user = users.get(String(ticket.telegramUserId));
+        return {
+          ...item,
+          telegram_user_id: String(ticket.telegramUserId),
+          user_display_name: this.displayName(user),
+          user_username: user?.username ?? null,
+        };
+      }),
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      summary,
+    };
   }
 
   async getAdmin(ticketId: string): Promise<SupportTicketAdminDetail> {
@@ -249,6 +277,33 @@ export class SupportTicketsService {
       where: { ticketId },
       order: { createdAt: 'ASC' },
     });
+  }
+
+  private async loadAdminSummary(
+    category?: SupportTicketCategory,
+  ): Promise<SupportTicketAdminListSummary> {
+    const qb = this.ticketRepo
+      .createQueryBuilder('t')
+      .select('t.status', 'status')
+      .addSelect('COUNT(*)', 'count');
+    if (category) {
+      qb.where('t.category = :category', { category });
+    }
+    const rows = await qb
+      .groupBy('t.status')
+      .getRawMany<{ status: string; count: string }>();
+
+    const summary: SupportTicketAdminListSummary = {
+      open: 0,
+      answered: 0,
+      closed: 0,
+    };
+    for (const row of rows) {
+      if (row.status === 'open' || row.status === 'answered' || row.status === 'closed') {
+        summary[row.status] = Number(row.count) || 0;
+      }
+    }
+    return summary;
   }
 
   private async loadUsers(
