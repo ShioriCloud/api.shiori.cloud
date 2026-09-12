@@ -170,8 +170,20 @@ export class AnimeAdminController {
   }
 
   @Get('genres')
-  listGenres(@Query('search') search?: string) {
-    return this.animeAdminService.listGenres(search);
+  listGenres(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    return this.animeAdminService.listGenres({
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      sortBy,
+      sortOrder,
+    });
   }
 
   @Post('genres')
@@ -192,8 +204,20 @@ export class AnimeAdminController {
   }
 
   @Get('studios')
-  listStudios(@Query('search') search?: string) {
-    return this.animeAdminService.listStudios(search);
+  listStudios(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    return this.animeAdminService.listStudios({
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      sortBy,
+      sortOrder,
+    });
   }
 
   @Post('studios')
@@ -223,8 +247,20 @@ export class AnimeAdminController {
   }
 
   @Get('translators')
-  listTranslators(@Query('search') search?: string) {
-    return this.animeAdminService.listTranslators(search);
+  listTranslators(
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: 'ASC' | 'DESC',
+  ) {
+    return this.animeAdminService.listTranslators({
+      search,
+      page: page ? Number(page) : undefined,
+      limit: limit ? Number(limit) : undefined,
+      sortBy,
+      sortOrder,
+    });
   }
 
   @Post('translators')

@@ -36,6 +36,14 @@ import { ChannelDraftsService } from '../bot/channel-drafts.service';
 
 type Payload = Record<string, unknown>;
 
+type CatalogAdminListParams = {
+  search?: string;
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'ASC' | 'DESC';
+};
+
 @Injectable()
 export class AnimeAdminService {
   private readonly logger = new Logger(AnimeAdminService.name);
@@ -738,16 +746,178 @@ export class AnimeAdminService {
     await this.animeRepo.save(anime);
   }
 
-  async listGenres(search?: string) {
-    const qb = this.genreRepo.createQueryBuilder('g').orderBy('g.slug', 'ASC');
-    if (search?.trim()) {
-      const term = `%${search.trim().toLowerCase()}%`;
+  private catalogListPaging(params?: CatalogAdminListParams) {
+    const paginate = params?.page != null || params?.limit != null;
+    const pageRaw = Number(params?.page);
+    const limitRaw = Number(params?.limit);
+    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.trunc(pageRaw) : 1;
+    const limit =
+      Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(10_000, Math.trunc(limitRaw))
+        : 50;
+    const sortOrder: 'ASC' | 'DESC' = params?.sortOrder === 'DESC' ? 'DESC' : 'ASC';
+    return { paginate, page, limit, sortOrder };
+  }
+
+  private catalogListResult<T, S>(
+    items: T[],
+    total: number,
+    page: number,
+    limit: number,
+    summary: S,
+  ) {
+    return {
+      items,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / Math.max(1, limit))),
+      summary,
+    };
+  }
+
+  private async studioAnimeCounts(ids: string[]) {
+    if (ids.length === 0) return new Map<string, number>();
+    const countRows = await this.studioLinkRepo
+      .createQueryBuilder('l')
+      .select('l.studioId', 'studioId')
+      .addSelect('COUNT(DISTINCT l.animeId)', 'animeCount')
+      .where('l.studioId IN (:...ids)', { ids })
+      .groupBy('l.studioId')
+      .getRawMany<{ studioId: string; animeCount: string }>();
+    return new Map(
+      countRows.map((row) => [
+        String(row.studioId),
+        Number.parseInt(String(row.animeCount ?? '0'), 10) || 0,
+      ]),
+    );
+  }
+
+  private async translatorLinkCounts(ids: string[]) {
+    const animeCountByTranslator = new Map<string, number>();
+    const episodeCountByTranslator = new Map<string, number>();
+    if (ids.length === 0) {
+      return { animeCountByTranslator, episodeCountByTranslator };
+    }
+
+    const animeCountRows = await this.translatorLinkRepo
+      .createQueryBuilder('tal')
+      .select('tal.translatorId', 'translatorId')
+      .addSelect('COUNT(DISTINCT tal.animeId)', 'animeCount')
+      .where('tal.translatorId IN (:...ids)', { ids })
+      .groupBy('tal.translatorId')
+      .getRawMany<{ translatorId: string; animeCount: string }>();
+    for (const row of animeCountRows) {
+      animeCountByTranslator.set(
+        String(row.translatorId),
+        Number.parseInt(String(row.animeCount ?? '0'), 10) || 0,
+      );
+    }
+
+    const episodeRows = await this.translatorLinkRepo
+      .createQueryBuilder('tal')
+      .innerJoin(AnimeEpisode, 'e', 'e.animeId = tal.animeId')
+      .select('tal.translatorId', 'translatorId')
+      .addSelect('COUNT(e.id)', 'episodeCount')
+      .where('tal.translatorId IN (:...ids)', { ids })
+      .groupBy('tal.translatorId')
+      .getRawMany<{ translatorId: string; episodeCount: string }>();
+    for (const row of episodeRows) {
+      episodeCountByTranslator.set(
+        String(row.translatorId),
+        Number.parseInt(String(row.episodeCount ?? '0'), 10) || 0,
+      );
+    }
+
+    return { animeCountByTranslator, episodeCountByTranslator };
+  }
+
+  private async genreListSummary() {
+    const [total, withFa, withEn] = await Promise.all([
+      this.genreRepo.count(),
+      this.genreRepo
+        .createQueryBuilder('g')
+        .where("g.name_fa IS NOT NULL AND TRIM(g.name_fa) <> ''")
+        .getCount(),
+      this.genreRepo
+        .createQueryBuilder('g')
+        .where("g.name_en IS NOT NULL AND TRIM(g.name_en) <> ''")
+        .getCount(),
+    ]);
+    return { total, withFa, withEn };
+  }
+
+  private async studioListSummary() {
+    const [total, linkedRaw] = await Promise.all([
+      this.studioRepo.count(),
+      this.studioLinkRepo
+        .createQueryBuilder('l')
+        .select('COUNT(DISTINCT l.animeId)', 'c')
+        .getRawOne<{ c: string }>(),
+    ]);
+    return {
+      total,
+      linkedAnime: Number.parseInt(String(linkedRaw?.c ?? '0'), 10) || 0,
+    };
+  }
+
+  private async translatorListSummary() {
+    const [total, active, animeRaw, episodeRaw] = await Promise.all([
+      this.translatorRepo.count(),
+      this.translatorRepo.count({ where: { isActive: true } }),
+      this.translatorLinkRepo
+        .createQueryBuilder('tal')
+        .select('COUNT(DISTINCT tal.animeId)', 'c')
+        .getRawOne<{ c: string }>(),
+      this.translatorLinkRepo
+        .createQueryBuilder('tal')
+        .innerJoin(AnimeEpisode, 'e', 'e.animeId = tal.animeId')
+        .select('COUNT(e.id)', 'c')
+        .getRawOne<{ c: string }>(),
+    ]);
+    return {
+      total,
+      active,
+      anime: Number.parseInt(String(animeRaw?.c ?? '0'), 10) || 0,
+      episodes: Number.parseInt(String(episodeRaw?.c ?? '0'), 10) || 0,
+    };
+  }
+
+  async listGenres(params?: CatalogAdminListParams | string) {
+    const query = typeof params === 'string' ? { search: params } : params;
+    const { paginate, page, limit, sortOrder } = this.catalogListPaging(query);
+    const qb = this.genreRepo.createQueryBuilder('g');
+    if (query?.search?.trim()) {
+      const term = `%${query.search.trim().toLowerCase()}%`;
       qb.where(
         'LOWER(g.slug) LIKE :term OR LOWER(g.name_en) LIKE :term OR LOWER(g.name_fa) LIKE :term',
         { term },
       );
     }
-    return (await qb.getMany()).map((g) => this.toGenre(g));
+
+    const sortBy = query?.sortBy;
+    if (sortBy === 'name_en') {
+      qb.orderBy('g.nameEn', sortOrder, 'NULLS LAST').addOrderBy('g.slug', 'ASC');
+    } else if (sortBy === 'slug') {
+      qb.orderBy('g.slug', sortOrder);
+    } else if (sortBy === 'name_fa' || paginate) {
+      qb.orderBy('g.nameFa', sortOrder, 'NULLS LAST').addOrderBy('g.slug', 'ASC');
+    } else {
+      qb.orderBy('g.slug', 'ASC');
+    }
+
+    if (!paginate) {
+      return (await qb.getMany()).map((g) => this.toGenre(g));
+    }
+
+    const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    return this.catalogListResult(
+      rows.map((g) => this.toGenre(g)),
+      total,
+      page,
+      limit,
+      await this.genreListSummary(),
+    );
   }
 
   async upsertGenre(body: Payload) {
@@ -795,28 +965,41 @@ export class AnimeAdminService {
     await this.genreRepo.remove(genre);
   }
 
-  async listStudios(search?: string) {
-    const qb = this.studioRepo.createQueryBuilder('s').orderBy('s.name', 'ASC');
-    if (search?.trim()) {
-      const term = `%${search.trim().toLowerCase()}%`;
+  async listStudios(params?: CatalogAdminListParams | string) {
+    const query = typeof params === 'string' ? { search: params } : params;
+    const { paginate, page, limit, sortOrder } = this.catalogListPaging(query);
+    const qb = this.studioRepo.createQueryBuilder('s');
+    if (query?.search?.trim()) {
+      const term = `%${query.search.trim().toLowerCase()}%`;
       qb.where('LOWER(s.slug) LIKE :term OR LOWER(s.name) LIKE :term', { term });
     }
-    const studios = await qb.getMany();
-    const countRows = await this.studioLinkRepo
-      .createQueryBuilder('l')
-      .select('l.studioId', 'studioId')
-      .addSelect('COUNT(DISTINCT l.animeId)', 'animeCount')
-      .groupBy('l.studioId')
-      .getRawMany<{ studioId: string; animeCount: string }>();
-    const countByStudio = new Map(
-      countRows.map((row) => [String(row.studioId), Number.parseInt(String(row.animeCount ?? '0'), 10) || 0]),
-    );
-    return studios.map((s) =>
+
+    const sortBy = query?.sortBy;
+    if (sortBy === 'slug') {
+      qb.orderBy('s.slug', sortOrder);
+    } else if (sortBy === 'anime_count') {
+      qb.orderBy(
+        '(SELECT COUNT(DISTINCT l.anime_id) FROM anime_studios l WHERE l.studio_id = s.id)',
+        sortOrder,
+      ).addOrderBy('s.name', 'ASC');
+    } else if (sortBy === 'name' || paginate) {
+      qb.orderBy('s.name', sortOrder).addOrderBy('s.slug', 'ASC');
+    } else {
+      qb.orderBy('s.name', 'ASC');
+    }
+
+    const [rows, total] = paginate
+      ? await qb.skip((page - 1) * limit).take(limit).getManyAndCount()
+      : [await qb.getMany(), 0];
+    const countByStudio = await this.studioAnimeCounts(rows.map((s) => s.id));
+    const items = rows.map((s) =>
       this.toStudio({
         ...s,
         _animeCount: countByStudio.get(String(s.id)) ?? 0,
       }),
     );
+    if (!paginate) return items;
+    return this.catalogListResult(items, total, page, limit, await this.studioListSummary());
   }
 
   async upsertStudio(body: Payload) {
@@ -845,52 +1028,48 @@ export class AnimeAdminService {
     await this.replaceStudioSlugs(animeId, slugs);
   }
 
-  async listTranslators(search?: string) {
-    const qb = this.translatorRepo.createQueryBuilder('t').orderBy('t.name', 'ASC');
-    if (search?.trim()) {
-      const term = `%${search.trim().toLowerCase()}%`;
+  async listTranslators(params?: CatalogAdminListParams | string) {
+    const query = typeof params === 'string' ? { search: params } : params;
+    const { paginate, page, limit, sortOrder } = this.catalogListPaging(query);
+    const qb = this.translatorRepo.createQueryBuilder('t');
+    if (query?.search?.trim()) {
+      const term = `%${query.search.trim().toLowerCase()}%`;
       qb.where('LOWER(t.slug) LIKE :term OR LOWER(t.name) LIKE :term', { term });
     }
-    const translators = await qb.getMany();
 
-    const animeCountRows = await this.translatorLinkRepo
-      .createQueryBuilder('tal')
-      .select('tal.translatorId', 'translatorId')
-      .addSelect('COUNT(DISTINCT tal.animeId)', 'animeCount')
-      .groupBy('tal.translatorId')
-      .getRawMany<{ translatorId: string; animeCount: string }>();
-    const animeCountByTranslator = new Map(
-      animeCountRows.map((row) => [
-        String(row.translatorId),
-        Number.parseInt(String(row.animeCount ?? '0'), 10) || 0,
-      ]),
-    );
-
-    const episodeCountByTranslator = new Map<string, number>();
-    if (translators.length > 0) {
-      const raw = await this.translatorLinkRepo
-        .createQueryBuilder('tal')
-        .innerJoin(AnimeEpisode, 'e', 'e.animeId = tal.animeId')
-        .select('tal.translatorId', 'translatorId')
-        .addSelect('COUNT(e.id)', 'episodeCount')
-        .groupBy('tal.translatorId')
-        .getRawMany<{ translatorId: string; episodeCount: string }>();
-
-      for (const row of raw) {
-        episodeCountByTranslator.set(
-          String(row.translatorId),
-          Number.parseInt(String(row.episodeCount ?? '0'), 10) || 0,
-        );
-      }
+    const sortBy = query?.sortBy;
+    if (sortBy === 'slug') {
+      qb.orderBy('t.slug', sortOrder);
+    } else if (sortBy === 'anime_count') {
+      qb.orderBy(
+        '(SELECT COUNT(DISTINCT tal.anime_id) FROM translator_anime tal WHERE tal.translator_id = t.id)',
+        sortOrder,
+      ).addOrderBy('t.name', 'ASC');
+    } else if (sortBy === 'episode_count') {
+      qb.orderBy(
+        '(SELECT COUNT(e.id) FROM translator_anime tal INNER JOIN episodes e ON e.anime_id = tal.anime_id WHERE tal.translator_id = t.id)',
+        sortOrder,
+      ).addOrderBy('t.name', 'ASC');
+    } else if (sortBy === 'name' || paginate) {
+      qb.orderBy('t.name', sortOrder).addOrderBy('t.slug', 'ASC');
+    } else {
+      qb.orderBy('t.name', 'ASC');
     }
 
-    return translators.map((t) =>
+    const [rows, total] = paginate
+      ? await qb.skip((page - 1) * limit).take(limit).getManyAndCount()
+      : [await qb.getMany(), 0];
+    const { animeCountByTranslator, episodeCountByTranslator } =
+      await this.translatorLinkCounts(rows.map((t) => t.id));
+    const items = rows.map((t) =>
       this.toTranslator({
         ...t,
         _animeCount: animeCountByTranslator.get(String(t.id)) ?? 0,
         _episodeCount: episodeCountByTranslator.get(String(t.id)) ?? 0,
       }),
     );
+    if (!paginate) return items;
+    return this.catalogListResult(items, total, page, limit, await this.translatorListSummary());
   }
 
   async upsertTranslator(body: Payload) {
