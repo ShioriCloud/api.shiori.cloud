@@ -73,6 +73,48 @@ export class AnimeAdminService {
     return Number.isFinite(n) ? n : null;
   }
 
+  private static readonly AIRING_WEEKDAYS = [
+    'شنبه',
+    'یکشنبه',
+    'دوشنبه',
+    'سه‌شنبه',
+    'چهارشنبه',
+    'پنج‌شنبه',
+    'جمعه',
+  ] as const;
+
+  private normalizeAiringWeekday(
+    value: string | null | undefined,
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value == null) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    if (
+      !(AnimeAdminService.AIRING_WEEKDAYS as readonly string[]).includes(trimmed)
+    ) {
+      throw new BadRequestException('invalid airing_weekday');
+    }
+    return trimmed;
+  }
+
+  private normalizeAiringTime(
+    value: string | null | undefined,
+  ): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value == null) return null;
+    const trimmed = String(value).trim();
+    if (!trimmed) return null;
+    const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) throw new BadRequestException('invalid airing_time (use HH:mm)');
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+      throw new BadRequestException('invalid airing_time (use HH:mm)');
+    }
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+
   private toGenre(g: AnimeGenre) {
     return {
       id: g.id,
@@ -156,6 +198,8 @@ export class AnimeAdminService {
       cover_image: anime.coverImage,
       is_featured: anime.isFeatured,
       airing_status: anime.airingStatus,
+      airing_weekday: anime.airingWeekday,
+      airing_time: anime.airingTime,
       average_score: this.numOrNull(anime.averageScore),
       episodes_count: anime.episodesCount,
       studio: anime.studio,
@@ -215,6 +259,16 @@ export class AnimeAdminService {
     assign('synopsis', this.pick<string | null>(body, 'synopsis', 'synopsis'));
     assign('format', this.pick<string | null>(body, 'format', 'format'));
     assign('airingStatus', this.pick<string | null>(body, 'airing_status', 'airingStatus'));
+    assign(
+      'airingWeekday',
+      this.normalizeAiringWeekday(
+        this.pick<string | null>(body, 'airing_weekday', 'airingWeekday'),
+      ),
+    );
+    assign(
+      'airingTime',
+      this.normalizeAiringTime(this.pick<string | null>(body, 'airing_time', 'airingTime')),
+    );
     assign('season', this.pick<string | null>(body, 'season', 'season'));
     assign('year', this.pick<number | null>(body, 'year', 'year'));
     assign('episodesCount', this.pick<number | null>(body, 'episodes_count', 'episodesCount'));

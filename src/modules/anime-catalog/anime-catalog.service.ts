@@ -752,6 +752,115 @@ export class AnimeCatalogService {
     return this.userListRepo.count({ where: { animeId } });
   }
 
+  private static readonly SHIORI_WEEKDAYS = [
+    'شنبه',
+    'یکشنبه',
+    'دوشنبه',
+    'سه‌شنبه',
+    'چهارشنبه',
+    'پنج‌شنبه',
+    'جمعه',
+  ] as const;
+
+  /**
+   * Catalog-only weekly schedule: RELEASING titles with airing_weekday set.
+   * Independent of AniList availability.
+   */
+  async listShioriAiringSchedule() {
+    const emptySchedule = this.buildEmptyAiringSchedule();
+    const { season: currentSeason, year: currentYear } =
+      this.getCurrentAiringSeasonInTehran();
+
+    const rows = await this.animeRepo
+      .createQueryBuilder('anime')
+      .where('anime.airing_status = :status', { status: 'RELEASING' })
+      .andWhere('anime.airing_weekday IS NOT NULL')
+      .andWhere("TRIM(anime.airing_weekday) <> ''")
+      .orderBy('anime.airing_time', 'ASC', 'NULLS LAST')
+      .addOrderBy('anime.title', 'ASC')
+      .getMany();
+
+    if (rows.length === 0) {
+      return { schedule: emptySchedule, currentSeason, currentYear };
+    }
+
+    const ids = rows.map((row) => row.id);
+    const genreMap = await this.loadGenresForAnimeIds(ids);
+
+    const episodeMaxRows = await this.episodeRepo
+      .createQueryBuilder('ep')
+      .select('ep.anime_id', 'animeId')
+      .addSelect('MAX(ep.episode_number)', 'maxEpisode')
+      .where('ep.anime_id IN (:...ids)', { ids })
+      .groupBy('ep.anime_id')
+      .getRawMany<{ animeId: string; maxEpisode: string | null }>();
+
+    const maxByAnime = new Map<string, number>();
+    for (const row of episodeMaxRows) {
+      const n = Number(row.maxEpisode);
+      if (Number.isFinite(n) && n > 0) maxByAnime.set(String(row.animeId), n);
+    }
+
+    const schedule = { ...emptySchedule };
+    const weekdaySet = new Set<string>(AnimeCatalogService.SHIORI_WEEKDAYS);
+
+    for (const anime of rows) {
+      const day = String(anime.airingWeekday ?? '').trim();
+      if (!weekdaySet.has(day) || !schedule[day]) continue;
+
+      const maxEp = maxByAnime.get(anime.id);
+      const nextEpisode =
+        maxEp != null ? String(Math.floor(maxEp) + 1) : '';
+
+      const timeRaw = String(anime.airingTime ?? '').trim();
+      const displayTime = timeRaw ? this.formatAiringTimeFa(timeRaw) : '';
+
+      schedule[day].push({
+        id:
+          anime.anilistId && anime.anilistId > 0
+            ? anime.anilistId
+            : this.stableNumericId(anime.id),
+        title: anime.title || 'بدون عنوان',
+        time: displayTime,
+        episode: nextEpisode,
+        image: anime.coverImage || anime.featuredImage || '',
+        genres: (genreMap.get(anime.id) ?? []).map((g) => ({
+          slug: g.slug,
+          name_en: g.name_en,
+        })),
+        localId: anime.id,
+      });
+    }
+
+    for (const day of Object.keys(schedule)) {
+      schedule[day].sort((a, b) =>
+        String(a.time).localeCompare(String(b.time), 'fa'),
+      );
+    }
+
+    return { schedule, currentSeason, currentYear };
+  }
+
+  private formatAiringTimeFa(hhmm: string): string {
+    const match = String(hhmm).trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return hhmm;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return hhmm;
+    const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+    const toFa = (n: number, width = 2) =>
+      String(n)
+        .padStart(width, '0')
+        .replace(/[0-9]/g, (d) => persianDigits[Number(d)] ?? d);
+    return `${toFa(hour)}:${toFa(minute)}`;
+  }
+
+  private stableNumericId(uuid: string): number {
+    const hex = String(uuid).replace(/-/g, '').slice(0, 8);
+    const n = Number.parseInt(hex, 16);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+
   async listAiringSchedule() {
     const emptySchedule = this.buildEmptyAiringSchedule();
     const { season: currentSeason, year: currentYear } =

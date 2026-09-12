@@ -70,6 +70,13 @@ UPDATE anime SET video_file_type = 'softsub' WHERE video_file_type IS NULL OR vi
 UPDATE anime SET video_resolution = '1080p' WHERE video_resolution IS NULL OR video_resolution = '';
 UPDATE anime SET video_encode = 'x265_10bit' WHERE video_encode IS NULL OR video_encode = '';
 
+-- Shiori catalog weekly schedule (day + Tehran time)
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS airing_weekday text;
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS airing_time text;
+CREATE INDEX IF NOT EXISTS idx_anime_airing_slot
+  ON anime (airing_status, airing_weekday)
+  WHERE airing_weekday IS NOT NULL;
+
 -- Existing anime with soft-subs → Persian hardsub badge
 UPDATE anime a
 SET hardsub_language = 'fa'

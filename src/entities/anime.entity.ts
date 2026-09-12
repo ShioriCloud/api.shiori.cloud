@@ -47,6 +47,17 @@ export class Anime {
   @Column({ type: 'text', name: 'airing_status', nullable: true })
   airingStatus: string | null;
 
+  /**
+   * Weekly slot for Shiori schedule (Persian weekday labels used by mini-app).
+   * Values: شنبه | یکشنبه | دوشنبه | سه‌شنبه | چهارشنبه | پنج‌شنبه | جمعه
+   */
+  @Column({ type: 'text', name: 'airing_weekday', nullable: true })
+  airingWeekday: string | null;
+
+  /** Local Tehran broadcast/release time as HH:mm */
+  @Column({ type: 'text', name: 'airing_time', nullable: true })
+  airingTime: string | null;
+
   @Column({
     type: 'numeric',
     precision: 5,

@@ -38,8 +38,17 @@ export class AnimeCatalogController {
   }
 
   @Get('schedule')
-  @ApiOperation({ summary: 'Weekly airing schedule (AniList + local ids)' })
-  listSchedule() {
+  @ApiOperation({
+    summary:
+      'Weekly airing schedule (scope=shiori catalog slots, or AniList+local ids)',
+  })
+  listSchedule(@Query('scope') scope?: string) {
+    const normalized = String(scope ?? '')
+      .trim()
+      .toLowerCase();
+    if (normalized === 'shiori' || normalized === 'catalog') {
+      return this.animeCatalogService.listShioriAiringSchedule();
+    }
     return this.animeCatalogService.listAiringSchedule();
   }
 
