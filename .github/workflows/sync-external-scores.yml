@@ -17,12 +17,17 @@ on:
       delay_ms:
         description: Delay between anime within a page (ms)
         required: false
-        default: '400'
+        default: '700'
         type: string
       offset:
         description: Start offset (for resume)
         required: false
         default: '0'
+        type: string
+      missing_only:
+        description: Only rows missing AniList or MAL score
+        required: false
+        default: 'true'
         type: string
 
 jobs:
@@ -43,6 +48,7 @@ jobs:
           SHIORI_API_URL: ${{ secrets.SHIORI_API_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
           LIMIT: ${{ github.event.inputs.limit || '50' }}
-          DELAY_MS: ${{ github.event.inputs.delay_ms || '400' }}
+          DELAY_MS: ${{ github.event.inputs.delay_ms || '700' }}
           OFFSET: ${{ github.event.inputs.offset || '0' }}
+          MISSING_ONLY: ${{ github.event.inputs.missing_only || 'true' }}
         run: node scripts/backfill-external-scores.mjs

@@ -8,15 +8,19 @@
  *   node scripts/backfill-external-scores.mjs
  *
  * Optional:
- *   LIMIT=50 DELAY_MS=400 OFFSET=0
+ *   LIMIT=50 DELAY_MS=700 OFFSET=0 AFTER_ID= MISSING_ONLY=true
  */
 const apiBase = String(process.env.SHIORI_API_URL || process.env.API_BASE_URL || '')
   .trim()
   .replace(/\/+$/, '')
 const secret = String(process.env.CRON_SECRET || '').trim()
 const limit = Math.min(Math.max(Number(process.env.LIMIT || 50) || 50, 1), 100)
-const delayMs = Math.min(Math.max(Number(process.env.DELAY_MS || 400) || 400, 0), 2000)
+const delayMs = Math.min(Math.max(Number(process.env.DELAY_MS || 700) || 700, 0), 2000)
 let offset = Math.max(Number(process.env.OFFSET || 0) || 0, 0)
+let afterId = String(process.env.AFTER_ID || '').trim()
+const missingOnly = !['0', 'false', 'no'].includes(
+  String(process.env.MISSING_ONLY ?? 'true').trim().toLowerCase()
+)
 
 if (!apiBase) {
   console.error('SHIORI_API_URL (or API_BASE_URL) is required')
@@ -32,8 +36,13 @@ const endpoint = `${apiBase}/api/v1/cron/sync-external-scores`
 async function syncPage(pageOffset) {
   const url = new URL(endpoint)
   url.searchParams.set('limit', String(limit))
-  url.searchParams.set('offset', String(pageOffset))
   url.searchParams.set('delay_ms', String(delayMs))
+  url.searchParams.set('missing_only', missingOnly ? 'true' : 'false')
+  if (missingOnly) {
+    if (afterId) url.searchParams.set('after_id', afterId)
+  } else {
+    url.searchParams.set('offset', String(pageOffset))
+  }
 
   const res = await fetch(url, {
     method: 'POST',
@@ -62,7 +71,9 @@ async function syncPage(pageOffset) {
 
 async function main() {
   console.log(`Backfill external scores via ${endpoint}`)
-  console.log(`limit=${limit} delay_ms=${delayMs} start_offset=${offset}`)
+  console.log(
+    `limit=${limit} delay_ms=${delayMs} start_offset=${offset} after_id=${afterId || '-'} missing_only=${missingOnly}`
+  )
 
   let totalProcessed = 0
   let totalUpdated = 0
@@ -77,7 +88,7 @@ async function main() {
     totalUpdated += updated
 
     console.log(
-      `page=${pages} offset=${offset} processed=${processed} updated=${updated}` +
+      `page=${pages} ${missingOnly ? `after_id=${afterId || '-'}` : `offset=${offset}`} processed=${processed} updated=${updated}` +
         (Array.isArray(result?.errors) && result.errors.length
           ? ` errors=${result.errors.length}`
           : '')
@@ -93,8 +104,13 @@ async function main() {
     }
 
     if (!result?.hasMore) break
-    offset =
-      typeof result.nextOffset === 'number' ? result.nextOffset : offset + limit
+    if (missingOnly) {
+      afterId = typeof result.nextAfterId === 'string' ? result.nextAfterId : ''
+      if (!afterId) break
+    } else {
+      offset =
+        typeof result.nextOffset === 'number' ? result.nextOffset : offset + limit
+    }
   }
 
   console.log(

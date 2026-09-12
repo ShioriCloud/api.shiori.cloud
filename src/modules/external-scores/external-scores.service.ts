@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import {
   fetchExternalScoresDetailed,
   normalizeExternalId,
@@ -71,20 +71,34 @@ export class ExternalScoresService {
     }
   }
 
-  async applyScoresToAnime(animeId: string, scores: ExternalScores): Promise<ExternalScores> {
+  private scoreEqualsDb(stored: string | null, next: number | null): boolean {
+    if (next == null) return true;
+    const current = Number(stored);
+    return Number.isFinite(current) && current === next;
+  }
+
+  async applyScoresToAnime(
+    animeId: string,
+    scores: ExternalScores,
+  ): Promise<{ scores: ExternalScores; changed: boolean }> {
     const anime = await this.animeRepo.findOne({ where: { id: animeId } });
     if (!anime) throw new NotFoundException('anime not found');
 
-    if (scores.anilistScore != null) {
+    let changed = false;
+    if (scores.anilistScore != null && !this.scoreEqualsDb(anime.averageScore, scores.anilistScore)) {
       anime.averageScore = this.scoreToDb(scores.anilistScore);
+      changed = true;
     }
-    if (scores.malScore != null) {
+    if (scores.malScore != null && !this.scoreEqualsDb(anime.malScore, scores.malScore)) {
       anime.malScore = this.scoreToDb(scores.malScore);
+      changed = true;
     }
-    anime.updatedAt = new Date();
 
-    await this.animeRepo.save(anime);
-    return scores;
+    if (changed) {
+      anime.updatedAt = new Date();
+      await this.animeRepo.save(anime);
+    }
+    return { scores, changed };
   }
 
   private buildSyncResult(
@@ -160,19 +174,36 @@ export class ExternalScoresService {
     limit?: number;
     offset?: number;
     delayMs?: number;
+    missingOnly?: boolean;
+    afterId?: string;
   }) {
     const limit = Math.min(Math.max(options?.limit ?? 25, 1), 100);
     const offset = Math.max(options?.offset ?? 0, 0);
-    const delayMs = Math.min(Math.max(options?.delayMs ?? 400, 0), 2000);
+    const delayMs = Math.min(Math.max(options?.delayMs ?? 700, 0), 2000);
+    const missingOnly = options?.missingOnly !== false;
+    const afterId = options?.afterId?.trim() || null;
 
-    const rows = await this.animeRepo
+    const query = this.animeRepo
       .createQueryBuilder('a')
       .select(['a.id', 'a.anilistId', 'a.malId'])
-      .where('(a.anilistId IS NOT NULL OR a.malId IS NOT NULL)')
-      .orderBy('a.id', 'ASC')
-      .skip(offset)
-      .take(limit)
-      .getMany();
+      .where('(a.anilistId IS NOT NULL OR a.malId IS NOT NULL)');
+
+    if (missingOnly) {
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where('a.anilistId IS NOT NULL AND a.averageScore IS NULL').orWhere(
+            'a.malId IS NOT NULL AND a.malScore IS NULL',
+          );
+        }),
+      );
+      if (afterId) {
+        query.andWhere('a.id > :afterId', { afterId });
+      }
+    } else {
+      query.skip(offset);
+    }
+
+    const rows = await query.orderBy('a.id', 'ASC').take(limit).getMany();
 
     let updated = 0;
     const errors: Array<{ id: string; message: string }> = [];
@@ -183,11 +214,11 @@ export class ExternalScoresService {
           anilist_id: row.anilistId,
           mal_id: row.malId,
         });
-        await this.applyScoresToAnime(row.id, {
+        const applied = await this.applyScoresToAnime(row.id, {
           anilistScore: fetched.anilistScore,
           malScore: fetched.malScore,
         });
-        updated += 1;
+        if (applied.changed) updated += 1;
       } catch (e) {
         errors.push({
           id: row.id,
@@ -199,11 +230,14 @@ export class ExternalScoresService {
     }
 
     const hasMore = rows.length === limit;
+    const lastId = rows.at(-1)?.id ?? null;
     return {
       processed: rows.length,
       updated,
       offset,
-      nextOffset: hasMore ? offset + limit : null,
+      nextOffset: missingOnly ? null : hasMore ? offset + limit : null,
+      afterId,
+      nextAfterId: missingOnly && hasMore ? lastId : null,
       hasMore,
       errors,
     };

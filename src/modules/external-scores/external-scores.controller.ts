@@ -15,11 +15,16 @@ export class ExternalScoresController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('delay_ms') delayMs?: string,
+    @Query('missing_only') missingOnly?: string,
+    @Query('after_id') afterId?: string,
   ) {
+    const missingFlag = String(missingOnly ?? 'true').trim().toLowerCase();
     return this.externalScoresService.syncBatch({
       limit: limit ? Number(limit) : undefined,
       offset: offset ? Number(offset) : undefined,
       delayMs: delayMs ? Number(delayMs) : undefined,
+      missingOnly: missingFlag !== '0' && missingFlag !== 'false',
+      afterId: afterId?.trim() || undefined,
     });
   }
 }

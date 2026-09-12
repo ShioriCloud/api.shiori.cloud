@@ -42,6 +42,7 @@ import {
 } from '../../entities';
 import { NotificationsAdminService } from '../notifications-admin/notifications-admin.service';
 import { ChannelDraftsService } from '../bot/channel-drafts.service';
+import { ExternalScoresService } from '../external-scores/external-scores.service';
 
 type Payload = Record<string, unknown>;
 
@@ -75,6 +76,7 @@ export class AnimeAdminService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notificationsAdminService: NotificationsAdminService,
     private readonly channelDraftsService: ChannelDraftsService,
+    private readonly externalScoresService: ExternalScoresService,
   ) {}
 
   private pick<T>(body: Payload, snake: string, camel: string): T | undefined {
@@ -766,7 +768,21 @@ export class AnimeAdminService {
       editorId,
     );
 
-    return { existed: false, ...created };
+    try {
+      await this.externalScoresService.syncAnimeById(String(created.id), {
+        anilist_id: media.anilist_id,
+        mal_id: media.mal_id,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `AniList import score sync failed for ${created.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const refreshed = await this.getAnimeAdmin(created.id);
+    return { existed: false, ...refreshed };
   }
 
   async fillFromAnilist(body: Payload) {
