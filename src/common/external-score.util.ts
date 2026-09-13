@@ -3,9 +3,25 @@ import { isIP } from 'net';
 import * as https from 'https';
 import * as http from 'http';
 
+export type ExternalScoreSource = 'anilist' | 'mal';
+
+export type ExternalScoreSkipReason = 'no_score_yet' | 'not_found';
+
 export type ExternalScoreFetchError = {
-  source: 'anilist' | 'mal';
+  source: ExternalScoreSource;
   message: string;
+};
+
+export type ExternalScoreSkip = {
+  source: ExternalScoreSource;
+  reason: ExternalScoreSkipReason;
+};
+
+export type ExternalScoreFetchResult = {
+  score: number | null;
+  skipped?: boolean;
+  skipReason?: ExternalScoreSkipReason;
+  error?: string;
 };
 
 export const normalizeExternalId = (value: unknown): number | null => {
@@ -231,9 +247,50 @@ export const anilistGraphqlRequest = async (
     insecureTls: insecureTlsEnabled(),
   });
 
+const asRecord = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const firstGraphqlError = (json: unknown): string | null => {
+  const errors = asRecord(json)?.errors;
+  if (!Array.isArray(errors) || errors.length === 0) return null;
+  const first = asRecord(errors[0]);
+  const message = first?.message;
+  return typeof message === 'string' && message.trim() ? message.trim() : 'AniList query error';
+};
+
+const isNotFoundMessage = (message: string | null | undefined): boolean =>
+  Boolean(message && /not found/i.test(message));
+
+/** Classify an AniList GraphQL payload without treating a missing rating as a hard error. */
+export const interpretAnilistScoreJson = (json: unknown): ExternalScoreFetchResult => {
+  const root = asRecord(json);
+  if (!root) return { score: null, error: 'AniList empty response' };
+
+  const data = asRecord(root.data);
+  const media = asRecord(data?.Media);
+  if (media) {
+    const average = parseExternalScore(media.averageScore);
+    if (average != null) return { score: average };
+
+    const mean = parseExternalScore(media.meanScore);
+    if (mean != null) return { score: mean };
+
+    return { score: null, skipped: true, skipReason: 'no_score_yet' };
+  }
+
+  const gqlError = firstGraphqlError(json);
+  if (isNotFoundMessage(gqlError) || data?.Media === null) {
+    return { score: null, skipped: true, skipReason: 'not_found' };
+  }
+  if (gqlError) return { score: null, error: gqlError };
+  return { score: null, error: 'AniList media not found' };
+};
+
 export const fetchAnilistScorePercent = async (
   anilistId: number,
-): Promise<{ score: number | null; error?: string }> => {
+): Promise<ExternalScoreFetchResult> => {
   const result = await requestJsonWithRetry('https://graphql.anilist.co', {
     method: 'POST',
     headers: {
@@ -258,31 +315,33 @@ export const fetchAnilistScorePercent = async (
     return { score: null, error: result.error ?? `AniList HTTP ${result.status}` };
   }
 
-  const json = result.json as {
-    data?: { Media?: { meanScore?: number | null; averageScore?: number | null } };
-    errors?: Array<{ message?: string }>;
-  };
+  return interpretAnilistScoreJson(result.json);
+};
 
-  if (json.errors?.length) {
-    return { score: null, error: json.errors[0]?.message ?? 'AniList query error' };
+/** Classify a Jikan payload; 404 / empty score must not fail the whole sync. */
+export const interpretJikanScoreJson = (
+  json: unknown,
+  status: number,
+): ExternalScoreFetchResult => {
+  if (status === 404) {
+    return { score: null, skipped: true, skipReason: 'not_found' };
   }
 
-  const media = json.data?.Media;
-  if (!media) return { score: null, error: 'AniList media not found' };
+  const root = asRecord(json);
+  if (!root) return { score: null, error: `Jikan empty response (${status})` };
 
-  const average = parseExternalScore(media.averageScore);
-  if (average != null) return { score: average };
+  const data = asRecord(root.data);
+  if (!data) return { score: null, error: 'Jikan score unavailable' };
 
-  const mean = parseExternalScore(media.meanScore);
-  if (mean != null) return { score: mean };
-
-  return { score: null, error: 'AniList score unavailable' };
+  const score = parseExternalScore(data.score);
+  if (score != null) return { score };
+  return { score: null, skipped: true, skipReason: 'no_score_yet' };
 };
 
 export const fetchMalScoreFromJikan = async (
   malId: number,
   attempt = 0,
-): Promise<{ score: number | null; error?: string }> => {
+): Promise<ExternalScoreFetchResult> => {
   const url = `https://api.jikan.moe/v4/anime/${malId}`;
   const result = await requestJsonWithRetry(url, {
     headers: { Accept: 'application/json' },
@@ -294,15 +353,15 @@ export const fetchMalScoreFromJikan = async (
     return fetchMalScoreFromJikan(malId, attempt + 1);
   }
 
+  if (result.status === 404) {
+    return interpretJikanScoreJson(result.json, 404);
+  }
+
   if (!result.ok) {
     return { score: null, error: result.error ?? `Jikan HTTP ${result.status}` };
   }
 
-  const json = result.json as { data?: { score?: unknown } };
-  const score = parseExternalScore(json.data?.score);
-  if (score != null) return { score };
-
-  return { score: null, error: 'Jikan score unavailable' };
+  return interpretJikanScoreJson(result.json, result.status);
 };
 
 export type ResolvedExternalScoreIds = {
@@ -318,9 +377,22 @@ export const resolveExternalScoreIds = (ids: {
   mal_id: normalizeExternalId(ids.mal_id),
 });
 
-type ExternalScoreFetchResult = { score: number | null; error?: string };
-
 const emptyScoreResult = (): ExternalScoreFetchResult => ({ score: null });
+
+const recordFetchOutcome = (
+  source: ExternalScoreSource,
+  requested: boolean,
+  result: ExternalScoreFetchResult,
+  errors: ExternalScoreFetchError[],
+  skips: ExternalScoreSkip[],
+) => {
+  if (!requested || result.score != null) return;
+  if (result.error) {
+    errors.push({ source, message: result.error });
+    return;
+  }
+  skips.push({ source, reason: result.skipReason ?? 'no_score_yet' });
+};
 
 export const fetchExternalScoresDetailed = async (ids: {
   anilist_id?: unknown;
@@ -329,9 +401,11 @@ export const fetchExternalScoresDetailed = async (ids: {
   anilistScore: number | null;
   malScore: number | null;
   errors: ExternalScoreFetchError[];
+  skips: ExternalScoreSkip[];
 }> => {
   const resolved = resolveExternalScoreIds(ids);
   const errors: ExternalScoreFetchError[] = [];
+  const skips: ExternalScoreSkip[] = [];
 
   const [anilistResult, malResult] = await Promise.all([
     resolved.anilist_id
@@ -342,16 +416,13 @@ export const fetchExternalScoresDetailed = async (ids: {
       : Promise.resolve(emptyScoreResult()),
   ]);
 
-  if (resolved.anilist_id && anilistResult.error) {
-    errors.push({ source: 'anilist', message: anilistResult.error });
-  }
-  if (resolved.mal_id && malResult.error) {
-    errors.push({ source: 'mal', message: malResult.error });
-  }
+  recordFetchOutcome('anilist', resolved.anilist_id != null, anilistResult, errors, skips);
+  recordFetchOutcome('mal', resolved.mal_id != null, malResult, errors, skips);
 
   return {
     anilistScore: anilistResult.score,
     malScore: malResult.score,
     errors,
+    skips,
   };
 };

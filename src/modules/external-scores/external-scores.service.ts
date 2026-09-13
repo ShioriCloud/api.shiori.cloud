@@ -9,6 +9,8 @@ import {
   fetchExternalScoresDetailed,
   normalizeExternalId,
   resolveExternalScoreIds,
+  type ExternalScoreSkip,
+  type ExternalScoreSkipReason,
 } from '../../common/external-score.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import { Anime } from '../../entities';
@@ -26,6 +28,8 @@ export type ExternalScores = {
 export type ExternalScoreSourceStatus = {
   requested: boolean;
   ok: boolean;
+  skipped: boolean;
+  skipReason?: ExternalScoreSkipReason | null;
   error?: string | null;
 };
 
@@ -101,28 +105,49 @@ export class ExternalScoresService {
     return { scores, changed };
   }
 
+  private buildSourceStatus(
+    requested: boolean,
+    score: number | null,
+    error: string | null,
+    skipReason: ExternalScoreSkipReason | null,
+  ): ExternalScoreSourceStatus {
+    const skipped = requested && score == null && !error;
+    return {
+      requested,
+      ok: score != null,
+      skipped,
+      skipReason: skipped ? (skipReason ?? 'no_score_yet') : null,
+      error: requested && score == null ? error : null,
+    };
+  }
+
   private buildSyncResult(
     ids: ExternalScoreIds,
     scores: ExternalScores,
     errors: Array<{ source: 'anilist' | 'mal'; message: string }>,
+    skips: ExternalScoreSkip[] = [],
   ): SyncExternalScoresResult {
     const resolved = resolveExternalScoreIds(ids);
     const errorFor = (source: 'anilist' | 'mal') =>
       errors.find((entry) => entry.source === source)?.message ?? null;
+    const skipFor = (source: 'anilist' | 'mal') =>
+      skips.find((entry) => entry.source === source)?.reason ?? null;
 
     return {
       ...scores,
       sources: {
-        anilist: {
-          requested: resolved.anilist_id != null,
-          ok: scores.anilistScore != null,
-          error: resolved.anilist_id != null && scores.anilistScore == null ? errorFor('anilist') : null,
-        },
-        mal: {
-          requested: resolved.mal_id != null,
-          ok: scores.malScore != null,
-          error: resolved.mal_id != null && scores.malScore == null ? errorFor('mal') : null,
-        },
+        anilist: this.buildSourceStatus(
+          resolved.anilist_id != null,
+          scores.anilistScore,
+          errorFor('anilist'),
+          skipFor('anilist'),
+        ),
+        mal: this.buildSourceStatus(
+          resolved.mal_id != null,
+          scores.malScore,
+          errorFor('mal'),
+          skipFor('mal'),
+        ),
       },
     };
   }
@@ -167,7 +192,7 @@ export class ExternalScoresService {
     }
 
     await this.applyScoresToAnime(animeId, scores);
-    return this.buildSyncResult(ids, scores, fetched.errors);
+    return this.buildSyncResult(ids, scores, fetched.errors, fetched.skips);
   }
 
   async syncBatch(options?: {
