@@ -5,20 +5,81 @@ import type {
   CuratedSliderConfig,
   HomeBlock,
   HomeBlockType,
+  HomeSystemRailId,
+  SystemRailConfig,
 } from '../../entities/home-block.entity';
 
 export const MAX_CURATED_ANIME_IDS = 100;
+
+export const SYSTEM_RAIL_IDS = [
+  'recent',
+  'latest',
+  'popular',
+  'donghua',
+  'movies',
+] as const satisfies readonly HomeSystemRailId[];
+
+export const SYSTEM_RAIL_LABELS: Record<HomeSystemRailId, string> = {
+  recent: 'تازه‌اضافه‌شده',
+  latest: 'فصل جاری',
+  popular: 'محبوب‌ترین‌ها',
+  donghua: 'دونگهوا',
+  movies: 'انیمه سینمایی',
+};
+
+export const SYSTEM_RAIL_SEED: Array<{
+  id: string;
+  rail_id: HomeSystemRailId;
+  sort_order: number;
+}> = [
+  {
+    id: 'a1111111-1111-4111-8111-111111111101',
+    rail_id: 'recent',
+    sort_order: 1,
+  },
+  {
+    id: 'a1111111-1111-4111-8111-111111111102',
+    rail_id: 'latest',
+    sort_order: 2,
+  },
+  {
+    id: 'a1111111-1111-4111-8111-111111111103',
+    rail_id: 'popular',
+    sort_order: 3,
+  },
+  {
+    id: 'a1111111-1111-4111-8111-111111111104',
+    rail_id: 'donghua',
+    sort_order: 4,
+  },
+  {
+    id: 'a1111111-1111-4111-8111-111111111105',
+    rail_id: 'movies',
+    sort_order: 5,
+  },
+];
 
 const UUID_V4 =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const isValidUuid = (value: string): boolean => UUID_V4.test(value);
 
+export const isSystemRailId = (value: string): value is HomeSystemRailId =>
+  (SYSTEM_RAIL_IDS as readonly string[]).includes(value);
+
 export const normalizeConfig = (
   type: HomeBlockType,
   raw?: Record<string, unknown>,
 ): HomeBlock['config'] => {
   const config = raw ?? {};
+
+  if (type === 'system_rail') {
+    const railId =
+      typeof config.rail_id === 'string' ? config.rail_id.trim() : '';
+    return {
+      rail_id: isSystemRailId(railId) ? railId : undefined,
+    } satisfies SystemRailConfig;
+  }
 
   if (type === 'curated_slider') {
     const animeIds = Array.isArray(config.anime_ids)
@@ -74,6 +135,15 @@ export const validateBlockPayload = (
   config: Record<string, unknown> | HomeBlock['config'] | undefined,
 ): void => {
   const normalized = normalizeConfig(type, config as Record<string, unknown>);
+
+  if (type === 'system_rail') {
+    const railId = (normalized as SystemRailConfig).rail_id;
+    if (!railId || !isSystemRailId(railId)) {
+      throw new BadRequestException('ریل سیستم نامعتبر است');
+    }
+    void title;
+    return;
+  }
 
   if (type === 'curated_slider') {
     if (!title?.trim()) {

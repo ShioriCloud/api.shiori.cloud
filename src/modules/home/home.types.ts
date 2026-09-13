@@ -1,5 +1,8 @@
 import type { AnimeCardDto } from '../anime-catalog/anime-catalog.service';
-import type { HomeBlockType } from '../../entities/home-block.entity';
+import type {
+  HomeBlockType,
+  HomeSystemRailId,
+} from '../../entities/home-block.entity';
 
 export type HomeCuratedSliderBlock = {
   type: 'curated_slider';
@@ -34,13 +37,23 @@ export type HomeCtaCardBlock = {
   video_encode?: 'x264' | 'x265' | 'x265_10bit' | 'bluray';
 };
 
+export type HomeSystemRailBlock = {
+  type: 'system_rail';
+  id: string;
+  rail_id: HomeSystemRailId;
+  title: string | null;
+};
+
 export type HomeCustomBlockPublic =
   | HomeCuratedSliderBlock
   | HomeCtaBannerBlock
-  | HomeCtaCardBlock;
+  | HomeCtaCardBlock
+  | HomeSystemRailBlock;
 
 export type HomeCustomBlocksResponse = {
   blocks: HomeCustomBlockPublic[];
+  /** When true, mini-app should render system rails from `blocks` order (not hardcoded). */
+  layout_mode: 'unified' | 'legacy';
 };
 
-export type { HomeBlockType };
+export type { HomeBlockType, HomeSystemRailId };

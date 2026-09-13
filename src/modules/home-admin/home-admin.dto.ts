@@ -13,6 +13,7 @@ import {
 } from 'class-validator';
 import type { HomeBlockType } from '../../entities/home-block.entity';
 
+/** Creatable / assignable types — system_rail is seeded and not created via API. */
 const HOME_BLOCK_TYPES: HomeBlockType[] = [
   'curated_slider',
   'cta_banner',

@@ -6,7 +6,18 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-export type HomeBlockType = 'curated_slider' | 'cta_banner' | 'cta_card';
+export type HomeBlockType =
+  | 'curated_slider'
+  | 'cta_banner'
+  | 'cta_card'
+  | 'system_rail';
+
+export type HomeSystemRailId =
+  | 'recent'
+  | 'latest'
+  | 'popular'
+  | 'donghua'
+  | 'movies';
 
 export type CuratedSliderConfig = {
   anime_ids?: string[];
@@ -29,10 +40,15 @@ export type CtaCardConfig = {
   open_in_new_tab?: boolean;
 };
 
+export type SystemRailConfig = {
+  rail_id?: HomeSystemRailId;
+};
+
 export type HomeBlockConfig =
   | CuratedSliderConfig
   | CtaBannerConfig
-  | CtaCardConfig;
+  | CtaCardConfig
+  | SystemRailConfig;
 
 @Entity('home_blocks')
 export class HomeBlock {

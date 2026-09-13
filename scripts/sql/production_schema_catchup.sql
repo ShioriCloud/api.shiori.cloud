@@ -198,7 +198,7 @@ ALTER TABLE genres ADD COLUMN IF NOT EXISTS image_url text;
 -- Home builder: custom blocks after fixed mini-app sections
 CREATE TABLE IF NOT EXISTS home_blocks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  type text NOT NULL CHECK (type IN ('curated_slider', 'cta_banner', 'cta_card')),
+  type text NOT NULL CHECK (type IN ('curated_slider', 'cta_banner', 'cta_card', 'system_rail')),
   title text,
   subtitle text,
   description text,
@@ -211,6 +211,52 @@ CREATE TABLE IF NOT EXISTS home_blocks (
 
 CREATE INDEX IF NOT EXISTS idx_home_blocks_sort_order ON home_blocks (sort_order ASC);
 CREATE INDEX IF NOT EXISTS idx_home_blocks_active_sort ON home_blocks (is_active, sort_order ASC);
+
+-- Widen type check for existing deployments that created the table earlier.
+ALTER TABLE home_blocks DROP CONSTRAINT IF EXISTS home_blocks_type_check;
+ALTER TABLE home_blocks
+  ADD CONSTRAINT home_blocks_type_check
+  CHECK (type IN ('curated_slider', 'cta_banner', 'cta_card', 'system_rail'));
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_home_blocks_system_rail_id
+  ON home_blocks ((config->>'rail_id'))
+  WHERE type = 'system_rail';
+
+UPDATE home_blocks
+SET sort_order = sort_order + 5
+WHERE type <> 'system_rail'
+  AND NOT EXISTS (SELECT 1 FROM home_blocks WHERE type = 'system_rail');
+
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111101', 'system_rail', 'تازه‌اضافه‌شده', 1, true,
+       '{"rail_id":"recent"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'recent'
+);
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111102', 'system_rail', 'فصل جاری', 2, true,
+       '{"rail_id":"latest"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'latest'
+);
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111103', 'system_rail', 'محبوب‌ترین‌ها', 3, true,
+       '{"rail_id":"popular"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'popular'
+);
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111104', 'system_rail', 'دونگهوا', 4, true,
+       '{"rail_id":"donghua"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'donghua'
+);
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111105', 'system_rail', 'انیمه سینمایی', 5, true,
+       '{"rail_id":"movies"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'movies'
+);
 
 -- Sponsor channel campaigns (tel-bot membership gate)
 CREATE TABLE IF NOT EXISTS sponsor_campaigns (

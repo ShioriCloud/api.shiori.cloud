@@ -7,8 +7,13 @@ import {
   CtaCardConfig,
   CuratedSliderConfig,
   HomeBlock,
+  SystemRailConfig,
 } from '../../entities/home-block.entity';
 import { AnimeCatalogService } from '../anime-catalog/anime-catalog.service';
+import {
+  isSystemRailId,
+  SYSTEM_RAIL_LABELS,
+} from '../home-admin/home-block.util';
 import type {
   HomeCustomBlockPublic,
   HomeCustomBlocksResponse,
@@ -53,6 +58,11 @@ export class HomeService {
   ) {}
 
   async getCustomBlocks(): Promise<HomeCustomBlocksResponse> {
+    const systemRailCount = await this.blockRepo.count({
+      where: { type: 'system_rail' },
+    });
+    const layout_mode = systemRailCount > 0 ? 'unified' : 'legacy';
+
     const rows = await this.blockRepo.find({
       where: { isActive: true },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
@@ -66,7 +76,7 @@ export class HomeService {
       if (resolved) blocks.push(resolved);
     }
 
-    return { blocks };
+    return { blocks, layout_mode };
   }
 
   private async loadAnimeCardsForBlocks(
@@ -167,6 +177,18 @@ export class HomeService {
         video_file_type: anime.video_file_type,
         video_resolution: anime.video_resolution,
         video_encode: anime.video_encode,
+      };
+    }
+
+    if (row.type === 'system_rail') {
+      const config = row.config as SystemRailConfig;
+      const railId = config.rail_id?.trim() ?? '';
+      if (!isSystemRailId(railId)) return null;
+      return {
+        type: 'system_rail',
+        id: row.id,
+        rail_id: railId,
+        title: row.title?.trim() || SYSTEM_RAIL_LABELS[railId],
       };
     }
 
