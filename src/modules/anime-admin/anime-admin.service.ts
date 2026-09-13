@@ -939,6 +939,7 @@ export class AnimeAdminService {
       videoFileType,
     });
     const saved = await this.episodeRepo.save(episode);
+    await this.touchAnimeLastEpisodeAt(animeId, saved.createdAt ?? new Date());
 
     const episodeNumber = saved.episodeNumber ?? 0;
     if (episodeNumber > 0) {
@@ -989,6 +990,7 @@ export class AnimeAdminService {
   async updateEpisode(id: string, body: Payload) {
     const episode = await this.episodeRepo.findOne({ where: { id } });
     if (!episode) throw new NotFoundException('Episode not found');
+    const hadDownloadLink = Boolean(String(episode.downloadLink ?? '').trim());
     const epNum = this.pick<number>(body, 'episode_number', 'episodeNumber');
     if (epNum !== undefined) episode.episodeNumber = epNum;
     const title = this.pick<string | null>(body, 'title', 'title');
@@ -1000,6 +1002,11 @@ export class AnimeAdminService {
       episode.videoFileType = normalizeEpisodeVideoFileType(videoFileType);
     }
     const saved = await this.episodeRepo.save(episode);
+    const hasDownloadLink = Boolean(String(saved.downloadLink ?? '').trim());
+    // First time a download lands on an existing row → treat as a fresh release for home rails.
+    if (!hadDownloadLink && hasDownloadLink) {
+      await this.touchAnimeLastEpisodeAt(saved.animeId, new Date());
+    }
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,
@@ -1012,7 +1019,32 @@ export class AnimeAdminService {
   async deleteEpisode(id: string) {
     const episode = await this.episodeRepo.findOne({ where: { id } });
     if (!episode) throw new NotFoundException('Episode not found');
+    const animeId = episode.animeId;
     await this.episodeRepo.remove(episode);
+    await this.recomputeAnimeLastEpisodeAt(animeId);
+  }
+
+  /** Bump season-rail sort key without touching last_edited_at. */
+  private async touchAnimeLastEpisodeAt(animeId: string, at: Date) {
+    await this.animeRepo.query(
+      `UPDATE anime
+       SET last_episode_at = GREATEST(COALESCE(last_episode_at, TIMESTAMPTZ 'epoch'), $1::timestamptz)
+       WHERE id = $2::uuid`,
+      [at.toISOString(), animeId],
+    );
+  }
+
+  private async recomputeAnimeLastEpisodeAt(animeId: string) {
+    const row = await this.episodeRepo
+      .createQueryBuilder('e')
+      .select('MAX(e.createdAt)', 'max')
+      .where('e.animeId = :animeId', { animeId })
+      .getRawOne<{ max: Date | string | null }>();
+    const maxAt = row?.max ? new Date(row.max) : null;
+    await this.animeRepo.update(
+      { id: animeId },
+      { lastEpisodeAt: maxAt && Number.isFinite(maxAt.getTime()) ? maxAt : null },
+    );
   }
 
   async updateEpisodePack(animeIdOrSlug: string, body: Payload, editorId?: string) {

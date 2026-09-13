@@ -19,6 +19,7 @@ import { TelegramUser } from './telegram-user.entity';
 @Index('idx_anime_year_season', ['year', 'season'])
 @Index('idx_anime_created_at', ['createdAt'])
 @Index('idx_anime_view_count', ['viewCount'])
+@Index('idx_anime_last_episode_at', ['lastEpisodeAt'])
 export class Anime {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -185,6 +186,13 @@ export class Anime {
   /** Only bumped by admin panel edits — not by mini-app views or other public updates. */
   @Column({ type: 'timestamptz', name: 'last_edited_at', nullable: true })
   lastEditedAt: Date | null;
+
+  /**
+   * Latest episode publish time for Home/Explore season rails.
+   * Bumped when an episode is inserted (or gets a download link).
+   */
+  @Column({ type: 'timestamptz', name: 'last_episode_at', nullable: true })
+  lastEpisodeAt: Date | null;
 
   @Column({ type: 'bigint', name: 'last_edited_by', nullable: true })
   lastEditedById: string | null;

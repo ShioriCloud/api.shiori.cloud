@@ -50,7 +50,7 @@ export type AnimeSearchParams = {
   format?: string | null;
   airingStatus?: string | null;
   hardsubLanguage?: 'fa' | 'en' | null;
-  sortBy?: 'created_at' | 'popular' | 'title' | 'score';
+  sortBy?: 'created_at' | 'last_episode_at' | 'popular' | 'title' | 'score';
   limit?: number;
   offset?: number;
 };
@@ -492,6 +492,12 @@ export class AnimeCatalogService {
           'DESC',
           'NULLS LAST',
         ).addOrderBy('anime.createdAt', 'DESC');
+        break;
+      case 'last_episode_at':
+        qb.orderBy('anime.lastEpisodeAt', 'DESC', 'NULLS LAST').addOrderBy(
+          'anime.createdAt',
+          'DESC',
+        );
         break;
       case 'created_at':
       default:

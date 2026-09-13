@@ -109,7 +109,13 @@ export class AnimeCatalogController {
       params.hardsubLanguage = hardsubKey;
     }
 
-    const allowedSort = ['created_at', 'popular', 'title', 'score'] as const;
+    const allowedSort = [
+      'created_at',
+      'last_episode_at',
+      'popular',
+      'title',
+      'score',
+    ] as const;
     if (sortBy && allowedSort.includes(sortBy as (typeof allowedSort)[number])) {
       params.sortBy = sortBy as AnimeSearchParams['sortBy'];
     }

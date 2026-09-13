@@ -81,6 +81,20 @@ ALTER TABLE anime ADD COLUMN IF NOT EXISTS next_airing_date date;
 ALTER TABLE episodes ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now();
 UPDATE episodes SET created_at = COALESCE(created_at, now()) WHERE created_at IS NULL;
 
+-- Home/Explore season rails: bump when a new episode is published
+ALTER TABLE anime ADD COLUMN IF NOT EXISTS last_episode_at timestamptz;
+UPDATE anime a
+SET last_episode_at = sub.max_created
+FROM (
+  SELECT anime_id, MAX(created_at) AS max_created
+  FROM episodes
+  GROUP BY anime_id
+) AS sub
+WHERE a.id = sub.anime_id
+  AND (a.last_episode_at IS NULL OR a.last_episode_at < sub.max_created);
+CREATE INDEX IF NOT EXISTS idx_anime_last_episode_at
+  ON anime (last_episode_at DESC NULLS LAST);
+
 -- Existing anime with soft-subs → Persian hardsub badge
 UPDATE anime a
 SET hardsub_language = 'fa'
