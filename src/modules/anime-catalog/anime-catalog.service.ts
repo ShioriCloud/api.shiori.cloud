@@ -93,6 +93,23 @@ export type AnimeCardDto = {
   video_encode?: 'x264' | 'x265' | 'x265_10bit' | 'bluray';
 };
 
+/** Weekly grid: episodic Shiori titles. MOVIE (and other formats) stay out. */
+const SHIORI_WEEKLY_SCHEDULE_FORMATS = [
+  'TV',
+  'TV_SHORT',
+  'ONA',
+  'ONA (CHINESE)',
+  'OVA',
+  'SPECIAL',
+] as const;
+
+const isShioriWeeklyScheduleFormat = (format: unknown): boolean => {
+  const key = String(format ?? '')
+    .trim()
+    .toUpperCase();
+  return (SHIORI_WEEKLY_SCHEDULE_FORMATS as readonly string[]).includes(key);
+};
+
 @Injectable()
 export class AnimeCatalogService {
   private readonly logger = new Logger(AnimeCatalogService.name);
@@ -778,6 +795,7 @@ export class AnimeCatalogService {
 
   /**
    * Catalog-only weekly schedule: RELEASING titles with airing_weekday set.
+   * Episodic formats only (TV / ONA / donghua / OVA / specials). Movies stay out.
    * Independent of AniList availability.
    */
   async listShioriAiringSchedule() {
@@ -790,6 +808,9 @@ export class AnimeCatalogService {
       .where('anime.airing_status = :status', { status: 'RELEASING' })
       .andWhere('anime.airing_weekday IS NOT NULL')
       .andWhere("TRIM(anime.airing_weekday) <> ''")
+      .andWhere('UPPER(TRIM(anime.format)) IN (:...weeklyFormats)', {
+        weeklyFormats: [...SHIORI_WEEKLY_SCHEDULE_FORMATS],
+      })
       .orderBy('anime.airing_time', 'ASC', 'NULLS LAST')
       .addOrderBy('anime.title', 'ASC')
       .getMany();
@@ -828,6 +849,7 @@ export class AnimeCatalogService {
     const weekdaySet = new Set<string>(SHIORI_WEEKDAYS);
 
     for (const anime of rows) {
+      if (!isShioriWeeklyScheduleFormat(anime.format)) continue;
       const maxEp = maxByAnime.get(anime.id);
       const plan = resolveShioriAiringPlan({
         airingStatus: anime.airingStatus,
@@ -924,10 +946,7 @@ export class AnimeCatalogService {
       const graceSec = Math.floor(this.AIRING_GRACE_MS / 1000);
 
       for (const m of mediaList) {
-        const allowedFormats = new Set(['TV', 'ONA', 'OVA', 'SPECIAL']);
-        const format =
-          typeof m?.format === 'string' ? m.format.trim().toUpperCase() : '';
-        if (!allowedFormats.has(format)) continue;
+        if (!isShioriWeeklyScheduleFormat(m?.format)) continue;
 
         const ep = this.resolveUpcomingAiring(m, nowSec, graceSec);
         if (!ep) continue;
