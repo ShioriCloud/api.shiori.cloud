@@ -43,14 +43,36 @@ const insecureTlsEnabled = () =>
   process.env.EXTERNAL_SCORES_INSECURE_TLS === 'true' ||
   process.env.EXTERNAL_SCORES_JIKAN_INSECURE_TLS === 'true';
 
-const isPrivateIp = (ip: string): boolean => {
-  if (!isIP(ip)) return false;
+type ResolvedHost = { address: string; family: 4 | 6 };
+
+/** Reject RFC1918 / loopback / link-local / ULA so we never pin a filtered DNS sinkhole. */
+export const isPrivateExternalIp = (ip: string): boolean => {
+  const version = isIP(ip);
+  if (!version) return false;
+
+  if (version === 6) {
+    const normalized = ip.toLowerCase();
+    if (normalized === '::1' || normalized === '::') return true;
+    if (/^fe[89ab]/i.test(normalized)) return true;
+    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
+    const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isPrivateExternalIp(mapped[1]);
+    return false;
+  }
+
   if (ip.startsWith('10.')) return true;
   if (ip.startsWith('127.')) return true;
   if (ip.startsWith('192.168.')) return true;
   if (ip.startsWith('169.254.')) return true;
   const [first, second] = ip.split('.').map(Number);
   return first === 172 && second >= 16 && second <= 31;
+};
+
+export const formatExternalHttpError = (status: number): string => {
+  if (status === 502 || status === 503 || status === 504) {
+    return `HTTP ${status} (vendor timeout)`;
+  }
+  return `HTTP ${status}`;
 };
 
 const parsePublicDnsServers = (): string[] => {
@@ -65,43 +87,74 @@ const parsePublicDnsServers = (): string[] => {
 const publicDnsResolver = new dns.Resolver();
 publicDnsResolver.setServers(parsePublicDnsServers());
 
-const resolveIpv4ViaPublicDns = (hostname: string): Promise<string> =>
+const resolveFamilyViaPublicDns = (hostname: string, family: 4 | 6): Promise<string> =>
   new Promise((resolve, reject) => {
-    publicDnsResolver.resolve4(hostname, (error, addresses) => {
+    const onResolved = (error: NodeJS.ErrnoException | null, addresses?: string[]) => {
       if (error) {
         reject(error);
         return;
       }
 
-      const publicIp = addresses?.find((ip) => !isPrivateIp(ip));
+      const publicIp = addresses?.find((ip) => !isPrivateExternalIp(ip));
       if (!publicIp) {
-        reject(new Error(`No public IPv4 for ${hostname}`));
+        reject(new Error(`No public IPv${family} for ${hostname}`));
         return;
       }
 
       resolve(publicIp);
-    });
+    };
+
+    if (family === 4) {
+      publicDnsResolver.resolve4(hostname, onResolved);
+    } else {
+      publicDnsResolver.resolve6(hostname, onResolved);
+    }
   });
 
-const resolveExternalHostnameIpv4 = async (hostname: string): Promise<string> => {
+const tryResolveFamily = async (hostname: string, family: 4 | 6): Promise<string | null> => {
   try {
-    const { address } = await dns.promises.lookup(hostname, { family: 4 });
-    if (!isPrivateIp(address)) return address;
+    const { address } = await dns.promises.lookup(hostname, { family });
+    if (!isPrivateExternalIp(address)) return address;
   } catch {
-    // Fall back to public DNS below.
+    // Some hosts rewrite blocked domains to 10.x — try public DNS next.
   }
 
-  return resolveIpv4ViaPublicDns(hostname);
+  try {
+    return await resolveFamilyViaPublicDns(hostname, family);
+  } catch {
+    return null;
+  }
 };
 
-const externalIpv4Lookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
-  resolveExternalHostnameIpv4(hostname)
-    .then((address) => {
+/**
+ * Prefer IPv4 first because some production/corporate resolvers return private
+ * A records for blocked domains. Also collect IPv6 so AniList still works when
+ * graphql.anilist.co is AAAA-only (or IPv4 is filtered). Node Happy Eyeballs
+ * can try both when lookup is called with `all: true`.
+ */
+const resolveExternalHostAddresses = async (hostname: string): Promise<ResolvedHost[]> => {
+  const [ipv4, ipv6] = await Promise.all([
+    tryResolveFamily(hostname, 4),
+    tryResolveFamily(hostname, 6),
+  ]);
+  const addresses: ResolvedHost[] = [];
+  if (ipv4) addresses.push({ address: ipv4, family: 4 });
+  if (ipv6) addresses.push({ address: ipv6, family: 6 });
+  if (addresses.length === 0) {
+    throw new Error(`No public IPv4 or IPv6 for ${hostname}`);
+  }
+  return addresses;
+};
+
+const externalHostLookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
+  resolveExternalHostAddresses(hostname)
+    .then((addresses) => {
       if (options?.all) {
-        callback(null, [{ address, family: 4 }]);
+        callback(null, addresses);
         return;
       }
-      callback(null, address, 4);
+      const preferred = addresses.find((entry) => entry.family === 4) ?? addresses[0];
+      callback(null, preferred.address, preferred.family);
     })
     .catch((error) => {
       callback(error as NodeJS.ErrnoException, '', 4);
@@ -150,7 +203,7 @@ const requestJson = async (
         agent: isHttps
           ? new https.Agent({
               rejectUnauthorized: !useInsecureTls,
-              lookup: externalIpv4Lookup,
+              lookup: externalHostLookup,
             })
           : undefined,
       },
@@ -182,7 +235,7 @@ const requestJson = async (
               ok: false,
               status,
               json,
-              error: `HTTP ${status}`,
+              error: formatExternalHttpError(status),
             });
             return;
           }
@@ -325,6 +378,10 @@ export const interpretJikanScoreJson = (
 ): ExternalScoreFetchResult => {
   if (status === 404) {
     return { score: null, skipped: true, skipReason: 'not_found' };
+  }
+
+  if (status === 502 || status === 503 || status === 504) {
+    return { score: null, error: formatExternalHttpError(status) };
   }
 
   const root = asRecord(json);

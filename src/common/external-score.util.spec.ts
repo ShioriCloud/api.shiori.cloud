@@ -1,6 +1,8 @@
 import {
+  formatExternalHttpError,
   interpretAnilistScoreJson,
   interpretJikanScoreJson,
+  isPrivateExternalIp,
   parseExternalScore,
 } from './external-score.util';
 
@@ -88,5 +90,35 @@ describe('interpretJikanScoreJson', () => {
     expect(interpretJikanScoreJson({ data: { score: 8.42 } }, 200)).toEqual({
       score: 8.42,
     });
+  });
+
+  it('keeps a Jikan 504 as a vendor timeout, not a missing-score skip', () => {
+    expect(interpretJikanScoreJson(null, 504)).toEqual({
+      score: null,
+      error: 'HTTP 504 (vendor timeout)',
+    });
+  });
+});
+
+describe('formatExternalHttpError', () => {
+  it('marks gateway failures as vendor timeouts', () => {
+    expect(formatExternalHttpError(504)).toBe('HTTP 504 (vendor timeout)');
+    expect(formatExternalHttpError(502)).toBe('HTTP 502 (vendor timeout)');
+    expect(formatExternalHttpError(400)).toBe('HTTP 400');
+  });
+});
+
+describe('isPrivateExternalIp', () => {
+  it('rejects filtered IPv4 and loopback/ULA IPv6', () => {
+    expect(isPrivateExternalIp('10.0.0.1')).toBe(true);
+    expect(isPrivateExternalIp('192.168.1.1')).toBe(true);
+    expect(isPrivateExternalIp('::1')).toBe(true);
+    expect(isPrivateExternalIp('fd12:3456::1')).toBe(true);
+    expect(isPrivateExternalIp('::ffff:10.1.2.3')).toBe(true);
+  });
+
+  it('allows public v4 and v6', () => {
+    expect(isPrivateExternalIp('8.8.8.8')).toBe(false);
+    expect(isPrivateExternalIp('2001:4860:4860::8888')).toBe(false);
   });
 });
