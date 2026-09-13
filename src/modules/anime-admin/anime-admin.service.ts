@@ -42,7 +42,6 @@ import {
 } from '../../entities';
 import { NotificationsAdminService } from '../notifications-admin/notifications-admin.service';
 import { ChannelDraftsService } from '../bot/channel-drafts.service';
-import { ExternalScoresService } from '../external-scores/external-scores.service';
 
 type Payload = Record<string, unknown>;
 
@@ -76,7 +75,6 @@ export class AnimeAdminService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notificationsAdminService: NotificationsAdminService,
     private readonly channelDraftsService: ChannelDraftsService,
-    private readonly externalScoresService: ExternalScoresService,
   ) {}
 
   private pick<T>(body: Payload, snake: string, camel: string): T | undefined {
@@ -755,7 +753,6 @@ export class AnimeAdminService {
         year: media.year,
         airing_status: media.airing_status,
         episodes_count: media.episodes_count,
-        average_score: media.average_score,
         anilist_id: media.anilist_id,
         mal_id: media.mal_id,
         start_date: media.start_date,
@@ -767,19 +764,6 @@ export class AnimeAdminService {
       },
       editorId,
     );
-
-    try {
-      await this.externalScoresService.syncAnimeById(String(created.id), {
-        anilist_id: media.anilist_id,
-        mal_id: media.mal_id,
-      });
-    } catch (error) {
-      this.logger.warn(
-        `AniList import score sync failed for ${created.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
 
     const refreshed = await this.getAnimeAdmin(created.id);
     return { existed: false, ...refreshed };
@@ -820,7 +804,6 @@ export class AnimeAdminService {
       year: media.year,
       airing_status: media.airing_status,
       episodes_count: media.episodes_count,
-      average_score: media.average_score,
       start_date: media.start_date,
       end_date: media.end_date,
       studio: studioMatch.displayName,

@@ -35,7 +35,6 @@ npm run start:dev
 | `TELEGRAM_BOT_TOKEN` | Verify Telegram `initData` + send DM notifications |
 | `TELEGRAM_BOT_USERNAME` | Deep-link bot name (link-telegram flow) |
 | `MINI_APP_URL` | Web App button URL in Telegram notifications |
-| `CRON_SECRET` | Protects `POST /api/v1/cron/*` |
 | `BOT_API_TOKEN` | Protects `GET /api/v1/bot/*` (`x-bot-token` header) |
 
 Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connection or local docker).
@@ -55,22 +54,6 @@ Point `DATABASE_URL` at the same Postgres used by the mini-app (direct connectio
 | `files-admin` | `/files-admin` | Files + file packs |
 | `bot` | `/bot` | Tel-bot file/link lookup (`x-bot-token`) |
 | `notifications-admin` | `/notifications-admin` | Episode release campaigns |
-| `external-scores` | `/cron` | Batch score sync (cron) |
-
-## Cron: external scores
-
-```bash
-curl -X POST "http://localhost:4001/api/v1/cron/sync-external-scores?limit=25&offset=0" \
-  -H "x-cron-secret: YOUR_CRON_SECRET"
-```
-
-Paginate with `offset` until `hasMore` is false, or run:
-
-```bash
-SHIORI_API_URL=https://api.shiori.cloud CRON_SECRET=... npm run cron:sync-external-scores
-```
-
-Weekly GitHub Action: `.github/workflows/sync-external-scores.yml` (secrets: `SHIORI_API_URL`, `CRON_SECRET`).
 
 ## Bot API (tel-bot)
 

@@ -16,7 +16,6 @@ Required:
 
 Recommended:
 
-- `CRON_SECRET` — for weekly score sync
 - `MINI_APP_URL` — public mini-app URL (notifications + link flow)
 - `TELEGRAM_BOT_USERNAME` — without `@`
 
@@ -130,36 +129,13 @@ location / {
 | `shiori` | `VITE_SHIORI_API_URL=https://api.example.com` |
 | `shiori-admin` | `VITE_SHIORI_API_URL=https://api.example.com` |
 
-## 4. Cron jobs
-
-### External scores (weekly)
-
-Batch endpoint (paginated):
-
-```bash
-curl -sf -X POST \
-  "https://api.example.com/api/v1/cron/sync-external-scores?limit=50&offset=0&delay_ms=400" \
-  -H "x-cron-secret: $CRON_SECRET"
-```
-
-One-shot backfill (loops until `hasMore` is false):
-
-```bash
-SHIORI_API_URL=https://api.example.com \
-CRON_SECRET="$CRON_SECRET" \
-npm run cron:sync-external-scores
-```
-
-GitHub Action: `.github/workflows/sync-external-scores.yml` (Mondays + manual).
-Repo secrets: `SHIORI_API_URL`, `CRON_SECRET`.
-
-## 5. Health check
+## 4. Health check
 
 ```bash
 curl -sf https://api.example.com/api/v1/health
 ```
 
-## 6. Optional SQL
+## 5. Optional SQL
 
 If tables were created before recent API features, apply the catch-up script (safe to re-run):
 

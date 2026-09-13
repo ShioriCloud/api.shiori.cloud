@@ -53,7 +53,6 @@ import { UserCustomListsModule } from './modules/user-custom-lists/user-custom-l
 import { AnimeAdminModule } from './modules/anime-admin/anime-admin.module';
 import { PortalAuthModule } from './modules/portal-auth/portal-auth.module';
 import { FilesAdminModule } from './modules/files-admin/files-admin.module';
-import { ExternalScoresModule } from './modules/external-scores/external-scores.module';
 import { NotificationsAdminModule } from './modules/notifications-admin/notifications-admin.module';
 import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
 import { MediaAdminModule } from './modules/media-admin/media-admin.module';
@@ -131,7 +130,6 @@ import { TelegramModule } from './telegram/telegram.module';
     AnimeAdminModule,
     TelegramUsersAdminModule,
     FilesAdminModule,
-    ExternalScoresModule,
     NotificationsAdminModule,
     MediaAdminModule,
     BotModule,

@@ -1,4 +1,4 @@
-import { anilistGraphqlRequest, parseExternalScore } from './external-score.util';
+import { anilistGraphqlRequest } from './external-score.util';
 
 const LOCAL_FORMATS = new Set(['TV', 'MOVIE', 'ONA', 'OVA', 'SPECIAL']);
 const LOCAL_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
@@ -28,7 +28,6 @@ export type AnilistMappedMedia = {
   year: number | null;
   airing_status: string | null;
   episodes_count: number | null;
-  average_score: number | null;
   start_date: string | null;
   end_date: string | null;
   anilist_genres: string[];
@@ -60,8 +59,6 @@ type AnilistRawMedia = {
   seasonYear?: number | null;
   status?: string | null;
   episodes?: number | null;
-  averageScore?: number | null;
-  meanScore?: number | null;
   genres?: string[] | null;
   startDate?: AnilistFuzzyDate | null;
   endDate?: AnilistFuzzyDate | null;
@@ -81,8 +78,6 @@ const MEDIA_FIELDS = `
   seasonYear
   status
   episodes
-  averageScore
-  meanScore
   genres
   startDate { year month day }
   endDate { year month day }
@@ -234,8 +229,6 @@ export const mapAnilistMedia = (raw: AnilistRawMedia | null | undefined): Anilis
     .filter((item): item is string => Boolean(item));
 
   const year = positiveInt(raw?.seasonYear) ?? positiveInt(raw?.startDate?.year);
-  const score =
-    parseExternalScore(raw?.averageScore) ?? parseExternalScore(raw?.meanScore);
 
   return {
     anilist_id: anilistId,
@@ -252,7 +245,6 @@ export const mapAnilistMedia = (raw: AnilistRawMedia | null | undefined): Anilis
     year,
     airing_status: mapStatus(raw?.status),
     episodes_count: positiveInt(raw?.episodes),
-    average_score: score,
     start_date: formatDate(raw?.startDate),
     end_date: formatDate(raw?.endDate),
     anilist_genres: genres,

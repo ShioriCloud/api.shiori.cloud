@@ -37,9 +37,6 @@ export default () => {
   miniApp: {
     baseUrl: process.env.MINI_APP_URL ?? '',
   },
-  cron: {
-    secret: process.env.CRON_SECRET ?? '',
-  },
   bot: {
     apiToken: process.env.BOT_API_TOKEN ?? '',
   },

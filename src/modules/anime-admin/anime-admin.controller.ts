@@ -13,18 +13,13 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
 import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
-import { ExternalScoresService } from '../external-scores/external-scores.service';
-import { normalizeExternalId } from '../../common/external-score.util';
 import { AnimeAdminService } from './anime-admin.service';
 
 @ApiTags('Anime Admin')
 @Controller('anime-admin')
 @UseGuards(PortalAuthGuard)
 export class AnimeAdminController {
-  constructor(
-    private readonly animeAdminService: AnimeAdminService,
-    private readonly externalScoresService: ExternalScoresService,
-  ) {}
+  constructor(private readonly animeAdminService: AnimeAdminService) {}
 
   @Get('anilist/search')
   @ApiOperation({ summary: 'Search AniList anime by title (admin)' })
@@ -378,29 +373,5 @@ export class AnimeAdminController {
   @Put('anime/:animeId/series')
   saveSeries(@Param('animeId') animeId: string, @Body() body: Record<string, unknown>) {
     return this.animeAdminService.saveSeries(animeId, body);
-  }
-
-  @Post('anime/:animeId/sync-external-scores')
-  @ApiOperation({ summary: 'Fetch and save external scores for one anime' })
-  syncExternalScores(
-    @Param('animeId') animeId: string,
-    @Body() body: Record<string, unknown>,
-  ) {
-    const overrideIds: {
-      anilist_id?: number | null;
-      mal_id?: number | null;
-    } = {};
-
-    if (body.anilist_id !== undefined) {
-      overrideIds.anilist_id = normalizeExternalId(body.anilist_id);
-    }
-    if (body.mal_id !== undefined) {
-      overrideIds.mal_id = normalizeExternalId(body.mal_id);
-    }
-
-    return this.externalScoresService.syncAnimeById(
-      animeId,
-      Object.keys(overrideIds).length > 0 ? overrideIds : undefined,
-    );
   }
 }
