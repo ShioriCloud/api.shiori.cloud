@@ -30,9 +30,12 @@ export type CtaBannerConfig = {
 };
 
 export type CtaCardConfig = {
-  /** Linked anime — title/synopsis/media tags resolve from catalog at serve time. */
+  /** Linked anime — title/synopsis/media tags/poster resolve from catalog at serve time. */
   anime_id?: string;
-  /** Optional poster override; falls back to anime featured/cover. */
+  /**
+   * Legacy poster override. Public home prefers the anime featured/cover so the
+   * card cannot show another title's art after the linked anime changes.
+   */
   image_url?: string;
   /** Optional link override; falls back to `/anime/{slug|id}`. */
   link_url?: string;

@@ -151,10 +151,12 @@ export class HomeService {
 
       if (!anime) return null;
 
+      // Prefer live anime art so title/synopsis and poster stay in sync.
+      // config.image_url is only a fallback when the anime has no cover yet.
       const imageUrl =
-        config.image_url?.trim() ||
         anime.featuredImage?.trim() ||
         anime.image?.trim() ||
+        config.image_url?.trim() ||
         '';
       if (!imageUrl) return null;
 

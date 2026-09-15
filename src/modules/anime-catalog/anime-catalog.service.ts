@@ -623,15 +623,10 @@ export class AnimeCatalogService {
     ]);
 
     let maxPublishedEpisode: number | null = null;
-    let lastPublishedAt: Date | null = null;
     for (const episode of episodes) {
       const n = Number(episode.episodeNumber);
       if (Number.isFinite(n) && n > (maxPublishedEpisode ?? 0)) {
         maxPublishedEpisode = n;
-      }
-      const created = episode.createdAt ? new Date(episode.createdAt) : null;
-      if (created && !Number.isNaN(created.getTime())) {
-        if (!lastPublishedAt || created > lastPublishedAt) lastPublishedAt = created;
       }
     }
 
@@ -644,7 +639,7 @@ export class AnimeCatalogService {
         airingTime: anime.airingTime,
         nextAiringDate: anime.nextAiringDate,
         maxPublishedEpisode,
-        lastPublishedAt,
+        episodesCount: anime.episodesCount,
       }),
       average_episode_size_bytes: averageEpisodeSizeBytes,
       episodes: episodes.map((e) => {
@@ -832,23 +827,17 @@ export class AnimeCatalogService {
       .createQueryBuilder('ep')
       .select('ep.anime_id', 'animeId')
       .addSelect('MAX(ep.episode_number)', 'maxEpisode')
-      .addSelect('MAX(ep.created_at)', 'lastPublishedAt')
       .where('ep.anime_id IN (:...ids)', { ids })
       .groupBy('ep.anime_id')
       .getRawMany<{
         animeId: string;
         maxEpisode: string | null;
-        lastPublishedAt: Date | string | null;
       }>();
 
     const maxByAnime = new Map<string, number>();
-    const lastPublishedByAnime = new Map<string, Date | string>();
     for (const row of episodeMaxRows) {
       const n = Number(row.maxEpisode);
       if (Number.isFinite(n) && n > 0) maxByAnime.set(String(row.animeId), n);
-      if (row.lastPublishedAt) {
-        lastPublishedByAnime.set(String(row.animeId), row.lastPublishedAt);
-      }
     }
 
     const schedule = { ...emptySchedule };
@@ -863,7 +852,7 @@ export class AnimeCatalogService {
         airingTime: anime.airingTime,
         nextAiringDate: anime.nextAiringDate,
         maxPublishedEpisode: maxEp ?? null,
-        lastPublishedAt: lastPublishedByAnime.get(anime.id) ?? null,
+        episodesCount: anime.episodesCount,
       });
       if (!plan || !weekdaySet.has(plan.weekday) || !schedule[plan.weekday]) {
         continue;

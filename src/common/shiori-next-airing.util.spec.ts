@@ -96,7 +96,6 @@ describe('resolveShioriNextAiring', () => {
         airingWeekday: 'شنبه',
         airingTime: '22:00',
         maxPublishedEpisode: 5,
-        lastPublishedAt: SAT_MORNING_TEHRAN_MS,
       },
       SAT_MORNING_TEHRAN_MS,
     );
@@ -116,37 +115,51 @@ describe('resolveShioriNextAiring', () => {
     expect(result?.episode).toBe(1);
   });
 
-  it('does not roll a mid-season miss to next week', () => {
+  it('keeps the next weekly slot even when the last upload is late', () => {
     const sundayMorning = Date.UTC(2026, 8, 13, 6, 30); // 10:00 Tehran
-    const previousSaturdayNight = Date.UTC(2026, 8, 5, 19, 30); // 23:00 Tehran 5 Sep
     const result = resolveShioriNextAiring(
       {
         airingStatus: 'RELEASING',
         airingWeekday: 'شنبه',
         airingTime: '22:00',
         maxPublishedEpisode: 4,
-        lastPublishedAt: previousSaturdayNight,
+        episodesCount: 12,
       },
       sundayMorning,
     );
-    expect(result).toBeNull();
+    expect(result?.episode).toBe(5);
+    expect(result?.airing_at).toBeGreaterThan(sundayMorning / 1000);
+    expect(formatTehran(result!.airing_at)).toEqual({
+      weekday: 'Sat',
+      time: '22:00',
+    });
   });
 
-  it('resumes the weekly slot after a late upload', () => {
-    const mondayMorning = Date.UTC(2026, 8, 14, 6, 30);
-    const sundayUpload = Date.UTC(2026, 8, 13, 18, 0);
+  it('hides from the schedule once all catalog episodes are out', () => {
     const result = resolveShioriNextAiring(
       {
         airingStatus: 'RELEASING',
         airingWeekday: 'شنبه',
         airingTime: '22:00',
-        maxPublishedEpisode: 5,
-        lastPublishedAt: sundayUpload,
+        maxPublishedEpisode: 12,
+        episodesCount: 12,
       },
-      mondayMorning,
+      SAT_MORNING_TEHRAN_MS,
     );
-    expect(result?.episode).toBe(6);
-    expect(result?.airing_at).toBeGreaterThan(mondayMorning / 1000);
+    expect(result).toBeNull();
+  });
+
+  it('still shows when episodes_count is unknown', () => {
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        maxPublishedEpisode: 20,
+      },
+      SAT_MORNING_TEHRAN_MS,
+    );
+    expect(result?.episode).toBe(21);
   });
 
   it('uses a future manual date instead of the next weekly slot', () => {
@@ -157,7 +170,7 @@ describe('resolveShioriNextAiring', () => {
         airingTime: '22:00',
         nextAiringDate: '2026-09-26',
         maxPublishedEpisode: 4,
-        lastPublishedAt: Date.UTC(2026, 8, 5, 19, 30),
+        episodesCount: 12,
       },
       SAT_MORNING_TEHRAN_MS,
     );

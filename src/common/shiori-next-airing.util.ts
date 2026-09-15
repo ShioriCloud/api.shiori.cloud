@@ -89,29 +89,6 @@ export function nextTehranOccurrenceUnixSec(
   return Math.floor(utcMs / 1000);
 }
 
-/** Most recent weekly slot that has already started (next occurrence minus 7 days). */
-export function lastTehranOccurrenceUnixSec(
-  weekday: string,
-  hour: number,
-  minute: number,
-  nowMs = Date.now(),
-): number | null {
-  const next = nextTehranOccurrenceUnixSec(weekday, hour, minute, nowMs);
-  if (next == null) return null;
-  const parts = getTehranDateParts(next * 1000);
-  if (!parts) return null;
-  const prev = addUtcCalendarDays(parts.year, parts.month, parts.day, -7);
-  const utcMs = tehranWallTimeToUtcMs(
-    prev.year,
-    prev.month,
-    prev.day,
-    hour,
-    minute,
-  );
-  if (utcMs == null) return null;
-  return Math.floor(utcMs / 1000);
-}
-
 export function parseIsoDateYmd(
   value: string | null | undefined,
 ): { year: number; month: number; day: number } | null {
@@ -158,23 +135,6 @@ export type ShioriAiringPlan = NextAiringDto & {
   weekday: ShioriWeekday;
 };
 
-/** Treat an upload up to 12h before the slot as covering that slot. */
-const SLOT_COVER_GRACE_MS = 12 * 60 * 60 * 1000;
-
-function toEpochMs(value: Date | string | number | null | undefined): number | null {
-  if (value == null || value === '') return null;
-  if (value instanceof Date) {
-    const ms = value.getTime();
-    return Number.isFinite(ms) ? ms : null;
-  }
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) return null;
-    return value < 1e12 ? value * 1000 : value;
-  }
-  const ms = Date.parse(String(value));
-  return Number.isFinite(ms) ? ms : null;
-}
-
 export function resolveShioriAiringPlan(
   input: {
     airingStatus?: string | null;
@@ -182,7 +142,8 @@ export function resolveShioriAiringPlan(
     airingTime?: string | null;
     nextAiringDate?: string | null;
     maxPublishedEpisode?: number | null;
-    lastPublishedAt?: Date | string | number | null;
+    /** Catalog total; when set, hide from schedule once all episodes are out. */
+    episodesCount?: number | null;
   },
   nowMs = Date.now(),
 ): ShioriAiringPlan | null {
@@ -195,10 +156,14 @@ export function resolveShioriAiringPlan(
   if (!time) return null;
 
   const maxEp = Number(input.maxPublishedEpisode);
-  const episode =
-    Number.isFinite(maxEp) && maxEp > 0 ? Math.floor(maxEp) + 1 : 1;
-  const hasPublished = Number.isFinite(maxEp) && maxEp > 0;
-  const lastPublishedMs = toEpochMs(input.lastPublishedAt);
+  const published =
+    Number.isFinite(maxEp) && maxEp > 0 ? Math.floor(maxEp) : 0;
+  const total = Number(input.episodesCount);
+  if (Number.isFinite(total) && total > 0 && published >= Math.floor(total)) {
+    return null;
+  }
+
+  const episode = published > 0 ? published + 1 : 1;
 
   const overrideAt = tehranDateHhmmToUnixSec(
     String(input.nextAiringDate ?? ''),
@@ -221,21 +186,6 @@ export function resolveShioriAiringPlan(
     nowMs,
   );
   if (airingAt == null || airingAt <= 0) return null;
-
-  if (hasPublished) {
-    const lastSlot = lastTehranOccurrenceUnixSec(
-      weekday,
-      time.hour,
-      time.minute,
-      nowMs,
-    );
-    if (lastSlot != null) {
-      const coverAfter = lastSlot * 1000 - SLOT_COVER_GRACE_MS;
-      const covered =
-        lastPublishedMs != null && lastPublishedMs >= coverAfter;
-      if (!covered) return null;
-    }
-  }
 
   return {
     episode,
