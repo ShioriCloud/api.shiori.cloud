@@ -113,6 +113,23 @@ export class MediaAdminService {
     return asset;
   }
 
+  /** Match preferred uploads even when extension changes (genre-action.webp → .png). */
+  private async findByPreferredFileName(
+    preferredBase: string,
+    exactFileName: string,
+  ): Promise<MediaAsset | null> {
+    const exact = await this.mediaRepo.findOne({
+      where: { fileName: exactFileName },
+    });
+    if (exact) return exact;
+
+    return this.mediaRepo
+      .createQueryBuilder('asset')
+      .where('asset.fileName LIKE :prefix', { prefix: `${preferredBase}.%` })
+      .orderBy('asset.updatedAt', 'DESC')
+      .getOne();
+  }
+
   async upload(
     file: Express.Multer.File,
     uploadedBy: string,
@@ -122,7 +139,10 @@ export class MediaAdminService {
     const saved = await this.storage.saveImage(file, trimmedName);
 
     const existing = trimmedName
-      ? await this.mediaRepo.findOne({ where: { fileName: saved.fileName } })
+      ? await this.findByPreferredFileName(
+          saved.fileName.replace(/\.[^.]+$/, ''),
+          saved.fileName,
+        )
       : null;
 
     if (existing) {
@@ -133,10 +153,16 @@ export class MediaAdminService {
         await this.storage.deleteFile(existing.storagePath);
       }
 
+      existing.fileName = saved.fileName;
+      existing.storagePath = saved.storagePath;
       existing.mimetype = saved.mimetype;
       existing.size = String(saved.size);
-      existing.originalName = trimmedName ? saved.fileName : file.originalname?.trim() || null;
+      existing.originalName = trimmedName
+        ? saved.fileName
+        : file.originalname?.trim() || null;
       existing.uploadedBy = uploadedBy;
+      // Keep stable public URL (same id); clients cache-bust via updated_at.
+      existing.url = this.storage.getPublicUrl(existing.id);
 
       const updated = await this.mediaRepo.save(existing);
       return this.mapRow(updated);

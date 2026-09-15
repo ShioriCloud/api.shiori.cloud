@@ -3,7 +3,6 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
   Param,
   Post,
   Put,
@@ -78,12 +77,16 @@ export class MediaPublicController {
 
   @Get('serve/:id')
   @ApiOperation({ summary: 'Serve uploaded media file (public)' })
-  @Header('Cache-Control', 'public, max-age=31536000, immutable')
   async serve(
     @Param('id') id: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     const asset = await this.mediaAdminService.getEntityForServe(id);
+    const updatedAt = asset.updatedAt?.getTime?.() ?? Date.now();
+    // Not immutable: admins replace files in-place under the same id.
+    res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+    res.setHeader('ETag', `"${asset.id}-${updatedAt}"`);
+    res.setHeader('Last-Modified', new Date(updatedAt).toUTCString());
     res.setHeader('Content-Type', asset.mimetype);
     if (asset.originalName) {
       res.setHeader(
