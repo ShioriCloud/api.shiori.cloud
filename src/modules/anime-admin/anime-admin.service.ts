@@ -15,6 +15,12 @@ import {
   searchAnilistAnime,
   type AnilistMappedMedia,
 } from '../../common/anilist.client';
+import {
+  fetchMalAnimeById,
+  JikanClientError,
+  searchMalAnime,
+  type MalMappedMedia,
+} from '../../common/jikan.client';
 import { normalizeExternalId } from '../../common/external-score.util';
 import {
   normalizeEpisodeVideoFileType,
@@ -580,6 +586,21 @@ export class AnimeAdminService {
     );
   }
 
+  private throwMalUnavailable(err: unknown): never {
+    const message =
+      err instanceof JikanClientError
+        ? err.message
+        : err instanceof Error
+          ? err.message
+          : 'MyAnimeList request failed';
+    this.logger.warn(`MAL/Jikan request failed: ${message}`);
+    throw new ServiceUnavailableException(
+      message.includes('429') || String(err).includes('429')
+        ? 'MyAnimeList موقتاً شلوغ است؛ کمی بعد دوباره تلاش کنید'
+        : 'ارتباط با MyAnimeList برقرار نشد',
+    );
+  }
+
   private uniqueNorm(value: string): string {
     return value.trim().toLowerCase();
   }
@@ -649,8 +670,8 @@ export class AnimeAdminService {
     };
   }
 
-  private async uniqueImportSlug(base: string, anilistId: number): Promise<string> {
-    const fallback = `anilist-${anilistId}`;
+  private async uniqueImportSlug(base: string, externalId: number, prefix: string): Promise<string> {
+    const fallback = `${prefix}-${externalId}`;
     const primary = normalizeSlug(base) || fallback;
     const existing = await this.animeRepo.findOne({
       where: { slug: primary },
@@ -658,13 +679,176 @@ export class AnimeAdminService {
     });
     if (!existing) return primary;
 
-    const withId = normalizeSlug(`${primary}-${anilistId}`) || fallback;
+    const withId = normalizeSlug(`${primary}-${externalId}`) || fallback;
     const existingWithId = await this.animeRepo.findOne({
       where: { slug: withId },
       select: { id: true },
     });
     if (!existingWithId) return withId;
     return fallback;
+  }
+
+  private toMalSearchItem(
+    media: MalMappedMedia,
+    local?: { id: string; slug: string | null } | null,
+  ) {
+    return {
+      mal_id: media.mal_id,
+      anilist_id: media.anilist_id,
+      title: media.title,
+      title_romaji: media.title_romaji,
+      title_native: media.title_native,
+      cover_image: media.cover_image,
+      format: media.format,
+      season: media.season,
+      year: media.year,
+      status: media.airing_status,
+      genres: media.genres,
+      local_anime_id: local?.id ?? null,
+      local_slug: local?.slug ?? null,
+    };
+  }
+
+  async searchMal(query?: string) {
+    const q = String(query ?? '').trim();
+    if (q.length < 2) {
+      throw new BadRequestException('حداقل ۲ حرف برای جستجو لازم است');
+    }
+
+    const media = await searchMalAnime(q, 12).catch((err) =>
+      this.throwMalUnavailable(err),
+    );
+
+    const malIds = media.map((item) => item.mal_id);
+    const locals =
+      malIds.length > 0
+        ? await this.animeRepo.find({
+            where: { malId: In(malIds) },
+            select: { id: true, slug: true, malId: true },
+          })
+        : [];
+    const localByMal = new Map(
+      locals
+        .filter((row) => row.malId != null)
+        .map((row) => [Number(row.malId), { id: row.id, slug: row.slug }]),
+    );
+
+    return {
+      items: media.map((item) =>
+        this.toMalSearchItem(item, localByMal.get(item.mal_id) ?? null),
+      ),
+    };
+  }
+
+  async importFromMal(body: Payload, editorId?: string) {
+    const malId = normalizeExternalId(this.pick<unknown>(body, 'mal_id', 'malId'));
+    if (!malId) {
+      throw new BadRequestException('شناسه MyAnimeList نامعتبر است');
+    }
+
+    const existing = await this.animeRepo.findOne({
+      where: { malId },
+      relations: { lastEditedBy: true },
+    });
+    if (existing) {
+      return { existed: true, ...this.toAnimeAdminRow(existing) };
+    }
+
+    const media = await fetchMalAnimeById(malId).catch((err) =>
+      this.throwMalUnavailable(err),
+    );
+    if (!media) {
+      throw new NotFoundException('این اثر در MyAnimeList پیدا نشد');
+    }
+
+    const already = await this.animeRepo.findOne({
+      where: { malId: media.mal_id },
+      relations: { lastEditedBy: true },
+    });
+    if (already) {
+      return { existed: true, ...this.toAnimeAdminRow(already) };
+    }
+
+    const [genres, studios] = await Promise.all([
+      this.genreRepo.find(),
+      this.studioRepo.find(),
+    ]);
+    const genreSlugs = this.matchLocalGenreSlugs(media.genres, genres);
+    const studioMatch = this.matchLocalStudioSlugs(media.studios, studios);
+    const slug = await this.uniqueImportSlug(
+      media.title_romaji ?? media.title,
+      media.mal_id,
+      'mal',
+    );
+
+    const created = await this.createAnime(
+      {
+        title: media.title,
+        title_romaji: media.title_romaji,
+        slug,
+        synopsis: media.synopsis,
+        cover_image: media.cover_image,
+        featured_image: media.featured_image,
+        format: media.format,
+        season: media.season,
+        year: media.year,
+        airing_status: media.airing_status,
+        episodes_count: media.episodes_count,
+        anilist_id: media.anilist_id,
+        mal_id: media.mal_id,
+        start_date: media.start_date,
+        end_date: media.end_date,
+        studio: studioMatch.displayName,
+        genre_slugs: genreSlugs,
+        studio_slugs: studioMatch.slugs,
+        is_featured: false,
+      },
+      editorId,
+    );
+
+    const refreshed = await this.getAnimeAdmin(created.id);
+    return { existed: false, ...refreshed };
+  }
+
+  async fillFromMal(body: Payload) {
+    const malId = normalizeExternalId(this.pick<unknown>(body, 'mal_id', 'malId'));
+    if (!malId) {
+      throw new BadRequestException('شناسه MyAnimeList نامعتبر است');
+    }
+
+    const media = await fetchMalAnimeById(malId).catch((err) =>
+      this.throwMalUnavailable(err),
+    );
+    if (!media) {
+      throw new NotFoundException('این اثر در MyAnimeList پیدا نشد');
+    }
+
+    const [genres, studios] = await Promise.all([
+      this.genreRepo.find(),
+      this.studioRepo.find(),
+    ]);
+    const genreSlugs = this.matchLocalGenreSlugs(media.genres, genres);
+    const studioMatch = this.matchLocalStudioSlugs(media.studios, studios);
+
+    return {
+      mal_id: media.mal_id,
+      anilist_id: media.anilist_id,
+      title: media.title,
+      title_romaji: media.title_romaji,
+      synopsis: media.synopsis,
+      cover_image: media.cover_image,
+      featured_image: media.featured_image,
+      format: media.format,
+      season: media.season,
+      year: media.year,
+      airing_status: media.airing_status,
+      episodes_count: media.episodes_count,
+      start_date: media.start_date,
+      end_date: media.end_date,
+      studio: studioMatch.displayName,
+      genre_slugs: genreSlugs,
+      studio_slugs: studioMatch.slugs,
+    };
   }
 
   async searchAnilist(query?: string) {
@@ -738,6 +922,7 @@ export class AnimeAdminService {
     const slug = await this.uniqueImportSlug(
       media.title_romaji ?? media.title,
       media.anilist_id,
+      'anilist',
     );
 
     const created = await this.createAnime(

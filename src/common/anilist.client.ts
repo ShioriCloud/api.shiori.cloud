@@ -273,3 +273,66 @@ export const fetchAnilistAnimeById = async (
   });
   return mapAnilistMedia(data.Media);
 };
+
+const SCORES_BY_IDS_QUERY = `
+  query ($ids: [Int], $page: Int, $perPage: Int) {
+    Page(page: $page, perPage: $perPage) {
+      media(id_in: $ids, type: ANIME) {
+        id
+        averageScore
+        title { romaji english native }
+      }
+    }
+  }
+`;
+
+export type AnilistScoreRow = {
+  anilist_id: number;
+  average_score: number | null;
+  title: string | null;
+};
+
+/** AniList averageScore is 0–100. Batches up to 50 IDs per request. */
+export const fetchAnilistScoresByIds = async (
+  anilistIds: number[],
+): Promise<AnilistScoreRow[]> => {
+  const ids = [
+    ...new Set(
+      anilistIds
+        .map((id) => positiveInt(id))
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  if (ids.length === 0) return [];
+
+  const perPage = Math.min(ids.length, 50);
+  const data = await parseGraphql<{
+    Page?: {
+      media?: Array<{
+        id?: number;
+        averageScore?: number | null;
+        title?: AnilistTitle | null;
+      } | null> | null;
+    } | null;
+  }>(SCORES_BY_IDS_QUERY, { ids, page: 1, perPage });
+
+  return (data.Page?.media ?? [])
+    .map((row) => {
+      const anilistId = positiveInt(row?.id);
+      if (!anilistId) return null;
+      const english = trimOrNull(row?.title?.english);
+      const romaji = trimOrNull(row?.title?.romaji);
+      const native = trimOrNull(row?.title?.native);
+      const scoreRaw = row?.averageScore;
+      const score =
+        typeof scoreRaw === 'number' && Number.isFinite(scoreRaw) && scoreRaw > 0
+          ? scoreRaw
+          : null;
+      return {
+        anilist_id: anilistId,
+        average_score: score,
+        title: english ?? romaji ?? native,
+      } satisfies AnilistScoreRow;
+    })
+    .filter((row): row is AnilistScoreRow => row != null);
+};

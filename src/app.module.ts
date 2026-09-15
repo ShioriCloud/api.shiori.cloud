@@ -61,6 +61,7 @@ import { MembershipAdminModule } from './modules/membership-admin/membership-adm
 import { DownloadTokensModule } from './modules/download-tokens/download-tokens.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
+import { ScoreSyncModule } from './modules/score-sync/score-sync.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
@@ -137,6 +138,7 @@ import { TelegramModule } from './telegram/telegram.module';
     DownloadTokensModule,
     SubscriptionsModule,
     SupportTicketsModule,
+    ScoreSyncModule,
   ],
 })
 export class AppModule {}

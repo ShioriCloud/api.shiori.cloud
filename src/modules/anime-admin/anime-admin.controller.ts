@@ -39,6 +39,24 @@ export class AnimeAdminController {
     return this.animeAdminService.fillFromAnilist(body);
   }
 
+  @Get('mal/search')
+  @ApiOperation({ summary: 'Search MyAnimeList anime by title via Jikan (admin)' })
+  searchMal(@Query('q') q?: string, @Query('search') search?: string) {
+    return this.animeAdminService.searchMal(q ?? search);
+  }
+
+  @Post('mal/import')
+  @ApiOperation({ summary: 'Import MyAnimeList anime into local catalog (admin)' })
+  importMal(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
+    return this.animeAdminService.importFromMal(body, req.portalTelegramUserId);
+  }
+
+  @Post('mal/fill')
+  @ApiOperation({ summary: 'Preview MAL fields to fill empty local values (admin)' })
+  fillMal(@Body() body: Record<string, unknown>) {
+    return this.animeAdminService.fillFromMal(body);
+  }
+
   @Get('list-stats')
   @ApiOperation({ summary: 'Anime list aggregate stats (admin)' })
   getListStats() {
