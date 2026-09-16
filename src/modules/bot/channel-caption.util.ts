@@ -96,9 +96,19 @@ const closeEntityTag = (ent: TelegramMessageEntity): string => {
   return '';
 };
 
+type MappedEntity = {
+  id: number;
+  ent: TelegramMessageEntity;
+  start: number;
+  end: number;
+  len: number;
+};
+
 /**
  * Convert Telegram caption + entities to HTML (bold, links, premium emoji).
- * Preserves nested entities (e.g. custom_emoji inside bold).
+ * Uses a stack so overlapping (crossing) bold/link ranges never emit
+ * `&lt;a&gt;&lt;b&gt;…&lt;/a&gt;&lt;/b&gt;` — Telegram rejects that with
+ * "expected &lt;/b&gt;, found &lt;/a&gt;".
  */
 export const captionEntitiesToHtml = (
   caption: string,
@@ -108,39 +118,71 @@ export const captionEntitiesToHtml = (
   if (!text) return '';
   if (!entities.length) return escapeHtml(text);
 
-  type Mark = { kind: 'open' | 'close'; ent: TelegramMessageEntity };
-  const marks: Mark[][] = Array.from({ length: text.length + 1 }, () => []);
-
-  for (const ent of entities) {
+  const usable: MappedEntity[] = [];
+  for (let id = 0; id < entities.length; id++) {
+    const ent = entities[id]!;
     const start = Math.max(0, Number(ent.offset) || 0);
     const end = Math.min(text.length, start + (Number(ent.length) || 0));
     if (end <= start) continue;
     if (!openEntityTag(ent, text.slice(start, end))) continue;
-    marks[start].push({ kind: 'open', ent });
-    marks[end].push({ kind: 'close', ent });
+    usable.push({ id, ent, start, end, len: end - start });
   }
 
+  if (!usable.length) return escapeHtml(text);
+
+  const stack: MappedEntity[] = [];
   let html = '';
+
+  const emitOpen = (item: MappedEntity) => {
+    html += openEntityTag(item.ent, text.slice(item.start, item.end));
+    stack.push(item);
+  };
+
+  const emitClose = (item: MappedEntity) => {
+    html += closeEntityTag(item.ent);
+  };
+
+  /** Close until `target` is on top (temporarily closing nested tags), then close it. */
+  const closeMapped = (target: MappedEntity) => {
+    const reopen: MappedEntity[] = [];
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1]!;
+      if (top.id === target.id) {
+        stack.pop();
+        emitClose(top);
+        break;
+      }
+      stack.pop();
+      emitClose(top);
+      // Only reopen ranges that still cover the current position.
+      reopen.push(top);
+    }
+    for (let i = reopen.length - 1; i >= 0; i--) {
+      const item = reopen[i]!;
+      if (item.end > target.end) emitOpen(item);
+    }
+  };
+
   for (let i = 0; i <= text.length; i++) {
-    const at = marks[i];
-    // Close inner (shorter) entities first
-    const closes = at
-      .filter((m) => m.kind === 'close')
-      .sort((a, b) => (a.ent.length || 0) - (b.ent.length || 0));
-    for (const { ent } of closes) {
-      html += closeEntityTag(ent);
+    const ending = usable
+      .filter((u) => u.end === i)
+      .sort((a, b) => a.len - b.len || b.id - a.id);
+    for (const item of ending) {
+      if (stack.some((s) => s.id === item.id)) closeMapped(item);
     }
-    // Open outer (longer) entities first
-    const opens = at
-      .filter((m) => m.kind === 'open')
-      .sort((a, b) => (b.ent.length || 0) - (a.ent.length || 0));
-    for (const { ent } of opens) {
-      html += openEntityTag(ent, text.slice(ent.offset, ent.offset + ent.length));
-    }
-    if (i < text.length) {
-      html += escapeHtml(text[i]!);
-    }
+
+    const starting = usable
+      .filter((u) => u.start === i)
+      .sort((a, b) => b.len - a.len || a.id - b.id);
+    for (const item of starting) emitOpen(item);
+
+    if (i < text.length) html += escapeHtml(text[i]!);
   }
+
+  while (stack.length > 0) {
+    emitClose(stack.pop()!);
+  }
+
   return html;
 };
 
@@ -183,42 +225,120 @@ export const repairTgEmojiHtml = (htmlCaption: string): string => {
   return rebuilt;
 };
 
-function balanceSimpleHtmlTags(html: string, tagNames: string[]): string {
+/**
+ * Reorder crossed &lt;a&gt;/&lt;b&gt; closings Telegram rejects, e.g.
+ * `&lt;a&gt;&lt;b&gt;x&lt;/a&gt;&lt;/b&gt;` → `&lt;a&gt;&lt;b&gt;x&lt;/b&gt;&lt;/a&gt;`.
+ */
+function uncrossAnchorBoldTags(html: string): string {
   let out = String(html ?? '');
-  for (const tag of tagNames) {
-    const tokenRe = new RegExp(`<${tag}\\b[^>]*>|</${tag}>`, 'gi');
-    let depth = 0;
-    let rebuilt = '';
-    let last = 0;
-    let m: RegExpExecArray | null;
-    while ((m = tokenRe.exec(out))) {
-      rebuilt += out.slice(last, m.index);
-      if (m[0].startsWith('</')) {
-        if (depth > 0) {
-          rebuilt += m[0];
-          depth -= 1;
-        }
-      } else {
-        rebuilt += m[0];
-        depth += 1;
-      }
-      last = m.index + m[0].length;
-    }
-    rebuilt += out.slice(last);
-    while (depth > 0) {
-      rebuilt += `</${tag}>`;
-      depth -= 1;
-    }
-    out = rebuilt;
+  let prev = '';
+  while (out !== prev) {
+    prev = out;
+    out = out
+      .replace(
+        /(<a\b[^>]*>)(\s*<b>)([\s\S]*?)<\/a>(\s*)<\/b>/gi,
+        '$1$2$3</b>$4</a>',
+      )
+      .replace(
+        /(<b>)(\s*<a\b[^>]*>)([\s\S]*?)<\/b>(\s*)<\/a>/gi,
+        '$1$2$3</a>$4</b>',
+      );
   }
   return out;
+}
+
+type HtmlToken =
+  | { kind: 'text'; value: string }
+  | { kind: 'open'; tag: string; raw: string }
+  | { kind: 'close'; tag: string; raw: string };
+
+function tokenizeSimpleHtml(html: string): HtmlToken[] {
+  const src = String(html ?? '');
+  const tokens: HtmlToken[] = [];
+  const re = /<\/?(?:a|b|i|code)\b[^>]*>/gi;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src))) {
+    if (m.index > last) {
+      tokens.push({ kind: 'text', value: src.slice(last, m.index) });
+    }
+    const raw = m[0];
+    const isClose = raw.startsWith('</');
+    const tag = raw.replace(/^<\/?/, '').replace(/[\s>/].*$/, '').toLowerCase();
+    tokens.push(
+      isClose
+        ? { kind: 'close', tag, raw: `</${tag}>` }
+        : { kind: 'open', tag, raw },
+    );
+    last = m.index + raw.length;
+  }
+  if (last < src.length) tokens.push({ kind: 'text', value: src.slice(last) });
+  return tokens;
+}
+
+/**
+ * Stack-repair for a/b/i/code so closings always match the open top-of-stack.
+ * Temporarily closes and reopens crossed parents (same idea as entity→HTML).
+ * Runs outside &lt;tg-emoji&gt; blocks so premium markers stay intact.
+ */
+function stackRepairHtmlTags(html: string): string {
+  const repairChunk = (chunk: string): string => {
+    const tokens = tokenizeSimpleHtml(chunk);
+    type Frame = { tag: string; openRaw: string };
+    const stack: Frame[] = [];
+    let out = '';
+
+    for (const tok of tokens) {
+      if (tok.kind === 'text') {
+        out += tok.value;
+        continue;
+      }
+      if (tok.kind === 'open') {
+        stack.push({ tag: tok.tag, openRaw: tok.raw });
+        out += tok.raw;
+        continue;
+      }
+
+      const idx = stack.map((f) => f.tag).lastIndexOf(tok.tag);
+      if (idx < 0) continue; // orphan close — drop
+
+      const reopen: Frame[] = [];
+      while (stack.length > idx + 1) {
+        const top = stack.pop()!;
+        out += `</${top.tag}>`;
+        reopen.push(top);
+      }
+      stack.pop();
+      out += `</${tok.tag}>`;
+      for (let i = reopen.length - 1; i >= 0; i--) {
+        const frame = reopen[i]!;
+        stack.push(frame);
+        out += frame.openRaw;
+      }
+    }
+
+    while (stack.length > 0) {
+      const top = stack.pop()!;
+      out += `</${top.tag}>`;
+    }
+
+    return out;
+  };
+
+  return String(html ?? '')
+    .split(/(<tg-emoji\b[^>]*>[\s\S]*?<\/tg-emoji>)/gi)
+    .map((part) => (/^<tg-emoji\b/i.test(part) ? part : repairChunk(part)))
+    .join('');
 }
 
 /** Balance &lt;a&gt;/&lt;b&gt; and tg-emoji tags so Telegram HTML parse_mode accepts the caption. */
 export const repairHtmlCaption = (htmlCaption: string): string => {
   let out = repairTgEmojiHtml(htmlCaption);
   if (!out) return out;
-  out = balanceSimpleHtmlTags(out, ['a', 'b']);
+  out = uncrossAnchorBoldTags(out);
+  out = stackRepairHtmlTags(out);
+  // Crossing repairs can leave empty reopened anchors.
+  out = out.replace(/<a\b[^>]*>\s*<\/a>/gi, '');
   return repairTgEmojiHtml(out);
 };
 
