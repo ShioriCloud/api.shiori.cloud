@@ -1,6 +1,18 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { TelegramUser, UserAnimeListEntry } from '../../entities';
+import {
+  DownloadTokenLedger,
+  SponsorJoinEvent,
+  SupportTicket,
+  SupportTicketMessage,
+  TelegramUser,
+  UserAnimeAiringReminder,
+  UserAnimeListEntry,
+  UserCustomList,
+  UserCustomListItem,
+  UserNotification,
+  UserPortalSession,
+} from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { TelegramUsersAdminController } from './telegram-users-admin.controller';
 import { TelegramUsersAdminService } from './telegram-users-admin.service';
@@ -8,7 +20,19 @@ import { TelegramUsersAdminService } from './telegram-users-admin.service';
 @Module({
   imports: [
     PortalAuthModule,
-    TypeOrmModule.forFeature([TelegramUser, UserAnimeListEntry]),
+    TypeOrmModule.forFeature([
+      TelegramUser,
+      UserAnimeListEntry,
+      UserCustomList,
+      UserCustomListItem,
+      UserAnimeAiringReminder,
+      DownloadTokenLedger,
+      SupportTicket,
+      SupportTicketMessage,
+      UserNotification,
+      SponsorJoinEvent,
+      UserPortalSession,
+    ]),
   ],
   controllers: [TelegramUsersAdminController],
   providers: [TelegramUsersAdminService],

@@ -61,6 +61,7 @@ export class PortalAuthService {
       .andWhere('u.portal_login_enabled = true')
       .andWhere('u.password_hash IS NOT NULL')
       .andWhere("u.app_role IN ('admin', 'moderator')")
+      .andWhere('u.is_banned = false')
       .getOne();
 
     if (!user?.passwordHash) {
@@ -113,6 +114,7 @@ export class PortalAuthService {
 
     if (
       !user ||
+      user.isBanned ||
       !user.portalLoginEnabled ||
       !this.isStaffRole(user.appRole)
     ) {

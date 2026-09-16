@@ -1,8 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UserPortalSession } from '../entities';
+import { TelegramUser, UserPortalSession } from '../entities';
 import { getTelegramBotTokens } from './telegram-bot-tokens';
 import { verifyTelegramInitData } from './telegram-init-data';
 
@@ -36,7 +36,19 @@ export class AppUserAuthService {
     private readonly config: ConfigService,
     @InjectRepository(UserPortalSession)
     private readonly sessionsRepo: Repository<UserPortalSession>,
+    @InjectRepository(TelegramUser)
+    private readonly usersRepo: Repository<TelegramUser>,
   ) {}
+
+  async assertNotBanned(telegramUserId: number): Promise<void> {
+    const user = await this.usersRepo.findOne({
+      where: { telegramUserId: String(telegramUserId) },
+      select: { telegramUserId: true, isBanned: true },
+    });
+    if (user?.isBanned) {
+      throw new ForbiddenException('account banned');
+    }
+  }
 
   async resolveAuth(
     headers: Record<string, string | string[] | undefined>,

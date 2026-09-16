@@ -38,6 +38,8 @@ export class AppUserAuthGuard implements CanActivate {
       );
     }
 
+    await this.appUserAuthService.assertNotBanned(resolved.telegramUserId);
+
     req.telegramUserId = resolved.telegramUserId;
     req.authMethod = resolved.authMethod;
     return true;

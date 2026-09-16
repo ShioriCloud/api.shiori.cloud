@@ -60,4 +60,14 @@ export class TelegramUser {
   /** Monthly subscription end; active while expires_at > now(). */
   @Column({ type: 'timestamptz', name: 'subscription_expires_at', nullable: true })
   subscriptionExpiresAt: Date | null;
+
+  /** When true, mini-app + session auth are rejected. */
+  @Column({ type: 'boolean', name: 'is_banned', default: false })
+  isBanned: boolean;
+
+  @Column({ type: 'timestamptz', name: 'banned_at', nullable: true })
+  bannedAt: Date | null;
+
+  @Column({ type: 'text', name: 'banned_reason', nullable: true })
+  bannedReason: string | null;
 }

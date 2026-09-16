@@ -337,6 +337,7 @@ export class AppAuthService {
       .where('LOWER(TRIM(u.email)) = :email', { email })
       .andWhere('u.portal_login_enabled = true')
       .andWhere('u.password_hash IS NOT NULL')
+      .andWhere('u.is_banned = false')
       .getOne();
 
     if (!user?.passwordHash) {
@@ -380,7 +381,7 @@ export class AppAuthService {
       where: { telegramUserId: session.telegramUserId },
     });
 
-    if (!user || !user.portalLoginEnabled) {
+    if (!user || user.isBanned || !user.portalLoginEnabled) {
       await this.sessionsRepo.delete({ token });
       return null;
     }

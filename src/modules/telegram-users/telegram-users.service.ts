@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { Repository } from 'typeorm';
@@ -23,6 +23,10 @@ export class TelegramUsersService {
     const existing = await this.usersRepo.findOne({
       where: { telegramUserId: userId },
     });
+
+    if (existing?.isBanned) {
+      throw new ForbiddenException('account banned');
+    }
 
     const cleanUsername = (value?: string | null): string | null => {
       const trimmed = String(value ?? '')

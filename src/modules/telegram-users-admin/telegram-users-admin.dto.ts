@@ -6,6 +6,7 @@ import {
   IsOptional,
   IsString,
   Max,
+  MaxLength,
   Min,
 } from 'class-validator';
 
@@ -78,4 +79,11 @@ export class UpdateTelegramUserAdminDto {
   @IsOptional()
   @IsBoolean()
   portal_login_enabled?: boolean;
+}
+
+export class BanTelegramUserDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string | null;
 }
