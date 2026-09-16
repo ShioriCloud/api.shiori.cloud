@@ -10,6 +10,7 @@ import {
   ChannelPostDraft,
   FilePack,
   FilePackItem,
+  TelegramUser,
 } from '../../entities';
 import { SponsorCampaignsModule } from '../sponsor-campaigns/sponsor-campaigns.module';
 import { BotAuthGuard } from './bot-auth.guard';
@@ -29,6 +30,7 @@ import { ChannelDraftsService } from './channel-drafts.service';
       AnimeEpisode,
       AnimeSubtitle,
       ChannelPostDraft,
+      TelegramUser,
     ]),
     SponsorCampaignsModule,
   ],

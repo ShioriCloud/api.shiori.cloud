@@ -12,6 +12,7 @@ import {
   AnimeEpisode,
   AnimeSubtitle,
   ChannelPostDraft,
+  TelegramUser,
 } from '../../entities';
 import {
   buildEpisodeCaptionLine,
@@ -47,6 +48,8 @@ export class ChannelDraftsService {
     private readonly subtitleRepo: Repository<AnimeSubtitle>,
     @InjectRepository(ChannelPostDraft)
     private readonly draftRepo: Repository<ChannelPostDraft>,
+    @InjectRepository(TelegramUser)
+    private readonly usersRepo: Repository<TelegramUser>,
     private readonly config: ConfigService,
   ) {}
 
@@ -67,7 +70,7 @@ export class ChannelDraftsService {
     throw new NotFoundException('Anime not found');
   }
 
-  private adminUserIds(): number[] {
+  private adminUserIdsFromEnv(): number[] {
     const raw = String(this.config.get<string>('telegram.adminUserId') ?? '').trim();
     if (!raw) return [];
     return raw
@@ -76,9 +79,44 @@ export class ChannelDraftsService {
       .filter((n) => Number.isFinite(n) && n > 0);
   }
 
-  /** Primary admin (first configured id). */
-  private adminUserId(): number | null {
-    return this.adminUserIds()[0] ?? null;
+  /**
+   * Everyone who should get channel-draft preview DMs:
+   * ADMIN_USER_ID env ∪ portal staff (admin/moderator) ∪ optional requester.
+   */
+  private async resolvePreviewRecipientIds(
+    extraIds: Array<number | string | null | undefined> = [],
+  ): Promise<number[]> {
+    const ids = new Set<number>();
+    for (const n of this.adminUserIdsFromEnv()) ids.add(n);
+
+    const staff = await this.usersRepo
+      .createQueryBuilder('u')
+      .select('u.telegram_user_id', 'telegram_user_id')
+      .where("u.app_role IN ('admin', 'moderator')")
+      .andWhere('u.is_banned = false')
+      .getRawMany<{ telegram_user_id: string }>();
+
+    for (const row of staff) {
+      const n = Number(row.telegram_user_id);
+      if (Number.isFinite(n) && n > 0) ids.add(n);
+    }
+
+    for (const raw of extraIds) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) ids.add(n);
+    }
+
+    return [...ids];
+  }
+
+  /** Primary admin (first configured env id, else first DB admin). */
+  private async primaryAdminUserId(
+    recipients?: number[],
+  ): Promise<number | null> {
+    const fromEnv = this.adminUserIdsFromEnv()[0];
+    if (fromEnv != null) return fromEnv;
+    const list = recipients ?? (await this.resolvePreviewRecipientIds());
+    return list[0] ?? null;
   }
 
   private postsChannelId(anime?: Anime | null): string {
@@ -366,6 +404,7 @@ export class ChannelDraftsService {
       );
     }
 
+    const recipients = await this.resolvePreviewRecipientIds();
     const deliverable = drafts.filter(
       (d) => d.coverFileId && String(d.proposedCaption ?? '').trim(),
     );
@@ -373,8 +412,8 @@ export class ChannelDraftsService {
     return {
       items: deliverable.map((d) => ({
         ...this.toDraftDto(d, d.anime),
-        admin_user_id: this.adminUserId(),
-        admin_user_ids: this.adminUserIds(),
+        admin_user_id: recipients[0] ?? null,
+        admin_user_ids: recipients,
         draft_keyboard: this.draftKeyboard(d.id, d.animeId),
       })),
     };
@@ -463,7 +502,11 @@ export class ChannelDraftsService {
    * Preview DM is delivered by tel-bot (polls pending-preview) because the API
    * host often cannot reach api.telegram.org.
    */
-  async createFromEpisode(animeId: string, episodeNumber: number) {
+  async createFromEpisode(
+    animeId: string,
+    episodeNumber: number,
+    opts?: { requestedByTelegramId?: string | number | null },
+  ) {
     const anime = await this.animeRepo.findOne({ where: { id: animeId } });
     if (!anime) throw new NotFoundException('Anime not found');
 
@@ -563,7 +606,10 @@ export class ChannelDraftsService {
       .andWhere('admin_preview_message_id IS NULL')
       .execute();
 
-    const adminId = this.adminUserId();
+    const recipients = await this.resolvePreviewRecipientIds([
+      opts?.requestedByTelegramId,
+    ]);
+    const primaryAdminId = await this.primaryAdminUserId(recipients);
     const draft = await this.draftRepo.save(
       this.draftRepo.create({
         animeId,
@@ -571,12 +617,13 @@ export class ChannelDraftsService {
         proposedCaption,
         coverFileId: anime.channelCoverFileId,
         status: 'pending',
-        adminPreviewChatId: adminId != null ? String(adminId) : null,
+        adminPreviewChatId:
+          primaryAdminId != null ? String(primaryAdminId) : null,
       }),
     );
 
     this.logger.log(
-      `channel draft queued for bot preview draft=${draft.id} anime=${animeId} ep=${episodeNumber}`,
+      `channel draft queued for bot preview draft=${draft.id} anime=${animeId} ep=${episodeNumber} recipients=${recipients.join(',') || 'none'}`,
     );
 
     return {
@@ -584,7 +631,8 @@ export class ChannelDraftsService {
       draft: this.toDraftDto(draft, anime),
       preview_sent: false,
       preview_queued: true,
-      reason: adminId ? 'queued_for_bot' : 'admin_not_configured',
+      preview_recipient_ids: recipients,
+      reason: recipients.length ? 'queued_for_bot' : 'admin_not_configured',
     };
   }
 

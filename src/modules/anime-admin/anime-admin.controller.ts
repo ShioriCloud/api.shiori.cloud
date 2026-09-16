@@ -166,9 +166,14 @@ export class AnimeAdminController {
   queueChannelDraft(
     @Param('animeId') animeId: string,
     @Body() body: { episode_number?: number; episodeNumber?: number },
+    @Req() req: PortalAuthedRequest,
   ) {
     const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
-    return this.animeAdminService.queueChannelDraftPreview(animeId, episodeNumber);
+    return this.animeAdminService.queueChannelDraftPreview(
+      animeId,
+      episodeNumber,
+      req.portalTelegramUserId,
+    );
   }
 
   @Post('anime/:animeId/episodes/batch')

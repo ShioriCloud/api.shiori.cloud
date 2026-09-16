@@ -1154,13 +1154,19 @@ export class AnimeAdminService {
   /**
    * Queue a channel-post draft preview for tel-bot (manual from admin panel).
    */
-  async queueChannelDraftPreview(animeIdOrSlug: string, episodeNumber: number) {
+  async queueChannelDraftPreview(
+    animeIdOrSlug: string,
+    episodeNumber: number,
+    requestedByTelegramId?: string | number | null,
+  ) {
     const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const ep = Number(episodeNumber);
     if (!Number.isFinite(ep) || ep <= 0) {
       throw new BadRequestException('episode_number required');
     }
-    return this.channelDraftsService.createFromEpisode(animeId, ep);
+    return this.channelDraftsService.createFromEpisode(animeId, ep, {
+      requestedByTelegramId,
+    });
   }
 
   async insertEpisodesBatch(animeIdOrSlug: string, episodes: Payload[]) {
