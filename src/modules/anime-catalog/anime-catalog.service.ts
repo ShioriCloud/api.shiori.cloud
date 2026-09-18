@@ -638,6 +638,7 @@ export class AnimeCatalogService {
         airingWeekday: anime.airingWeekday,
         airingTime: anime.airingTime,
         nextAiringDate: anime.nextAiringDate,
+        startDate: anime.startDate,
         maxPublishedEpisode,
         episodesCount: anime.episodesCount,
       }),
@@ -823,6 +824,8 @@ export class AnimeCatalogService {
     const ids = rows.map((row) => row.id);
     const genreMap = await this.loadGenresForAnimeIds(ids);
 
+    // Episode uploads are not required for schedule progression when start_date
+    // is set; still load max for legacy titles without start_date.
     const episodeMaxRows = await this.episodeRepo
       .createQueryBuilder('ep')
       .select('ep.anime_id', 'animeId')
@@ -851,6 +854,7 @@ export class AnimeCatalogService {
         airingWeekday: anime.airingWeekday,
         airingTime: anime.airingTime,
         nextAiringDate: anime.nextAiringDate,
+        startDate: anime.startDate,
         maxPublishedEpisode: maxEp ?? null,
         episodesCount: anime.episodesCount,
       });
