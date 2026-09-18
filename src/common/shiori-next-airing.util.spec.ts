@@ -1,6 +1,7 @@
 import {
   nextTehranOccurrenceUnixSec,
   parseAiringTimeHhmm,
+  parseIsoDateYmd,
   resolveEpisode1UnixSec,
   resolveShioriNextAiring,
 } from './shiori-next-airing.util';
@@ -34,6 +35,26 @@ describe('parseAiringTimeHhmm', () => {
     expect(parseAiringTimeHhmm('')).toBeNull();
     expect(parseAiringTimeHhmm('25:00')).toBeNull();
     expect(parseAiringTimeHhmm('22:00:00')).toBeNull();
+  });
+});
+
+describe('parseIsoDateYmd', () => {
+  it('keeps pg-style UTC midnight dates', () => {
+    expect(parseIsoDateYmd(new Date(Date.UTC(2026, 8, 12)))).toEqual({
+      year: 2026,
+      month: 9,
+      day: 12,
+    });
+  });
+
+  it('does not shift Asia/Tehran local midnight back a day', () => {
+    // Local midnight on 2026-09-12 in Iran (+03:30) is still civil day 12.
+    const localMidnight = new Date(2026, 8, 12, 0, 0, 0, 0);
+    expect(parseIsoDateYmd(localMidnight)).toEqual({
+      year: 2026,
+      month: 9,
+      day: 12,
+    });
   });
 });
 
@@ -86,6 +107,12 @@ describe('resolveEpisode1UnixSec', () => {
     expect(formatTehran(unix!)).toEqual({ weekday: 'Sat', time: '22:00' });
     expect(unix).toBe(Math.floor(Date.UTC(2026, 8, 19, 18, 30) / 1000));
   });
+
+  it('accepts local Date objects without off-by-one', () => {
+    const unix = resolveEpisode1UnixSec(new Date(2026, 8, 12), 'شنبه', 22, 0);
+    expect(unix).not.toBeNull();
+    expect(formatTehran(unix!)).toEqual({ weekday: 'Sat', time: '22:00' });
+  });
 });
 
 describe('resolveShioriNextAiring', () => {
@@ -118,7 +145,7 @@ describe('resolveShioriNextAiring', () => {
         airingTime: '22:00',
         startDate: '2026-09-12',
         episodesCount: 12,
-        maxPublishedEpisode: 2, // uploads lag behind — ignored when startDate is set
+        maxPublishedEpisode: 2, // uploads lag behind — calendar still wins
       },
       fourWeeksLaterMorning,
     );
@@ -127,6 +154,23 @@ describe('resolveShioriNextAiring', () => {
       weekday: 'Sat',
       time: '22:00',
     });
+  });
+
+  it('floors next episode at max published + 1 when calendar is behind', () => {
+    // Only one week after premiere → calendar says ep 2, but ep 4 is already up.
+    const oneWeekLaterMorning = Date.UTC(2026, 8, 19, 6, 30);
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        startDate: '2026-09-12',
+        episodesCount: 12,
+        maxPublishedEpisode: 4,
+      },
+      oneWeekLaterMorning,
+    );
+    expect(result?.episode).toBe(5);
   });
 
   it('shows episode 1 before the premiere slot', () => {
@@ -207,6 +251,28 @@ describe('resolveShioriNextAiring', () => {
       SAT_MORNING_TEHRAN_MS,
     );
     expect(result?.episode).toBe(1);
+    expect(result?.airing_at).toBe(
+      Math.floor(Date.UTC(2026, 8, 26, 18, 30) / 1000),
+    );
+  });
+
+  it('keeps the delayed episode when next_airing_date is set after the slot passed', () => {
+    // Ep1 Sat 09-12, ep2 Sat 09-19. Sunday after ep2 slot → calendar would say ep3,
+    // but only ep1 is published and override pins the delayed ep2.
+    const sundayAfterEp2 = Date.UTC(2026, 8, 20, 6, 30);
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'RELEASING',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        startDate: '2026-09-12',
+        nextAiringDate: '2026-09-26',
+        episodesCount: 12,
+        maxPublishedEpisode: 1,
+      },
+      sundayAfterEp2,
+    );
+    expect(result?.episode).toBe(2);
     expect(result?.airing_at).toBe(
       Math.floor(Date.UTC(2026, 8, 26, 18, 30) / 1000),
     );

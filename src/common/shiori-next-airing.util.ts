@@ -95,12 +95,24 @@ export function nextTehranOccurrenceUnixSec(
 export function parseIsoDateYmd(
   value: string | null | undefined | Date,
 ): { year: number; month: number; day: number } | null {
-  let raw = '';
   if (value instanceof Date && Number.isFinite(value.getTime())) {
-    raw = value.toISOString().slice(0, 10);
-  } else {
-    raw = String(value ?? '').trim();
+    // pg `date` → UTC midnight; keep UTC Y-M-D.
+    // Local midnights (TypeORM/driver quirks in Asia/Tehran) must NOT go through
+    // toISOString() — that shifts the civil day back by one.
+    const iso = value.toISOString();
+    if (iso.endsWith('T00:00:00.000Z')) {
+      return {
+        year: value.getUTCFullYear(),
+        month: value.getUTCMonth() + 1,
+        day: value.getUTCDate(),
+      };
+    }
+    const teh = getTehranDateParts(value.getTime());
+    if (!teh) return null;
+    return { year: teh.year, month: teh.month, day: teh.day };
   }
+
+  const raw = String(value ?? '').trim();
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return null;
   const year = Number(match[1]);
@@ -178,9 +190,21 @@ function normalizeEpisodesCount(value: number | null | undefined): number {
   return DEFAULT_EPISODES_COUNT;
 }
 
+function normalizePublishedEpisode(value: number | null | undefined): number {
+  const n = Number(value);
+  if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  return 0;
+}
+
+function slotUnixSec(ep1At: number, episode: number): number {
+  return ep1At + (episode - 1) * WEEK_SEC;
+}
+
 /**
  * Weekly schedule progression from catalog start_date + weekday/time + episodes_count.
- * Independent of whether episodes have been uploaded yet.
+ * Advances on the calendar even when uploads lag. Published max is only a floor so we
+ * never label an already-released episode as "next", and so delayed titles with
+ * next_airing_date keep the episode that still needs to drop.
  */
 export function resolveShioriAiringPlan(
   input: {
@@ -193,8 +217,8 @@ export function resolveShioriAiringPlan(
     /** Catalog total; defaults to 12 when empty. */
     episodesCount?: number | null;
     /**
-     * Legacy fallback only when startDate is missing:
-     * next episode ≈ max published + 1.
+     * Highest published episode. Floors the next-episode number; also used as the
+     * full fallback when startDate is missing.
      */
     maxPublishedEpisode?: number | null;
   },
@@ -212,6 +236,8 @@ export function resolveShioriAiringPlan(
   if (!(SHIORI_WEEKDAYS as readonly string[]).includes(weekday)) return null;
 
   const total = normalizeEpisodesCount(input.episodesCount);
+  const published = normalizePublishedEpisode(input.maxPublishedEpisode);
+  const uploadNext = published + 1;
   const nowSec = Math.floor(nowMs / 1000);
 
   const ep1At = resolveEpisode1UnixSec(
@@ -225,27 +251,35 @@ export function resolveShioriAiringPlan(
   let airingAt: number;
 
   if (ep1At != null) {
-    // Calendar: ep N airs at ep1 + (N-1) weeks. Pick the next future slot.
-    let nextEp: number | null = null;
-    let nextAt: number | null = null;
+    let calendarEp: number | null = null;
     for (let n = 1; n <= total; n++) {
-      const at = ep1At + (n - 1) * WEEK_SEC;
-      if (at > nowSec) {
-        nextEp = n;
-        nextAt = at;
+      if (slotUnixSec(ep1At, n) > nowSec) {
+        calendarEp = n;
         break;
       }
     }
-    if (nextEp == null || nextAt == null) return null;
-    episode = nextEp;
-    airingAt = nextAt;
+    if (calendarEp == null) return null;
+
+    // Calendar leads when uploads lag; published max only prevents going backwards.
+    episode = Math.max(calendarEp, uploadNext);
+    if (episode > total) return null;
+
+    airingAt = slotUnixSec(ep1At, episode);
+    if (airingAt <= nowSec) {
+      const nextAt = nextTehranOccurrenceUnixSec(
+        weekday,
+        time.hour,
+        time.minute,
+        nowMs,
+      );
+      if (nextAt == null || nextAt <= 0) return null;
+      airingAt = nextAt;
+    }
   } else {
     // No start_date yet — keep a simple next weekly slot (legacy).
-    const maxEp = Number(input.maxPublishedEpisode);
-    const published =
-      Number.isFinite(maxEp) && maxEp > 0 ? Math.floor(maxEp) : 0;
     if (published >= total) return null;
-    episode = published > 0 ? published + 1 : 1;
+    episode = uploadNext > 1 ? uploadNext : 1;
+    if (episode > total) return null;
     const nextAt = nextTehranOccurrenceUnixSec(
       weekday,
       time.hour,
@@ -257,14 +291,33 @@ export function resolveShioriAiringPlan(
   }
 
   const overrideAt = tehranDateHhmmToUnixSec(
-    String(input.nextAiringDate ?? ''),
+    input.nextAiringDate,
     time.hour,
     time.minute,
   );
   if (overrideAt != null && overrideAt > nowSec) {
     const overrideWeekday = persianWeekdayFromUnixSec(overrideAt);
     if (!overrideWeekday) return null;
-    return { episode, airing_at: overrideAt, weekday: overrideWeekday };
+
+    // Manual date = "this delayed episode still". Prefer the next unpublished
+    // number; if nothing is uploaded yet, keep the last due calendar episode
+    // (the one whose original slot already passed) instead of jumping ahead.
+    let overrideEpisode = uploadNext > 1 ? uploadNext : episode;
+    if (ep1At != null && published <= 0) {
+      let lastDue = 0;
+      for (let n = 1; n <= total; n++) {
+        if (slotUnixSec(ep1At, n) <= nowSec) lastDue = n;
+        else break;
+      }
+      if (lastDue > 0) overrideEpisode = lastDue;
+    }
+    if (overrideEpisode > total) return null;
+
+    return {
+      episode: overrideEpisode,
+      airing_at: overrideAt,
+      weekday: overrideWeekday,
+    };
   }
 
   return {

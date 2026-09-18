@@ -824,8 +824,8 @@ export class AnimeCatalogService {
     const ids = rows.map((row) => row.id);
     const genreMap = await this.loadGenresForAnimeIds(ids);
 
-    // Episode uploads are not required for schedule progression when start_date
-    // is set; still load max for legacy titles without start_date.
+    // Calendar progression when start_date is set; max episode floors "next"
+    // and remains the full fallback for titles without start_date.
     const episodeMaxRows = await this.episodeRepo
       .createQueryBuilder('ep')
       .select('ep.anime_id', 'animeId')
