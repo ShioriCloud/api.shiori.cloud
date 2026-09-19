@@ -56,6 +56,24 @@ export class DownloadTokensController {
     return this.downloadTokensService.getWalletStatus(String(req.telegramUserId));
   }
 
+  @Post('wallet/refresh')
+  @UseGuards(AppUserAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Poll recent Daramet donations then return updated wallet (I paid button)',
+  })
+  async walletRefresh(@Req() req: AppUserAuthedRequest) {
+    const telegramUserId = String(req.telegramUserId);
+    this.downloadTokensService.assertWalletEnabledPublic(telegramUserId);
+    const sync = await this.downloadTokensService.syncDarametDonations({
+      pages: 2,
+    });
+    const wallet =
+      await this.downloadTokensService.getWalletStatus(telegramUserId);
+    return { wallet, credited: sync.credited, sync };
+  }
+
   @Post('free-download/claim')
   @UseGuards(AppUserAuthGuard)
   @ApiOperation({ summary: 'Spend 1 token and return free episode download link' })

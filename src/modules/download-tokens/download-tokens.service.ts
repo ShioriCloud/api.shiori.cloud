@@ -85,6 +85,11 @@ export class DownloadTokensService {
     }
   }
 
+  /** Public alias for controller refresh endpoint. */
+  assertWalletEnabledPublic(telegramUserId: string): void {
+    this.assertWalletEnabled(telegramUserId);
+  }
+
   private donateBaseUrl(): string {
     return (
       String(this.config.get<string>('daramet.donateUrl') ?? '').trim() ||
