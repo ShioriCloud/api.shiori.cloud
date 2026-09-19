@@ -30,11 +30,11 @@ describe('download-token-wallet.util', () => {
   it('builds webintent urls', () => {
     const url = buildDarametWebIntentUrl({
       donateBaseUrl: 'https://daramet.com/shiori',
-      amountIrr: 100000,
+      amountIrr: 10000,
       message: '90344148',
     });
     expect(url).toContain('webintent');
-    expect(url).toContain('donate=100000');
+    expect(url).toContain('donate=10000');
     expect(url).toContain('message=90344148');
   });
 });

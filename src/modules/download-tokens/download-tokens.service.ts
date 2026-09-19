@@ -16,7 +16,7 @@ import {
   TelegramUser,
 } from '../../entities';
 import { DarametDonatesClient } from './daramet-donates.client';
-import { DONATION_TOKEN_TIERS, tokensForDonationAmount } from './donation-token-tiers';
+import { DONATION_TOKEN_TIERS, tokensForDonationAmount, darametApiAmountToToman } from './donation-token-tiers';
 import {
   buildDarametWebIntentUrl,
   isDownloadTokenWalletEnabledFor,
@@ -368,8 +368,8 @@ export class DownloadTokensService {
           continue;
         }
 
-        const amountIrr = Number(data?.amount ?? 0);
-        const tokens = tokensForDonationAmount(amountIrr);
+        const amountToman = darametApiAmountToToman(Number(data?.amount ?? 0));
+        const tokens = tokensForDonationAmount(amountToman);
         if (tokens < 1) {
           skipped += 1;
           continue;
@@ -378,11 +378,11 @@ export class DownloadTokensService {
         const result = await this.creditTokens({
           telegramUserId,
           tokens,
-          amountIrr,
+          amountIrr: amountToman,
           reason: 'donation_credit',
           refType: 'daramet_donate',
           refId,
-          note: `daramet donate ${refId} amount_irr=${amountIrr}`,
+          note: `daramet donate ${refId} amount_toman=${amountToman}`,
         });
 
         if (result.credited > 0) {
