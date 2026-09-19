@@ -37,6 +37,17 @@ export class AnimeCatalogController {
     return this.animeCatalogService.listRecent(limit ? Number(limit) : 20);
   }
 
+  @Get('new-episodes')
+  @ApiOperation({
+    summary:
+      'Anime with a new episode in the last 7 days (by last_episode_at)',
+  })
+  listNewEpisodes(@Query('limit') limit?: number) {
+    return this.animeCatalogService.listNewEpisodes(
+      limit ? Number(limit) : 20,
+    );
+  }
+
   @Get('schedule')
   @ApiOperation({
     summary:

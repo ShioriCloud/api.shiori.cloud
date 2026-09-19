@@ -11,7 +11,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_home_blocks_system_rail_id
 
 -- Make room before seeded rails if customs already exist and no system rails yet.
 UPDATE home_blocks
-SET sort_order = sort_order + 5
+SET sort_order = sort_order + 6
 WHERE type <> 'system_rail'
   AND NOT EXISTS (SELECT 1 FROM home_blocks WHERE type = 'system_rail');
 
@@ -23,28 +23,35 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111102', 'system_rail', 'فصل جاری', 2, true,
+SELECT 'a1111111-1111-4111-8111-111111111106', 'system_rail', 'قسمت‌های تازه', 2, true,
+       '{"rail_id":"new_episodes"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'new_episodes'
+);
+
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111102', 'system_rail', 'فصل جاری', 3, true,
        '{"rail_id":"latest"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'latest'
 );
 
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111103', 'system_rail', 'محبوب‌ترین‌ها', 3, true,
+SELECT 'a1111111-1111-4111-8111-111111111103', 'system_rail', 'محبوب‌ترین‌ها', 4, true,
        '{"rail_id":"popular"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'popular'
 );
 
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111104', 'system_rail', 'دونگهوا', 4, true,
+SELECT 'a1111111-1111-4111-8111-111111111104', 'system_rail', 'دونگهوا', 5, true,
        '{"rail_id":"donghua"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'donghua'
 );
 
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111105', 'system_rail', 'انیمه سینمایی', 5, true,
+SELECT 'a1111111-1111-4111-8111-111111111105', 'system_rail', 'انیمه سینمایی', 6, true,
        '{"rail_id":"movies"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'movies'

@@ -234,25 +234,31 @@ WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'recent'
 );
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111102', 'system_rail', 'فصل جاری', 2, true,
+SELECT 'a1111111-1111-4111-8111-111111111106', 'system_rail', 'قسمت‌های تازه', 2, true,
+       '{"rail_id":"new_episodes"}'::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'new_episodes'
+);
+INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
+SELECT 'a1111111-1111-4111-8111-111111111102', 'system_rail', 'فصل جاری', 3, true,
        '{"rail_id":"latest"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'latest'
 );
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111103', 'system_rail', 'محبوب‌ترین‌ها', 3, true,
+SELECT 'a1111111-1111-4111-8111-111111111103', 'system_rail', 'محبوب‌ترین‌ها', 4, true,
        '{"rail_id":"popular"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'popular'
 );
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111104', 'system_rail', 'دونگهوا', 4, true,
+SELECT 'a1111111-1111-4111-8111-111111111104', 'system_rail', 'دونگهوا', 5, true,
        '{"rail_id":"donghua"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'donghua'
 );
 INSERT INTO home_blocks (id, type, title, sort_order, is_active, config)
-SELECT 'a1111111-1111-4111-8111-111111111105', 'system_rail', 'انیمه سینمایی', 5, true,
+SELECT 'a1111111-1111-4111-8111-111111111105', 'system_rail', 'انیمه سینمایی', 6, true,
        '{"rail_id":"movies"}'::jsonb
 WHERE NOT EXISTS (
   SELECT 1 FROM home_blocks WHERE type = 'system_rail' AND config->>'rail_id' = 'movies'

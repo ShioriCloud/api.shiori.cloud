@@ -91,6 +91,8 @@ export type AnimeCardDto = {
   video_file_type?: 'softsub' | 'hardsub';
   video_resolution?: '480p' | '720p' | '1080p';
   video_encode?: 'x264' | 'x265' | 'x265_10bit' | 'bluray';
+  /** Highest published episode number (home new-episodes rail). */
+  latest_episode_number?: number;
 };
 
 /** Weekly grid: episodic Shiori titles. MOVIE (and other formats) stay out. */
@@ -361,6 +363,54 @@ export class AnimeCatalogService {
     });
     const genreMap = await this.loadGenresForAnimeIds(rows.map((r) => r.id));
     return rows.map((row) => this.toCard(row, genreMap.get(row.id) ?? []));
+  }
+
+  /**
+   * Anime that received an episode upload in the last 7 days.
+   * One card per title, ordered by lastEpisodeAt DESC (any airing status).
+   */
+  async listNewEpisodes(limit = 20): Promise<AnimeCardDto[]> {
+    const take =
+      Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 20;
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const rows = await this.animeRepo
+      .createQueryBuilder('anime')
+      .where('anime.lastEpisodeAt IS NOT NULL')
+      .andWhere('anime.lastEpisodeAt >= :since', { since })
+      .orderBy('anime.lastEpisodeAt', 'DESC')
+      .addOrderBy('anime.createdAt', 'DESC')
+      .take(take)
+      .getMany();
+
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((r) => r.id);
+    const genreMap = await this.loadGenresForAnimeIds(ids);
+
+    const episodeMaxRows = await this.episodeRepo
+      .createQueryBuilder('ep')
+      .select('ep.anime_id', 'animeId')
+      .addSelect('MAX(ep.episode_number)', 'maxEpisode')
+      .where('ep.anime_id IN (:...ids)', { ids })
+      .groupBy('ep.anime_id')
+      .getRawMany<{
+        animeId: string;
+        maxEpisode: string | null;
+      }>();
+
+    const maxByAnime = new Map<string, number>();
+    for (const row of episodeMaxRows) {
+      const n = Number(row.maxEpisode);
+      if (Number.isFinite(n) && n > 0) maxByAnime.set(String(row.animeId), n);
+    }
+
+    return rows.map((row) => {
+      const card = this.toCard(row, genreMap.get(row.id) ?? []);
+      const latest = maxByAnime.get(row.id);
+      if (latest != null) card.latest_episode_number = latest;
+      return card;
+    });
   }
 
   async search(params: AnimeSearchParams): Promise<AnimeSearchResult> {

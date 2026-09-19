@@ -196,7 +196,7 @@ export class HomeAdminService {
       await this.blockRepo
         .createQueryBuilder()
         .update(HomeBlock)
-        .set({ sortOrder: () => '"sort_order" + 5' })
+        .set({ sortOrder: () => '"sort_order" + 6' })
         .where('type <> :type', { type: 'system_rail' })
         .execute();
     }

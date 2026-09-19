@@ -13,6 +13,7 @@ export const MAX_CURATED_ANIME_IDS = 100;
 
 export const SYSTEM_RAIL_IDS = [
   'recent',
+  'new_episodes',
   'latest',
   'popular',
   'donghua',
@@ -21,6 +22,7 @@ export const SYSTEM_RAIL_IDS = [
 
 export const SYSTEM_RAIL_LABELS: Record<HomeSystemRailId, string> = {
   recent: 'تازه‌اضافه‌شده',
+  new_episodes: 'قسمت‌های تازه',
   latest: 'فصل جاری',
   popular: 'محبوب‌ترین‌ها',
   donghua: 'دونگهوا',
@@ -38,24 +40,29 @@ export const SYSTEM_RAIL_SEED: Array<{
     sort_order: 1,
   },
   {
+    id: 'a1111111-1111-4111-8111-111111111106',
+    rail_id: 'new_episodes',
+    sort_order: 2,
+  },
+  {
     id: 'a1111111-1111-4111-8111-111111111102',
     rail_id: 'latest',
-    sort_order: 2,
+    sort_order: 3,
   },
   {
     id: 'a1111111-1111-4111-8111-111111111103',
     rail_id: 'popular',
-    sort_order: 3,
+    sort_order: 4,
   },
   {
     id: 'a1111111-1111-4111-8111-111111111104',
     rail_id: 'donghua',
-    sort_order: 4,
+    sort_order: 5,
   },
   {
     id: 'a1111111-1111-4111-8111-111111111105',
     rail_id: 'movies',
-    sort_order: 5,
+    sort_order: 6,
   },
 ];
 

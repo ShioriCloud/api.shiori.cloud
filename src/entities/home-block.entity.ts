@@ -14,6 +14,7 @@ export type HomeBlockType =
 
 export type HomeSystemRailId =
   | 'recent'
+  | 'new_episodes'
   | 'latest'
   | 'popular'
   | 'donghua'
