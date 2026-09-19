@@ -7,6 +7,7 @@ import {
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { TelegramModule } from '../../telegram/telegram.module';
+import { DarametDonatesClient } from './daramet-donates.client';
 import { DownloadTokensController } from './download-tokens.controller';
 import { DownloadTokensService } from './download-tokens.service';
 
@@ -17,7 +18,7 @@ import { DownloadTokensService } from './download-tokens.service';
     PortalAuthModule,
   ],
   controllers: [DownloadTokensController],
-  providers: [DownloadTokensService],
+  providers: [DownloadTokensService, DarametDonatesClient],
   exports: [DownloadTokensService],
 })
 export class DownloadTokensModule {}

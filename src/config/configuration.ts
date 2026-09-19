@@ -53,6 +53,19 @@ export default () => {
   daramet: {
     webhookSecret: process.env.DARAMET_WEBHOOK_SECRET ?? '',
     donateUrl: process.env.DARAMET_DONATE_URL ?? '',
+    apiKey: process.env.DARAMET_API_KEY ?? '',
+  },
+  downloadTokens: {
+    /**
+     * off = everyone uses launch free downloads (no claim).
+     * allowlist = only listed telegram user ids use token wallet.
+     * on = everyone uses token wallet.
+     */
+    walletMode: process.env.DOWNLOAD_TOKEN_WALLET_MODE ?? 'off',
+    walletAllowlist: process.env.DOWNLOAD_TOKEN_WALLET_ALLOWLIST ?? '',
+  },
+  cron: {
+    secret: process.env.CRON_SECRET ?? '',
   },
   subscription: {
     monthlyAmountIrr: parseInt(

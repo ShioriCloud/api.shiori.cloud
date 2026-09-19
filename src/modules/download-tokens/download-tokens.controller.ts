@@ -2,12 +2,15 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Post,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AppUserAuthGuard,
@@ -25,7 +28,10 @@ import { DownloadTokensService } from './download-tokens.service';
 @ApiTags('Download Tokens')
 @Controller('download-tokens')
 export class DownloadTokensController {
-  constructor(private readonly downloadTokensService: DownloadTokensService) {}
+  constructor(
+    private readonly downloadTokensService: DownloadTokensService,
+    private readonly config: ConfigService,
+  ) {}
 
   @Get('tiers')
   @ApiOperation({ summary: 'Donation amount → token packages (for donate UI)' })
@@ -38,6 +44,16 @@ export class DownloadTokensController {
   @ApiOperation({ summary: 'Current free-download token balance' })
   balance(@Req() req: AppUserAuthedRequest) {
     return this.downloadTokensService.getBalance(String(req.telegramUserId));
+  }
+
+  @Get('wallet')
+  @UseGuards(AppUserAuthGuard)
+  @ApiOperation({
+    summary:
+      'Token wallet status for current user (allowlist/on) + Daramet recharge links',
+  })
+  wallet(@Req() req: AppUserAuthedRequest) {
+    return this.downloadTokensService.getWalletStatus(String(req.telegramUserId));
   }
 
   @Post('free-download/claim')
@@ -56,7 +72,7 @@ export class DownloadTokensController {
   @Post('credit')
   @UseGuards(PortalAuthGuard, PortalFullAdminGuard)
   @ApiOperation({
-    summary: 'Admin credit tokens (manual until Daramet webhook)',
+    summary: 'Admin credit tokens (manual or amount→tier mapping)',
   })
   credit(@Body() body: CreditDownloadTokensDto) {
     return this.downloadTokensService.creditTokens({
@@ -68,21 +84,51 @@ export class DownloadTokensController {
     });
   }
 
-  /**
-   * Stub for future Daramet webhook.
-   * Later: verify signature → tokensForDonationAmount(amount) → creditTokens.
-   */
+  @Post('daramet-sync')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Poll Daramet donations and credit wallets (x-cron-secret)',
+  })
+  async darametSync(@Headers('x-cron-secret') cronSecret: string | undefined) {
+    const expected = String(this.config.get<string>('cron.secret') ?? '').trim();
+    const provided = String(cronSecret ?? '').trim();
+    const allowDev = Boolean(this.config.get<boolean>('allowDevAuth'));
+
+    if (expected) {
+      if (provided !== expected) {
+        throw new UnauthorizedException('invalid cron secret');
+      }
+    } else if (!allowDev) {
+      throw new UnauthorizedException('CRON_SECRET not configured');
+    }
+
+    const result = await this.downloadTokensService.syncDarametDonations({
+      pages: 2,
+    });
+    return { ok: true, ...result };
+  }
+
+  @Post('daramet-sync/admin')
+  @UseGuards(PortalAuthGuard, PortalFullAdminGuard)
+  @ApiOperation({ summary: 'Admin-triggered Daramet donation sync' })
+  async darametSyncAdmin() {
+    const result = await this.downloadTokensService.syncDarametDonations({
+      pages: 3,
+    });
+    return { ok: true, ...result };
+  }
+
   @Post('daramet-webhook')
   @HttpCode(HttpStatus.NOT_IMPLEMENTED)
   @ApiOperation({
-    summary: 'Daramet donation webhook (not implemented yet)',
+    summary: 'Daramet has no push webhook — use daramet-sync poll instead',
   })
   darametWebhook() {
     return {
       ok: false,
-      code: 'not_implemented',
+      code: 'use_daramet_sync',
       message:
-        'Daramet webhook will credit download tokens from paid amount once connected.',
+        'Use POST /download-tokens/daramet-sync with x-cron-secret to poll Daramet donations.',
     };
   }
 }
