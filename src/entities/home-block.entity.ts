@@ -26,6 +26,9 @@ export type CuratedSliderConfig = {
 
 export type CtaBannerConfig = {
   image_url?: string;
+  /** Linked anime — public home builds an in-app `/anime/...` path (no full reload). */
+  anime_id?: string;
+  /** Legacy/manual override; prefer `anime_id`. */
   link_url?: string;
   open_in_new_tab?: boolean;
 };

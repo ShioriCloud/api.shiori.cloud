@@ -101,6 +101,8 @@ export const normalizeConfig = (
     return {
       image_url:
         typeof config.image_url === 'string' ? config.image_url.trim() : '',
+      anime_id:
+        typeof config.anime_id === 'string' ? config.anime_id.trim() : '',
       link_url:
         typeof config.link_url === 'string' ? config.link_url.trim() : '',
       open_in_new_tab: config.open_in_new_tab === true,
@@ -177,6 +179,10 @@ export const validateBlockPayload = (
     const imageUrl = banner.image_url?.trim();
     if (!imageUrl || !isAllowedImageUrl(imageUrl)) {
       throw new BadRequestException('بنر CTA به تصویر معتبر نیاز دارد');
+    }
+    const animeId = banner.anime_id?.trim();
+    if (!animeId || !isValidUuid(animeId)) {
+      throw new BadRequestException('بنر CTA به انتخاب انیمه نیاز دارد');
     }
     if (banner.link_url && !isAllowedLinkUrl(banner.link_url)) {
       throw new BadRequestException('لینک بنر نامعتبر است');

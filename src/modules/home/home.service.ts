@@ -28,10 +28,9 @@ const animeDetailPath = (anime: Pick<AnimeCardDto, 'id' | 'slug'>) => {
 /** Prefer internal `/anime/...` paths so the mini-app stays in-router. */
 const resolveCtaLinkUrl = (
   configLink: string | null | undefined,
-  anime: Pick<AnimeCardDto, 'id' | 'slug'>,
-): string => {
+  anime?: Pick<AnimeCardDto, 'id' | 'slug'> | null,
+): string | null => {
   const raw = String(configLink ?? '').trim();
-  if (!raw) return animeDetailPath(anime);
 
   if (raw.startsWith('/anime/')) return raw;
 
@@ -46,7 +45,12 @@ const resolveCtaLinkUrl = (
     // fall through
   }
 
-  return raw;
+  if (anime) {
+    if (!raw) return animeDetailPath(anime);
+    return raw;
+  }
+
+  return raw || null;
 };
 
 @Injectable()
@@ -93,8 +97,8 @@ export class HomeService {
         continue;
       }
 
-      if (row.type === 'cta_card') {
-        const config = row.config as CtaCardConfig;
+      if (row.type === 'cta_card' || row.type === 'cta_banner') {
+        const config = row.config as CtaCardConfig | CtaBannerConfig;
         const id = config.anime_id?.trim();
         if (id) animeIds.add(id);
       }
@@ -134,13 +138,19 @@ export class HomeService {
       const imageUrl = config.image_url?.trim();
       if (!imageUrl) return null;
 
+      const animeId = config.anime_id?.trim() || null;
+      const anime = animeId ? animeCardMap.get(animeId) : undefined;
+      const linkUrl = resolveCtaLinkUrl(config.link_url, anime ?? null);
+
       return {
         type: 'cta_banner',
         id: row.id,
         title: row.title,
+        anime_id: anime?.id ?? animeId,
+        slug: anime?.slug ?? null,
         image_url: imageUrl,
-        link_url: config.link_url?.trim() || null,
-        open_in_new_tab: config.open_in_new_tab === true,
+        link_url: linkUrl,
+        open_in_new_tab: false,
       };
     }
 
@@ -159,7 +169,8 @@ export class HomeService {
         '';
       if (!imageUrl) return null;
 
-      const linkUrl = resolveCtaLinkUrl(config.link_url, anime);
+      const linkUrl =
+        resolveCtaLinkUrl(config.link_url, anime) ?? animeDetailPath(anime);
       const description =
         anime.description?.trim() || row.description?.trim() || null;
 
