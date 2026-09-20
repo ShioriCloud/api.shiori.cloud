@@ -306,6 +306,12 @@ export class SupportTicketsService {
     return summary;
   }
 
+  /** Sidebar badge: tickets awaiting staff (`open`). */
+  async getAdminOpenCount(): Promise<{ open: number }> {
+    const summary = await this.loadAdminSummary();
+    return { open: summary.open };
+  }
+
   private async loadUsers(
     ids: string[],
   ): Promise<Map<string, TelegramUser>> {

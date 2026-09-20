@@ -38,6 +38,12 @@ export class SupportTicketsAdminController {
     });
   }
 
+  @Get('summary')
+  @ApiOperation({ summary: 'Open ticket count for admin sidebar badge' })
+  summary() {
+    return this.supportTicketsService.getAdminOpenCount();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get support ticket detail' })
   get(@Param('id') id: string) {
