@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   NotificationCampaign,
   TelegramDmOutbox,
@@ -38,7 +38,7 @@ export class TelegramDmOutboxService {
       .map((item) => {
         const chatId = String(item.chatId ?? '').trim();
         const text = String(item.text ?? '').trim();
-        if (!chatId || !text) return null;
+        if (!chatId || chatId === '0' || !text) return null;
         return this.outboxRepo.create({
           campaignId: item.campaignId ? String(item.campaignId) : null,
           chatId,
@@ -61,6 +61,7 @@ export class TelegramDmOutboxService {
 
   /**
    * Claim pending (or stale claimed) rows for tel-bot delivery.
+   * Select + update + entity reload — avoids broken raw RETURNING column mapping.
    */
   async claimPending(limitRaw?: number): Promise<{
     items: Array<{
@@ -74,14 +75,9 @@ export class TelegramDmOutboxService {
   }> {
     const limit = Math.min(100, Math.max(1, Number(limitRaw) || 40));
 
-    const claimed: Array<Record<string, unknown>> = await this.dataSource.query(
-      `
-      UPDATE telegram_dm_outbox AS o
-      SET
-        status = 'claimed',
-        claimed_at = now(),
-        attempts = o.attempts + 1
-      WHERE o.id IN (
+    const claimed = await this.dataSource.transaction(async (manager) => {
+      const idRows: Array<{ id: string }> = await manager.query(
+        `
         SELECT id
         FROM telegram_dm_outbox
         WHERE status = 'pending'
@@ -93,27 +89,45 @@ export class TelegramDmOutboxService {
         ORDER BY created_at ASC
         LIMIT $1
         FOR UPDATE SKIP LOCKED
-      )
-      RETURNING
-        o.id,
-        o.campaign_id,
-        o.chat_id,
-        o.text,
-        o.web_app_url,
-        o.attempts
-      `,
-      [limit],
-    );
+        `,
+        [limit],
+      );
+
+      const ids = idRows
+        .map((row) => String(row?.id ?? '').trim())
+        .filter(Boolean);
+      if (!ids.length) return [] as TelegramDmOutbox[];
+
+      await manager.query(
+        `
+        UPDATE telegram_dm_outbox
+        SET
+          status = 'claimed',
+          claimed_at = now(),
+          attempts = attempts + 1
+        WHERE id = ANY($1::uuid[])
+        `,
+        [ids],
+      );
+
+      return manager.find(TelegramDmOutbox, {
+        where: { id: In(ids) },
+        order: { createdAt: 'ASC' },
+      });
+    });
 
     return {
-      items: claimed.map((row) => ({
-        id: String(row.id),
-        campaign_id: row.campaign_id != null ? String(row.campaign_id) : null,
-        chat_id: Number(row.chat_id),
-        text: String(row.text ?? ''),
-        web_app_url: row.web_app_url != null ? String(row.web_app_url) : null,
-        attempts: Number(row.attempts) || 0,
-      })),
+      items: claimed.map((row) => {
+        const chatId = Number(row.chatId);
+        return {
+          id: row.id,
+          campaign_id: row.campaignId,
+          chat_id: Number.isFinite(chatId) ? chatId : 0,
+          text: String(row.text ?? ''),
+          web_app_url: row.webAppUrl,
+          attempts: row.attempts ?? 0,
+        };
+      }),
     };
   }
 
@@ -132,48 +146,63 @@ export class TelegramDmOutboxService {
 
     for (const result of results) {
       const id = String(result?.id ?? '').trim();
-      if (!id) continue;
+      if (!id || id === 'undefined') continue;
 
-      const row = await this.outboxRepo.findOne({ where: { id } });
-      if (!row) continue;
+      try {
+        const row = await this.outboxRepo.findOne({ where: { id } });
+        if (!row) continue;
 
-      if (result.ok) {
-        row.status = 'sent';
-        row.sentAt = new Date();
-        row.error = null;
-        await this.outboxRepo.save(row);
-        sent += 1;
-        if (row.campaignId) {
-          const list = sentByCampaign.get(row.campaignId) ?? [];
-          list.push(row.chatId);
-          sentByCampaign.set(row.campaignId, list);
+        if (result.ok) {
+          row.status = 'sent';
+          row.sentAt = new Date();
+          row.error = null;
+          await this.outboxRepo.save(row);
+          sent += 1;
+          if (row.campaignId) {
+            const list = sentByCampaign.get(row.campaignId) ?? [];
+            list.push(String(row.chatId));
+            sentByCampaign.set(row.campaignId, list);
+          }
+        } else {
+          row.status = 'failed';
+          row.error = String(result.error ?? 'send failed').slice(0, 500);
+          await this.outboxRepo.save(row);
+          failed += 1;
         }
-      } else {
-        row.status = 'failed';
-        row.error = String(result.error ?? 'send failed').slice(0, 500);
-        await this.outboxRepo.save(row);
+      } catch (error) {
+        this.logger.warn(
+          `ack row ${id} failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
         failed += 1;
       }
     }
 
     for (const [campaignId, chatIds] of sentByCampaign) {
-      const unique = [...new Set(chatIds)];
+      const unique = [...new Set(chatIds.filter(Boolean))];
       if (!unique.length) continue;
 
-      await this.campaignsRepo.increment(
-        { id: campaignId },
-        'telegramSentCount',
-        unique.length,
-      );
+      try {
+        await this.campaignsRepo.increment(
+          { id: campaignId },
+          'telegramSentCount',
+          unique.length,
+        );
 
-      await this.dataSource
-        .createQueryBuilder()
-        .update(UserNotification)
-        .set({ telegramSentAt: () => 'now()' })
-        .where('campaign_id = :campaignId', { campaignId })
-        .andWhere('telegram_user_id IN (:...ids)', { ids: unique })
-        .andWhere('telegram_sent_at IS NULL')
-        .execute();
+        await this.dataSource
+          .createQueryBuilder()
+          .update(UserNotification)
+          .set({ telegramSentAt: () => 'now()' })
+          .where('campaign_id = :campaignId', { campaignId })
+          .andWhere('telegram_user_id IN (:...ids)', { ids: unique })
+          .andWhere('telegram_sent_at IS NULL')
+          .execute();
+      } catch (error) {
+        this.logger.warn(
+          `ack campaign ${campaignId} bookkeeping failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     return { ok: true, sent, failed };
