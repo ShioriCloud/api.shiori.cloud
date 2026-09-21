@@ -55,6 +55,39 @@ const pickAnimeTitle = (anime: Anime): string => {
   return 'انیمه';
 };
 
+const escapeHtml = (value: string) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+/** Same channel-address marker as TheShioriSub captions (override via CUSTOM_EMOJI_CHAT). */
+const channelAddressEmoji = (): string => {
+  const id =
+    process.env.CUSTOM_EMOJI_CHAT?.trim() || '5215334566549540768';
+  return `<tg-emoji emoji-id="${id}">💬</tg-emoji>`;
+};
+
+const buildEpisodeReleaseInboxMessage = (
+  episodeNumber: number,
+  animeTitle: string,
+): string =>
+  `قسمت ${episodeNumber} انیمه ${animeTitle} آماده‌ی دانلوده.`;
+
+const buildEpisodeReleaseTelegramMessage = (
+  episodeNumber: number,
+  animeTitle: string,
+): string => {
+  const marker = channelAddressEmoji();
+  return [
+    `قسمت ${episodeNumber} انیمه <b>${escapeHtml(animeTitle)}</b> آماده‌ی دانلوده.`,
+    '',
+    `${marker} @TheShiori`,
+    `${marker} @TheShioriSub`,
+  ].join('\n');
+};
+
 @Injectable()
 export class NotificationsAdminService {
   constructor(
@@ -154,8 +187,16 @@ export class NotificationsAdminService {
       }
     }
 
+    const animeTitle = pickAnimeTitle(anime);
     const title = 'قسمت جدید منتشر شد';
-    const message = `قسمت ${dto.episodeNumber} انیمه «${pickAnimeTitle(anime)}» آماده تماشاست.`;
+    const message = buildEpisodeReleaseInboxMessage(
+      dto.episodeNumber,
+      animeTitle,
+    );
+    const telegramMessage = buildEpisodeReleaseTelegramMessage(
+      dto.episodeNumber,
+      animeTitle,
+    );
     const href = `/anime/${dto.animeId}`;
 
     const prefOn = (value: unknown): boolean => {
@@ -246,7 +287,7 @@ export class NotificationsAdminService {
         telegramUserIds.map((chatId) => ({
           campaignId: campaign.id,
           chatId,
-          text: message,
+          text: telegramMessage,
           webAppUrl,
         })),
       );

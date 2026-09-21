@@ -84,7 +84,7 @@ export class TelegramBotService {
       payload.webAppUrl != null
         ? {
             inline_keyboard: [
-              [{ text: 'مشاهده در شیوری', web_app: { url: payload.webAppUrl } }],
+              [{ text: 'مشاهده در مینی‌اپ', web_app: { url: payload.webAppUrl } }],
             ],
           }
         : undefined;
