@@ -31,6 +31,7 @@ import { AttributeSponsorJoinDto } from '../sponsor-campaigns/sponsor-campaigns.
 import { SponsorCampaignsService } from '../sponsor-campaigns/sponsor-campaigns.service';
 import { BotService } from './bot.service';
 import { ChannelDraftsService } from './channel-drafts.service';
+import { TelegramDmOutboxService } from '../telegram-dm/telegram-dm-outbox.service';
 
 @ApiTags('Bot')
 @Controller('bot')
@@ -41,12 +42,40 @@ export class BotController {
     private readonly botService: BotService,
     private readonly sponsorCampaigns: SponsorCampaignsService,
     private readonly channelDrafts: ChannelDraftsService,
+    private readonly telegramDmOutbox: TelegramDmOutboxService,
   ) {}
 
   @Get('health')
   @ApiOperation({ summary: 'Health check for tel-bot startup' })
   health(): BotOkResponseDto {
     return this.botService.health();
+  }
+
+  @Get('telegram-dm/pending')
+  @ApiOperation({
+    summary: 'Claim pending Telegram DMs for tel-bot delivery (API cannot reach Telegram)',
+  })
+  @ApiQuery({ name: 'limit', required: false })
+  listPendingTelegramDms(@Query('limit') limit?: string) {
+    return this.telegramDmOutbox.claimPending(limit ? Number(limit) : undefined);
+  }
+
+  @Post('telegram-dm/ack')
+  @ApiOperation({ summary: 'Ack Telegram DM send results from tel-bot' })
+  ackTelegramDms(
+    @Body()
+    body: {
+      results?: Array<{ id?: string; ok?: boolean; error?: string | null }>;
+    },
+  ) {
+    const results = Array.isArray(body?.results) ? body.results : [];
+    return this.telegramDmOutbox.ackResults(
+      results.map((row) => ({
+        id: String(row.id ?? ''),
+        ok: Boolean(row.ok),
+        error: row.error ?? null,
+      })),
+    );
   }
 
   @Get('archive-links/:code')

@@ -38,6 +38,7 @@ import {
   ChannelPostDraft,
   SupportTicket,
   SupportTicketMessage,
+  TelegramDmOutbox,
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
@@ -62,6 +63,7 @@ import { DownloadTokensModule } from './modules/download-tokens/download-tokens.
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
 import { ScoreSyncModule } from './modules/score-sync/score-sync.module';
+import { TelegramDmModule } from './modules/telegram-dm/telegram-dm.module';
 import { TelegramModule } from './telegram/telegram.module';
 
 @Module({
@@ -112,6 +114,7 @@ import { TelegramModule } from './telegram/telegram.module';
           ChannelPostDraft,
           SupportTicket,
           SupportTicketMessage,
+          TelegramDmOutbox,
         ],
       }),
     }),
@@ -120,6 +123,7 @@ import { TelegramModule } from './telegram/telegram.module';
     BootQuotesModule,
     BootQuotesAdminModule,
     TelegramModule,
+    TelegramDmModule,
     HealthModule,
     AnimeCatalogModule,
     TelegramUsersModule,

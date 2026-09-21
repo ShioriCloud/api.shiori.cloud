@@ -13,6 +13,7 @@ import {
   TelegramUser,
 } from '../../entities';
 import { SponsorCampaignsModule } from '../sponsor-campaigns/sponsor-campaigns.module';
+import { TelegramDmModule } from '../telegram-dm/telegram-dm.module';
 import { BotAuthGuard } from './bot-auth.guard';
 import { BotController } from './bot.controller';
 import { BotService } from './bot.service';
@@ -33,6 +34,7 @@ import { ChannelDraftsService } from './channel-drafts.service';
       TelegramUser,
     ]),
     SponsorCampaignsModule,
+    TelegramDmModule,
   ],
   controllers: [BotController],
   providers: [BotService, BotAuthGuard, ChannelDraftsService],

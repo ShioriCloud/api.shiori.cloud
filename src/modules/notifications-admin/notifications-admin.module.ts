@@ -9,12 +9,14 @@ import {
   UserNotification,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
+import { TelegramDmModule } from '../telegram-dm/telegram-dm.module';
 import { NotificationsAdminController } from './notifications-admin.controller';
 import { NotificationsAdminService } from './notifications-admin.service';
 
 @Module({
   imports: [
     PortalAuthModule,
+    TelegramDmModule,
     TypeOrmModule.forFeature([
       NotificationCampaign,
       Anime,

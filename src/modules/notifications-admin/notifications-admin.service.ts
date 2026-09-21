@@ -15,7 +15,7 @@ import {
   UserAnimeListEntry,
   UserNotification,
 } from '../../entities';
-import { TelegramBotService } from '../../telegram/telegram-bot.service';
+import { TelegramDmOutboxService } from '../telegram-dm/telegram-dm-outbox.service';
 import {
   ListNotificationCampaignsQueryDto,
   NotifyEpisodeReleaseDto,
@@ -41,7 +41,9 @@ export type EpisodeReleaseNotifyResult = {
   campaign_id?: string;
   inbox_created?: number;
   telegram_candidates?: number;
+  telegram_queued?: number;
   telegram_sent?: number;
+  telegram_delivery?: 'queued_for_bot' | 'skipped';
   telegram_errors?: Array<{ chat_id: number; message: string }>;
 };
 
@@ -66,7 +68,7 @@ export class NotificationsAdminService {
     private readonly remindersRepo: Repository<UserAnimeAiringReminder>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
-    private readonly telegramBot: TelegramBotService,
+    private readonly telegramDmOutbox: TelegramDmOutboxService,
     private readonly config: ConfigService,
   ) {}
 
@@ -231,8 +233,7 @@ export class NotificationsAdminService {
       .map((row) => Number(row.telegram_user_id))
       .filter((id) => Number.isFinite(id) && id > 0);
 
-    let telegramSent = 0;
-    let telegramErrors: Array<{ chat_id: number; message: string }> = [];
+    let telegramQueued = 0;
 
     if (dto.sendTelegram !== false && telegramUserIds.length > 0) {
       const miniAppBaseUrl = this.resolveMiniAppBaseUrl(dto.miniAppBaseUrl);
@@ -241,33 +242,14 @@ export class NotificationsAdminService {
           ? `${miniAppBaseUrl}${href}`
           : null;
 
-      const result = await this.telegramBot.sendEpisodeNotifications({
-        chatIds: telegramUserIds,
-        text: message,
-        webAppUrl,
-      });
-
-      telegramSent = result.sent;
-      telegramErrors = result.errors.slice(0, 10);
-
-      if (telegramSent > 0) {
-        await this.campaignsRepo.update(campaign.id, {
-          telegramSentCount: telegramSent,
-        });
-
-        // Mark telegram_sent_at on inbox rows for successfully notified users
-        if (result.sentChatIds.length > 0) {
-          await this.dataSource
-            .createQueryBuilder()
-            .update(UserNotification)
-            .set({ telegramSentAt: () => 'now()' })
-            .where('campaign_id = :campaignId', { campaignId: campaign.id })
-            .andWhere('telegram_user_id IN (:...ids)', {
-              ids: result.sentChatIds.map(String),
-            })
-            .execute();
-        }
-      }
+      telegramQueued = await this.telegramDmOutbox.enqueueMany(
+        telegramUserIds.map((chatId) => ({
+          campaignId: campaign.id,
+          chatId,
+          text: message,
+          webAppUrl,
+        })),
+      );
     }
 
     return {
@@ -275,8 +257,10 @@ export class NotificationsAdminService {
       campaign_id: campaign.id,
       inbox_created: inboxRecipients.length,
       telegram_candidates: telegramUserIds.length,
-      telegram_sent: telegramSent,
-      telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
+      telegram_queued: telegramQueued,
+      telegram_sent: 0,
+      telegram_delivery:
+        telegramQueued > 0 ? ('queued_for_bot' as const) : ('skipped' as const),
     };
   }
 
@@ -377,8 +361,7 @@ export class NotificationsAdminService {
       return savedCampaign;
     });
 
-    let telegramSent = 0;
-    let telegramErrors: Array<{ chat_id: number; message: string }> = [];
+    let telegramQueued = 0;
 
     if (dto.sendTelegram !== false) {
       const chatIds = recipientIds
@@ -386,32 +369,14 @@ export class NotificationsAdminService {
         .filter((id) => Number.isFinite(id) && id > 0);
 
       if (chatIds.length > 0) {
-        const result = await this.telegramBot.sendEpisodeNotifications({
-          chatIds,
-          text: `${title}\n${message}`,
-          webAppUrl: null,
-        });
-
-        telegramSent = result.sent;
-        telegramErrors = result.errors.slice(0, 10);
-
-        if (telegramSent > 0) {
-          await this.campaignsRepo.update(campaign.id, {
-            telegramSentCount: telegramSent,
-          });
-
-          if (result.sentChatIds.length > 0) {
-            await this.dataSource
-              .createQueryBuilder()
-              .update(UserNotification)
-              .set({ telegramSentAt: () => 'now()' })
-              .where('campaign_id = :campaignId', { campaignId: campaign.id })
-              .andWhere('telegram_user_id IN (:...ids)', {
-                ids: result.sentChatIds.map(String),
-              })
-              .execute();
-          }
-        }
+        telegramQueued = await this.telegramDmOutbox.enqueueMany(
+          chatIds.map((chatId) => ({
+            campaignId: campaign.id,
+            chatId,
+            text: `${title}\n${message}`,
+            webAppUrl: null,
+          })),
+        );
       }
     }
 
@@ -419,8 +384,10 @@ export class NotificationsAdminService {
       ok: true,
       campaign_id: campaign.id,
       inbox_created: recipientIds.length,
-      telegram_sent: telegramSent,
-      telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
+      telegram_queued: telegramQueued,
+      telegram_sent: 0,
+      telegram_delivery:
+        telegramQueued > 0 ? ('queued_for_bot' as const) : ('skipped' as const),
     };
   }
 }
