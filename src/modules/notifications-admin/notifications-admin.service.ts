@@ -16,6 +16,7 @@ import {
   UserNotification,
 } from '../../entities';
 import { TelegramDmOutboxService } from '../telegram-dm/telegram-dm-outbox.service';
+import { TelegramBotService } from '../../telegram/telegram-bot.service';
 import {
   ListNotificationCampaignsQueryDto,
   NotifyEpisodeReleaseDto,
@@ -43,7 +44,7 @@ export type EpisodeReleaseNotifyResult = {
   telegram_candidates?: number;
   telegram_queued?: number;
   telegram_sent?: number;
-  telegram_delivery?: 'queued_for_bot' | 'skipped';
+  telegram_delivery?: 'direct' | 'queued_for_bot' | 'mixed' | 'skipped';
   telegram_errors?: Array<{ chat_id: number; message: string }>;
 };
 
@@ -101,6 +102,7 @@ export class NotificationsAdminService {
     private readonly remindersRepo: Repository<UserAnimeAiringReminder>,
     @InjectDataSource()
     private readonly dataSource: DataSource,
+    private readonly telegramBot: TelegramBotService,
     private readonly telegramDmOutbox: TelegramDmOutboxService,
     private readonly config: ConfigService,
   ) {}
@@ -274,7 +276,11 @@ export class NotificationsAdminService {
       .map((row) => Number(row.telegram_user_id))
       .filter((id) => Number.isFinite(id) && id > 0);
 
+    let telegramSent = 0;
     let telegramQueued = 0;
+    let telegramErrors: Array<{ chat_id: number; message: string }> = [];
+    let telegramDelivery: EpisodeReleaseNotifyResult['telegram_delivery'] =
+      'skipped';
 
     if (dto.sendTelegram !== false && telegramUserIds.length > 0) {
       const miniAppBaseUrl = this.resolveMiniAppBaseUrl(dto.miniAppBaseUrl);
@@ -283,14 +289,17 @@ export class NotificationsAdminService {
           ? `${miniAppBaseUrl}${href}`
           : null;
 
-      telegramQueued = await this.telegramDmOutbox.enqueueMany(
-        telegramUserIds.map((chatId) => ({
-          campaignId: campaign.id,
-          chatId,
-          text: telegramMessage,
-          webAppUrl,
-        })),
-      );
+      const delivered = await this.deliverTelegramDms({
+        campaignId: campaign.id,
+        chatIds: telegramUserIds,
+        text: telegramMessage,
+        webAppUrl,
+        parseMode: 'HTML',
+      });
+      telegramSent = delivered.sent;
+      telegramQueued = delivered.queued;
+      telegramErrors = delivered.errors;
+      telegramDelivery = delivered.delivery;
     }
 
     return {
@@ -299,9 +308,97 @@ export class NotificationsAdminService {
       inbox_created: inboxRecipients.length,
       telegram_candidates: telegramUserIds.length,
       telegram_queued: telegramQueued,
-      telegram_sent: 0,
-      telegram_delivery:
-        telegramQueued > 0 ? ('queued_for_bot' as const) : ('skipped' as const),
+      telegram_sent: telegramSent,
+      telegram_delivery: telegramDelivery,
+      telegram_errors: telegramErrors.length > 0 ? telegramErrors : undefined,
+    };
+  }
+
+  /**
+   * Prefer direct send via mini-app bot token (Europe API can reach Telegram).
+   * Queue remaining failures to tel-bot outbox as fallback.
+   */
+  private async deliverTelegramDms(opts: {
+    campaignId: string;
+    chatIds: number[];
+    text: string;
+    webAppUrl?: string | null;
+    parseMode?: 'HTML' | 'Markdown';
+  }): Promise<{
+    sent: number;
+    queued: number;
+    errors: Array<{ chat_id: number; message: string }>;
+    delivery: NonNullable<EpisodeReleaseNotifyResult['telegram_delivery']>;
+  }> {
+    const result = await this.telegramBot.sendEpisodeNotifications({
+      chatIds: opts.chatIds,
+      text: opts.text,
+      webAppUrl: opts.webAppUrl,
+      parseMode: opts.parseMode,
+    });
+
+    let sent = result.sent;
+    const errors = [...result.errors];
+
+    if (sent > 0) {
+      await this.campaignsRepo.update(opts.campaignId, {
+        telegramSentCount: sent,
+      });
+      if (result.sentChatIds.length > 0) {
+        await this.dataSource
+          .createQueryBuilder()
+          .update(UserNotification)
+          .set({ telegramSentAt: () => 'now()' })
+          .where('campaign_id = :campaignId', { campaignId: opts.campaignId })
+          .andWhere('telegram_user_id IN (:...ids)', {
+            ids: result.sentChatIds.map(String),
+          })
+          .execute();
+      }
+    }
+
+    const failedChatIds = errors
+      .map((row) => row.chat_id)
+      .filter((id) => Number.isFinite(id) && id > 0);
+
+    let queued = 0;
+    if (failedChatIds.length > 0) {
+      const looksLikeNetwork = errors.some((row) =>
+        /fetch failed|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|network/i.test(
+          row.message,
+        ),
+      );
+      // Queue all remaining failures when network is broken; otherwise only
+      // queue when nothing was sent directly (full outage / missing token).
+      const shouldQueue =
+        looksLikeNetwork || sent === 0;
+
+      if (shouldQueue) {
+        queued = await this.telegramDmOutbox.enqueueMany(
+          failedChatIds.map((chatId) => ({
+            campaignId: opts.campaignId,
+            chatId,
+            text: opts.text,
+            webAppUrl: opts.webAppUrl,
+          })),
+        );
+      }
+    }
+
+    const delivery =
+      sent > 0 && queued > 0
+        ? ('mixed' as const)
+        : sent > 0
+          ? ('direct' as const)
+          : queued > 0
+            ? ('queued_for_bot' as const)
+            : ('skipped' as const);
+
+    return {
+      sent,
+      queued,
+      errors: queued > 0 ? [] : errors.slice(0, 10),
+      delivery,
     };
   }
 
@@ -402,7 +499,9 @@ export class NotificationsAdminService {
       return savedCampaign;
     });
 
+    let telegramSent = 0;
     let telegramQueued = 0;
+    let telegramErrors: Array<{ chat_id: number; message: string }> | undefined;
 
     if (dto.sendTelegram !== false) {
       const chatIds = recipientIds
@@ -410,14 +509,27 @@ export class NotificationsAdminService {
         .filter((id) => Number.isFinite(id) && id > 0);
 
       if (chatIds.length > 0) {
-        telegramQueued = await this.telegramDmOutbox.enqueueMany(
-          chatIds.map((chatId) => ({
-            campaignId: campaign.id,
-            chatId,
-            text: `${title}\n${message}`,
-            webAppUrl: null,
-          })),
-        );
+        const delivered = await this.deliverTelegramDms({
+          campaignId: campaign.id,
+          chatIds,
+          text: `${title}\n${message}`,
+          webAppUrl: null,
+        });
+        telegramSent = delivered.sent;
+        telegramQueued = delivered.queued;
+        telegramErrors = delivered.errors.length
+          ? delivered.errors
+          : undefined;
+
+        return {
+          ok: true,
+          campaign_id: campaign.id,
+          inbox_created: recipientIds.length,
+          telegram_queued: telegramQueued,
+          telegram_sent: telegramSent,
+          telegram_delivery: delivered.delivery,
+          telegram_errors: telegramErrors,
+        };
       }
     }
 
@@ -425,10 +537,9 @@ export class NotificationsAdminService {
       ok: true,
       campaign_id: campaign.id,
       inbox_created: recipientIds.length,
-      telegram_queued: telegramQueued,
+      telegram_queued: 0,
       telegram_sent: 0,
-      telegram_delivery:
-        telegramQueued > 0 ? ('queued_for_bot' as const) : ('skipped' as const),
+      telegram_delivery: 'skipped' as const,
     };
   }
 }

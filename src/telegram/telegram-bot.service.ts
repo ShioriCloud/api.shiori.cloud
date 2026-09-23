@@ -66,6 +66,7 @@ export class TelegramBotService {
     chatIds: number[];
     text: string;
     webAppUrl?: string | null;
+    parseMode?: 'HTML' | 'Markdown';
   }): Promise<{ sent: number; sentChatIds: number[]; errors: TelegramSendError[] }> {
     const tokens = this.getNotificationTokens();
     if (tokens.length === 0) {
@@ -89,13 +90,15 @@ export class TelegramBotService {
           }
         : undefined;
 
+    const parseMode = payload.parseMode;
+
     let sent = 0;
     const sentChatIds: number[] = [];
     const errors: TelegramSendError[] = [];
     let preferredToken = tokens[0];
 
     for (const chatId of payload.chatIds) {
-      if (!Number.isFinite(chatId)) continue;
+      if (!Number.isFinite(chatId) || chatId <= 0) continue;
 
       const orderedTokens = [
         preferredToken,
@@ -111,6 +114,7 @@ export class TelegramBotService {
             chat_id: chatId,
             text: payload.text,
             disable_web_page_preview: true,
+            ...(parseMode ? { parse_mode: parseMode } : {}),
             ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
           },
           token,
@@ -132,6 +136,7 @@ export class TelegramBotService {
               chat_id: chatId,
               text: payload.text,
               disable_web_page_preview: true,
+              ...(parseMode ? { parse_mode: parseMode } : {}),
             },
             token,
           );
