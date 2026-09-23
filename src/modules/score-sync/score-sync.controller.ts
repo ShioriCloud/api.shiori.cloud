@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard } from '../portal-auth/portal-auth.guard';
 import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import { ScoreSyncService } from './score-sync.service';
@@ -11,9 +11,16 @@ export class ScoreSyncController {
   constructor(private readonly scoreSyncService: ScoreSyncService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Score sync overview (eligibility, last runs, active job)' })
-  getOverview() {
-    return this.scoreSyncService.getOverview();
+  @ApiOperation({
+    summary: 'Score sync overview (eligibility, last runs, active job, year/season filters)',
+  })
+  @ApiQuery({ name: 'year', required: false })
+  @ApiQuery({ name: 'season', required: false })
+  getOverview(
+    @Query('year') year?: string,
+    @Query('season') season?: string,
+  ) {
+    return this.scoreSyncService.getOverview({ year, season });
   }
 
   @Get('job')
@@ -23,9 +30,11 @@ export class ScoreSyncController {
   }
 
   @Post('start')
-  @ApiOperation({ summary: 'Start MAL or AniList score sync job' })
+  @ApiOperation({
+    summary: 'Start MAL or AniList score sync job (optional year/season scope)',
+  })
   start(@Body() body: Record<string, unknown>) {
-    return this.scoreSyncService.start(body?.source ?? body?.provider);
+    return this.scoreSyncService.start(body ?? {});
   }
 
   @Post('cancel')

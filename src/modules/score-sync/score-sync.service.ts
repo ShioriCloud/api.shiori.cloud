@@ -48,6 +48,11 @@ export type ScoreSyncJobStatus =
   | 'cancelled'
   | 'failed';
 
+export type ScoreSyncFilters = {
+  year: number | null;
+  season: string | null;
+};
+
 export type ScoreSyncJobSnapshot = {
   id: string;
   source: ScoreSyncSource;
@@ -55,6 +60,7 @@ export type ScoreSyncJobSnapshot = {
   total: number;
   done: number;
   current_title: string | null;
+  filters: ScoreSyncFilters;
   counts: ScoreSyncCounts;
   logs: ScoreSyncLogEntry[];
   attention: ScoreSyncAttentionItem[];
@@ -70,6 +76,7 @@ export type ScoreSyncLastRun = {
   status: 'completed' | 'cancelled' | 'failed';
   total: number;
   done: number;
+  filters?: ScoreSyncFilters;
   counts: ScoreSyncCounts;
   top_changes: ScoreSyncChangeItem[];
   attention: ScoreSyncAttentionItem[];
@@ -99,6 +106,8 @@ const MAL_GAP_MS = 1100;
 const ANILIST_BATCH = 50;
 const ANILIST_GAP_MS = 400;
 
+const KNOWN_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
+
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const displayTitle = (title: string, romaji: string | null) => {
@@ -127,6 +136,15 @@ const emptyCounts = (): ScoreSyncCounts => ({
   errors: 0,
 });
 
+const emptyFilters = (): ScoreSyncFilters => ({ year: null, season: null });
+
+const formatFilterLabel = (filters: ScoreSyncFilters): string => {
+  const parts: string[] = [];
+  if (filters.year != null) parts.push(String(filters.year));
+  if (filters.season) parts.push(filters.season);
+  return parts.length ? parts.join(' / ') : 'همه';
+};
+
 @Injectable()
 export class ScoreSyncService {
   private currentJob: MutableJob | null = null;
@@ -138,29 +156,22 @@ export class ScoreSyncService {
     private readonly settingsRepo: Repository<BotSetting>,
   ) {}
 
-  async getOverview() {
-    const [total, withMal, withAnilist, withoutMal, withoutAnilist, lastMal, lastAnilist] =
-      await Promise.all([
-        this.animeRepo.count(),
-        this.animeRepo.count({ where: { malId: Not(IsNull()) } }),
-        this.animeRepo.count({ where: { anilistId: Not(IsNull()) } }),
-        this.animeRepo.count({ where: { malId: IsNull() } }),
-        this.animeRepo.count({ where: { anilistId: IsNull() } }),
-        this.readLastRun('mal'),
-        this.readLastRun('anilist'),
-      ]);
+  async getOverview(rawFilters?: { year?: unknown; season?: unknown }) {
+    const filters = this.parseFilters(rawFilters ?? {});
+    const [catalog, available, lastMal, lastAnilist] = await Promise.all([
+      this.countCatalog(filters),
+      this.loadAvailableFilters(),
+      this.readLastRun('mal'),
+      this.readLastRun('anilist'),
+    ]);
 
     return {
-      catalog: {
-        total,
-        with_mal_id: withMal,
-        without_mal_id: withoutMal,
-        with_anilist_id: withAnilist,
-        without_anilist_id: withoutAnilist,
-        mal_eta_seconds: withMal * Math.ceil(MAL_GAP_MS / 1000),
-        anilist_eta_seconds: Math.ceil(withAnilist / ANILIST_BATCH) * Math.ceil(ANILIST_GAP_MS / 1000) +
-          Math.ceil(withAnilist / ANILIST_BATCH) * 2,
+      filters: {
+        selected: filters,
+        years: available.years,
+        seasons: available.seasons,
       },
+      catalog,
       last_runs: {
         mal: lastMal,
         anilist: lastAnilist,
@@ -173,13 +184,14 @@ export class ScoreSyncService {
     return { job: this.snapshotJob() };
   }
 
-  async start(sourceRaw: unknown) {
-    const source = this.parseSource(sourceRaw);
+  async start(body: Record<string, unknown> = {}) {
+    const source = this.parseSource(body.source ?? body.provider);
+    const filters = this.parseFilters(body);
     if (this.currentJob && (this.currentJob.status === 'running' || this.currentJob.status === 'cancelling')) {
       throw new ConflictException('یک همگام‌سازی در حال اجراست');
     }
 
-    const targets = await this.loadTargets(source);
+    const targets = await this.loadTargets(source, filters);
     const job: MutableJob = {
       id: `${source}-${Date.now()}`,
       source,
@@ -187,6 +199,7 @@ export class ScoreSyncService {
       total: targets.length,
       done: 0,
       current_title: null,
+      filters,
       counts: emptyCounts(),
       logs: [],
       attention: [],
@@ -200,7 +213,7 @@ export class ScoreSyncService {
     this.pushLog(
       job,
       'info',
-      `شروع همگام‌سازی ${source === 'mal' ? 'MyAnimeList' : 'AniList'} — ${targets.length} انیمه`,
+      `شروع همگام‌سازی ${source === 'mal' ? 'MyAnimeList' : 'AniList'} — فیلتر: ${formatFilterLabel(filters)} — ${targets.length} انیمه`,
     );
 
     this.currentJob = job;
@@ -227,11 +240,40 @@ export class ScoreSyncService {
     throw new BadRequestException('منبع نامعتبر است (mal | anilist)');
   }
 
+  private parseFilters(raw: {
+    year?: unknown;
+    season?: unknown;
+  }): ScoreSyncFilters {
+    const yearRaw = raw.year;
+    let year: number | null = null;
+    if (yearRaw != null && String(yearRaw).trim() !== '' && String(yearRaw).trim() !== 'all') {
+      const n = Number(yearRaw);
+      if (!Number.isFinite(n) || n < 1900 || n > 2100) {
+        throw new BadRequestException('سال نامعتبر است');
+      }
+      year = Math.trunc(n);
+    }
+
+    const seasonRaw = String(raw.season ?? '')
+      .trim()
+      .toUpperCase();
+    let season: string | null = null;
+    if (seasonRaw && seasonRaw !== 'ALL') {
+      if (!KNOWN_SEASONS.has(seasonRaw)) {
+        throw new BadRequestException('فصل نامعتبر است (WINTER|SPRING|SUMMER|FALL)');
+      }
+      season = seasonRaw;
+    }
+
+    return { year, season };
+  }
+
   private snapshotJob(): ScoreSyncJobSnapshot | null {
     if (!this.currentJob) return null;
     const { cancelRequested: _, ...rest } = this.currentJob;
     return {
       ...rest,
+      filters: { ...(rest.filters ?? emptyFilters()) },
       logs: [...rest.logs],
       attention: [...rest.attention],
       top_changes: [...rest.top_changes],
@@ -239,10 +281,98 @@ export class ScoreSyncService {
     };
   }
 
-  private async loadTargets(source: ScoreSyncSource): Promise<AnimeScoreTarget[]> {
+  private applyCatalogFilters(
+    qb: ReturnType<Repository<Anime>['createQueryBuilder']>,
+    filters: ScoreSyncFilters,
+    alias = 'a',
+  ) {
+    if (filters.year != null) {
+      qb.andWhere(`${alias}.year = :year`, { year: filters.year });
+    }
+    if (filters.season) {
+      qb.andWhere(`UPPER(${alias}.season) = :season`, { season: filters.season });
+    }
+  }
+
+  private async loadAvailableFilters(): Promise<{
+    years: number[];
+    seasons: string[];
+  }> {
+    const yearRows: Array<{ year: string | number | null }> = await this.animeRepo
+      .createQueryBuilder('a')
+      .select('DISTINCT a.year', 'year')
+      .where('a.year IS NOT NULL')
+      .orderBy('a.year', 'DESC')
+      .getRawMany();
+
+    const seasonRows: Array<{ season: string | null }> = await this.animeRepo
+      .createQueryBuilder('a')
+      .select('DISTINCT UPPER(a.season)', 'season')
+      .where("a.season IS NOT NULL AND TRIM(a.season) <> ''")
+      .getRawMany();
+
+    const years = yearRows
+      .map((row) => Number(row.year))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => b - a);
+
+    const seasons = seasonRows
+      .map((row) => String(row.season ?? '').trim().toUpperCase())
+      .filter((s) => KNOWN_SEASONS.has(s));
+
+    const orderedSeasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'].filter((s) =>
+      seasons.includes(s),
+    );
+
+    return { years, seasons: orderedSeasons };
+  }
+
+  private async countCatalog(filters: ScoreSyncFilters) {
+    const base = () => {
+      const qb = this.animeRepo.createQueryBuilder('a');
+      this.applyCatalogFilters(qb, filters);
+      return qb;
+    };
+
+    const [total, withMal, withAnilist, withoutMal, withoutAnilist] =
+      await Promise.all([
+        base().getCount(),
+        base().andWhere('a.malId IS NOT NULL').getCount(),
+        base().andWhere('a.anilistId IS NOT NULL').getCount(),
+        base().andWhere('a.malId IS NULL').getCount(),
+        base().andWhere('a.anilistId IS NULL').getCount(),
+      ]);
+
+    return {
+      total,
+      with_mal_id: withMal,
+      without_mal_id: withoutMal,
+      with_anilist_id: withAnilist,
+      without_anilist_id: withoutAnilist,
+      mal_eta_seconds: withMal * Math.ceil(MAL_GAP_MS / 1000),
+      anilist_eta_seconds:
+        Math.ceil(withAnilist / ANILIST_BATCH) * Math.ceil(ANILIST_GAP_MS / 1000) +
+        Math.ceil(withAnilist / ANILIST_BATCH) * 2,
+    };
+  }
+
+  private async loadTargets(
+    source: ScoreSyncSource,
+    filters: ScoreSyncFilters,
+  ): Promise<AnimeScoreTarget[]> {
     const qb = this.animeRepo
       .createQueryBuilder('a')
-      .select(['a.id', 'a.title', 'a.titleRomaji', 'a.malId', 'a.anilistId', 'a.malScore', 'a.averageScore'])
+      .select([
+        'a.id',
+        'a.title',
+        'a.titleRomaji',
+        'a.malId',
+        'a.anilistId',
+        'a.malScore',
+        'a.averageScore',
+        'a.year',
+        'a.season',
+      ])
       .orderBy('a.title', 'ASC');
 
     if (source === 'mal') {
@@ -250,6 +380,7 @@ export class ScoreSyncService {
     } else {
       qb.andWhere('a.anilistId IS NOT NULL');
     }
+    this.applyCatalogFilters(qb, filters);
 
     const rows = await qb.getMany();
     return rows.map((row) => ({
@@ -468,6 +599,7 @@ export class ScoreSyncService {
             : 'failed',
       total: job.total,
       done: job.done,
+      filters: { ...(job.filters ?? emptyFilters()) },
       counts: { ...job.counts },
       top_changes: [...job.top_changes],
       attention: [...job.attention].slice(0, 20),
