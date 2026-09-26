@@ -1169,23 +1169,48 @@ export class AnimeCatalogService {
     return this.getCurrentAiringSeasonInTehran().season;
   }
 
+  /**
+   * Current anime-industry season for labels / AniList queries.
+   * Season boundaries follow the Jalali calendar in Asia/Tehran
+   * (Mehr–Azar = FALL), not Gregorian Oct–Dec.
+   * `year` stays Gregorian so labels stay «پاییز ۲۰۲۶» and catalog filters match.
+   */
   private getCurrentAiringSeasonInTehran(): {
     season: 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL';
     year: number;
   } {
-    const parts = new Intl.DateTimeFormat('en-US', {
+    const now = new Date();
+    const jalaliParts = new Intl.DateTimeFormat('en-US-u-ca-persian', {
       timeZone: 'Asia/Tehran',
       year: 'numeric',
       month: 'numeric',
-    }).formatToParts(new Date());
-    const year = Number(parts.find((p) => p.type === 'year')?.value);
-    const month = Number(parts.find((p) => p.type === 'month')?.value);
-    const y = Number.isFinite(year) ? year : new Date().getFullYear();
-    const m = Number.isFinite(month) ? month : new Date().getMonth() + 1;
-    if (m >= 1 && m <= 3) return { season: 'WINTER', year: y };
-    if (m >= 4 && m <= 6) return { season: 'SPRING', year: y };
-    if (m >= 7 && m <= 9) return { season: 'SUMMER', year: y };
-    return { season: 'FALL', year: y };
+    }).formatToParts(now);
+    const gregorianParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Tehran',
+      year: 'numeric',
+      month: 'numeric',
+    }).formatToParts(now);
+
+    const jalaliMonth = Number(
+      jalaliParts.find((p) => p.type === 'month')?.value,
+    );
+    const gYear = Number(gregorianParts.find((p) => p.type === 'year')?.value);
+    const gMonth = Number(gregorianParts.find((p) => p.type === 'month')?.value);
+
+    const jm = Number.isFinite(jalaliMonth) ? jalaliMonth : 1;
+    const gy = Number.isFinite(gYear) ? gYear : new Date().getFullYear();
+    const gm = Number.isFinite(gMonth) ? gMonth : new Date().getMonth() + 1;
+
+    let season: 'WINTER' | 'SPRING' | 'SUMMER' | 'FALL';
+    if (jm >= 1 && jm <= 3) season = 'SPRING';
+    else if (jm >= 4 && jm <= 6) season = 'SUMMER';
+    else if (jm >= 7 && jm <= 9) season = 'FALL';
+    else season = 'WINTER';
+
+    // AniList/catalog winter year is the January year of that winter.
+    const year = season === 'WINTER' && gm === 12 ? gy + 1 : gy;
+
+    return { season, year };
   }
 
   /** Weekday label in Persian, using Asia/Tehran calendar day (not server local TZ). */
