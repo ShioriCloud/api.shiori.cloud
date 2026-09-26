@@ -459,6 +459,60 @@ export const buildEpisodeCaptionLine = (opts: {
   return `${marker} <b>E${epLabel}</b>: ${video}`;
 };
 
+/** Telegram photo / media caption limit (UTF-16 length of parsed text). */
+export const TELEGRAM_PHOTO_CAPTION_MAX = 1024;
+
+/**
+ * Approximate plain-text length Telegram will count for an HTML caption
+ * (tags stripped; entities decoded; BMP UTF-16 ≈ JS string length).
+ */
+export const telegramHtmlCaptionPlainLength = (htmlCaption: string): number => {
+  let plain = String(htmlCaption ?? '');
+  if (!plain) return 0;
+  plain = plain
+    .replace(/<tg-emoji\b[^>]*>([\s\S]*?)<\/tg-emoji>/gi, '$1')
+    .replace(/<\/?(?:a|b|i|code|u|s|pre|span)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, n) => {
+      const code = Number(n);
+      return Number.isFinite(code) ? String.fromCodePoint(code) : '';
+    });
+  return plain.length;
+};
+
+export const isCaptionWithinPhotoBudget = (
+  htmlCaption: string,
+  max = TELEGRAM_PHOTO_CAPTION_MAX,
+): boolean => telegramHtmlCaptionPlainLength(htmlCaption) <= max;
+
+/**
+ * Highest episode end covered by pack / previous-post lines like:
+ *   P01: Episode [01-12]
+ *   S01: Episode [01-12]
+ * Works with HTML wrappers / text_link around the range.
+ * Returns 0 when no pack line is present (cour 1 → build from E01).
+ */
+export const getMaxPackedEpisodeEnd = (captionHtml: string): number => {
+  const raw = String(captionHtml ?? '');
+  if (!raw) return 0;
+
+  // Strip tags so <b>P01</b>: Episode <a>[01-12]</a> still matches.
+  const plain = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const re = /[PS]\d{2}\s*:\s*Episode\s*\[(\d+)\s*[-–—]\s*(\d+)\]/gi;
+  let maxEnd = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(plain))) {
+    const end = Number(m[2]);
+    if (Number.isFinite(end) && end > maxEnd) maxEnd = end;
+  }
+  return maxEnd;
+};
+
 /** True for per-episode lines like "… E05: …", not season packs ("Episode [01-12]"). */
 export const isEpisodeCaptionLine = (line: string): boolean => {
   const raw = String(line ?? '');

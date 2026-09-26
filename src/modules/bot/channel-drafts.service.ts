@@ -18,9 +18,13 @@ import {
   buildEpisodeCaptionLine,
   buildMiniAppEpisodesUrl,
   captionEntitiesToHtml,
+  getMaxPackedEpisodeEnd,
+  isCaptionWithinPhotoBudget,
   repairTgEmojiHtml,
   repairHtmlCaption,
   replaceEpisodeLinesInCaption,
+  TELEGRAM_PHOTO_CAPTION_MAX,
+  telegramHtmlCaptionPlainLength,
   upgradeKnownEmojisToPremiumHtml,
   upgradeSeasonEpisodePackEmoji,
   type TelegramMessageEntity,
@@ -537,8 +541,8 @@ export class ChannelDraftsService {
       };
     }
 
-    // Rebuild all episode lines from catalog (≤ focus) so earlier eps are not dropped
-    // when the bound template is stale, and mark prior eps with green check.
+    // Rebuild episode lines for the current cour window only:
+    // if the template has P/S Episode [a-b], start after b; else from E01.
     const catalogEps = await this.episodeRepo.find({
       where: { animeId },
       order: { episodeNumber: 'ASC' },
@@ -552,10 +556,18 @@ export class ChannelDraftsService {
     }
 
     const focus = Number(episodeNumber);
+    const startAfter = getMaxPackedEpisodeEnd(anime.channelCaptionHtml);
+    if (startAfter > 0) {
+      this.logger.log(
+        `channel draft cour window anime=${animeId} ep=${episodeNumber} startAfter=${startAfter}`,
+      );
+    }
+
     const episodeLines: string[] = [];
     for (const ep of catalogEps) {
       const n = Number(ep.episodeNumber);
       if (!Number.isFinite(n) || n > focus) continue;
+      if (n <= startAfter) continue;
       const link = String(ep.downloadLink ?? '').trim();
       if (!link) continue;
       episodeLines.push(
@@ -595,6 +607,16 @@ export class ChannelDraftsService {
         replaceEpisodeLinesInCaption(templateHtml, episodeLines),
       ),
     );
+
+    if (!isCaptionWithinPhotoBudget(proposedCaption)) {
+      const len = telegramHtmlCaptionPlainLength(proposedCaption);
+      this.logger.warn(
+        `channel draft caption too long anime=${animeId} ep=${episodeNumber} len=${len}/${TELEGRAM_PHOTO_CAPTION_MAX} startAfter=${startAfter} lines=${episodeLines.length}`,
+      );
+      throw new BadRequestException(
+        `Channel caption too long (${len}/${TELEGRAM_PHOTO_CAPTION_MAX} chars). Add a P/S Episode [a-b] pack line for earlier cours in the bound template, or shorten the caption.`,
+      );
+    }
 
     // Drop older undelivered previews for this anime so the bot queue cannot pile up.
     await this.draftRepo
