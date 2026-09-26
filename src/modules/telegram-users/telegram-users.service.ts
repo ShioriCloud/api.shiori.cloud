@@ -38,6 +38,7 @@ export class TelegramUsersService {
     const firstName = String(dto.first_name ?? '').trim() || 'کاربر';
 
     if (!existing) {
+      const now = new Date();
       await this.usersRepo.save({
         telegramUserId: userId,
         firstName,
@@ -47,6 +48,7 @@ export class TelegramUsersService {
         photoUrl: dto.photo_url?.trim() || null,
         isPremium: Boolean(dto.is_premium),
         visitCount: 1,
+        lastSeenAt: now,
       });
     } else {
       existing.lastSeenAt = new Date();
