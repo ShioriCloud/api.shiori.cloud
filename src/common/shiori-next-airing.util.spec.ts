@@ -116,7 +116,7 @@ describe('resolveEpisode1UnixSec', () => {
 });
 
 describe('resolveShioriNextAiring', () => {
-  it('returns null unless RELEASING with a valid slot', () => {
+  it('returns null unless RELEASING or NOT_YET_RELEASED with a valid slot', () => {
     expect(
       resolveShioriNextAiring({
         airingStatus: 'FINISHED',
@@ -133,6 +133,26 @@ describe('resolveShioriNextAiring', () => {
         startDate: '2026-09-12',
       }),
     ).toBeNull();
+  });
+
+  it('includes upcoming NOT_YET_RELEASED titles on the weekly board', () => {
+    const beforePremiere = Date.UTC(2026, 8, 10, 6, 30); // 2026-09-10 Tehran morning
+    const result = resolveShioriNextAiring(
+      {
+        airingStatus: 'NOT_YET_RELEASED',
+        airingWeekday: 'شنبه',
+        airingTime: '22:00',
+        startDate: '2026-09-12',
+        episodesCount: 12,
+        maxPublishedEpisode: 0,
+      },
+      beforePremiere,
+    );
+    expect(result?.episode).toBe(1);
+    expect(formatTehran(result!.airing_at)).toEqual({
+      weekday: 'Sat',
+      time: '22:00',
+    });
   });
 
   it('advances episode by calendar weeks from start_date, not uploads', () => {

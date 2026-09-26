@@ -846,9 +846,9 @@ export class AnimeCatalogService {
   }
 
   /**
-   * Catalog-only weekly schedule: RELEASING titles with airing_weekday set.
-   * Episodic formats only (TV / ONA / donghua / OVA / specials). Movies stay out.
-   * Independent of AniList availability.
+   * Catalog-only weekly schedule: RELEASING and upcoming (NOT_YET_RELEASED)
+   * titles with airing_weekday set. Episodic formats only (TV / ONA / donghua /
+   * OVA / specials). Movies stay out. Independent of AniList availability.
    */
   async listShioriAiringSchedule() {
     const emptySchedule = this.buildEmptyAiringSchedule();
@@ -857,7 +857,9 @@ export class AnimeCatalogService {
 
     const rows = await this.animeRepo
       .createQueryBuilder('anime')
-      .where('anime.airing_status = :status', { status: 'RELEASING' })
+      .where('anime.airing_status IN (:...statuses)', {
+        statuses: ['RELEASING', 'NOT_YET_RELEASED'],
+      })
       .andWhere('anime.airing_weekday IS NOT NULL')
       .andWhere("TRIM(anime.airing_weekday) <> ''")
       .andWhere('UPPER(TRIM(anime.format)) IN (:...weeklyFormats)', {

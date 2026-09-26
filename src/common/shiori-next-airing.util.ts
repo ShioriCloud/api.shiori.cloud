@@ -227,7 +227,8 @@ export function resolveShioriAiringPlan(
   const status = String(input.airingStatus ?? '')
     .trim()
     .toUpperCase();
-  if (status !== 'RELEASING') return null;
+  // Upcoming titles (NOT_YET_RELEASED) stay on the weekly board once weekday/time are set.
+  if (status !== 'RELEASING' && status !== 'NOT_YET_RELEASED') return null;
 
   const time = parseAiringTimeHhmm(input.airingTime);
   if (!time) return null;
