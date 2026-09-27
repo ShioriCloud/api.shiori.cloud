@@ -12,6 +12,7 @@ import {
   UserCustomListItem,
   UserNotification,
   UserPortalSession,
+  AdminAuditEvent,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { TelegramUsersAdminController } from './telegram-users-admin.controller';
@@ -32,6 +33,7 @@ import { TelegramUsersAdminService } from './telegram-users-admin.service';
       UserNotification,
       SponsorJoinEvent,
       UserPortalSession,
+      AdminAuditEvent,
     ]),
   ],
   controllers: [TelegramUsersAdminController],

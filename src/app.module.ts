@@ -39,6 +39,7 @@ import {
   SupportTicket,
   SupportTicketMessage,
   TelegramDmOutbox,
+  AdminAuditEvent,
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
@@ -115,6 +116,7 @@ import { TelegramModule } from './telegram/telegram.module';
           SupportTicket,
           SupportTicketMessage,
           TelegramDmOutbox,
+          AdminAuditEvent,
         ],
       }),
     }),

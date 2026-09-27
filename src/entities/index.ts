@@ -34,3 +34,4 @@ export { ChannelPostDraft } from './channel-post-draft.entity';
 export { SupportTicket } from './support-ticket.entity';
 export { SupportTicketMessage } from './support-ticket-message.entity';
 export { TelegramDmOutbox } from './telegram-dm-outbox.entity';
+export { AdminAuditEvent } from './admin-audit-event.entity';

@@ -9,6 +9,7 @@ import * as bcrypt from 'bcryptjs';
 import { In, Repository } from 'typeorm';
 import {
   Anime,
+  AdminAuditEvent,
   DownloadTokenLedger,
   SponsorJoinEvent,
   SupportTicket,
@@ -21,6 +22,7 @@ import {
   UserNotification,
   UserPortalSession,
 } from '../../entities';
+import type { AdminAuditAction } from '../../entities/admin-audit-event.entity';
 import {
   BanTelegramUserDto,
   ListTelegramUsersQueryDto,
@@ -127,6 +129,15 @@ export type TelegramUserAdminDetail = {
     updated_at: string;
   }>;
   activity: TelegramUserActivityItem[];
+  admin_activity: Array<{
+    id: string;
+    at: string;
+    action: string;
+    label: string;
+    actor_telegram_user_id: string;
+    actor_display_name: string | null;
+    meta: Record<string, unknown> | null;
+  }>;
 };
 
 const APP_ROLES = new Set(['user', 'moderator', 'admin']);
@@ -181,7 +192,104 @@ export class TelegramUsersAdminService {
     private readonly sponsorJoinsRepo: Repository<SponsorJoinEvent>,
     @InjectRepository(UserPortalSession)
     private readonly sessionsRepo: Repository<UserPortalSession>,
+    @InjectRepository(AdminAuditEvent)
+    private readonly auditRepo: Repository<AdminAuditEvent>,
   ) {}
+
+  private async recordAudit(input: {
+    actorTelegramUserId: string | null | undefined;
+    action: AdminAuditAction;
+    targetTelegramUserId: string;
+    meta?: Record<string, unknown> | null;
+  }): Promise<void> {
+    const actor = String(input.actorTelegramUserId ?? '').trim();
+    if (!actor) return;
+    try {
+      await this.auditRepo.save(
+        this.auditRepo.create({
+          actorTelegramUserId: actor,
+          action: input.action,
+          targetTelegramUserId: String(input.targetTelegramUserId),
+          meta: input.meta ?? null,
+        }),
+      );
+    } catch (err) {
+      // Never block admin mutations if audit table is missing / write fails.
+      console.warn(
+        'admin audit write failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private auditActionLabel(
+    action: string,
+    meta: Record<string, unknown> | null,
+  ): string {
+    switch (action) {
+      case 'change_role': {
+        const from = String(meta?.from ?? '');
+        const to = String(meta?.to ?? '');
+        return from && to ? `تغییر نقش: ${from} → ${to}` : 'تغییر نقش';
+      }
+      case 'ban':
+        return meta?.reason
+          ? `بن کاربر (${String(meta.reason)})`
+          : 'بن کاربر';
+      case 'unban':
+        return 'برداشتن بن';
+      case 'revoke_sessions':
+        return `باطل‌سازی سشن‌ها (${Number(meta?.revoked ?? 0)} مورد)`;
+      case 'portal_password_set':
+        return 'تنظیم رمز پورتال';
+      case 'portal_login_toggle':
+        return meta?.enabled === true
+          ? 'فعال‌سازی ورود پورتال'
+          : 'غیرفعال‌سازی ورود پورتال';
+      case 'grant_tokens':
+        return `گرنت توکن (+${Number(meta?.tokens ?? 0)})`;
+      case 'grant_subscription':
+        return `گرنت سابسکریپشن (${Number(meta?.days ?? 0)} روز)`;
+      default:
+        return action;
+    }
+  }
+
+  private async loadAdminActivity(targetTelegramUserId: string) {
+    try {
+      const rows = await this.auditRepo.find({
+        where: { targetTelegramUserId },
+        order: { createdAt: 'DESC' },
+        take: 40,
+      });
+      if (rows.length === 0) return [];
+
+      const actorIds = [...new Set(rows.map((r) => r.actorTelegramUserId))];
+      const actors = await this.usersRepo.find({
+        where: { telegramUserId: In(actorIds) },
+      });
+      const actorMap = new Map(
+        actors.map((u) => {
+          const name =
+            [u.firstName, u.lastName].filter(Boolean).join(' ').trim() ||
+            (u.username ? `@${u.username}` : null);
+          return [u.telegramUserId, name] as const;
+        }),
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        at: toIso(row.createdAt),
+        action: row.action,
+        label: this.auditActionLabel(row.action, row.meta),
+        actor_telegram_user_id: row.actorTelegramUserId,
+        actor_display_name: actorMap.get(row.actorTelegramUserId) ?? null,
+        meta: row.meta,
+      }));
+    } catch {
+      return [];
+    }
+  }
 
   private mapUser(
     user: TelegramUser,
@@ -430,6 +538,7 @@ export class TelegramUsersAdminService {
       activeSessions,
       ledgerCount,
       activity,
+      adminActivity,
     ] = await Promise.all([
       this.listRepo.find({
         where: { telegramUserId },
@@ -466,6 +575,7 @@ export class TelegramUsersAdminService {
         .getCount(),
       this.ledgerRepo.count({ where: { telegramUserId } }),
       this.buildActivity(telegramUserId, user),
+      this.loadAdminActivity(telegramUserId),
     ]);
 
     const listIds = customLists.map((list) => list.id);
@@ -548,6 +658,7 @@ export class TelegramUsersAdminService {
         updated_at: toIso(ticket.updatedAt),
       })),
       activity,
+      admin_activity: adminActivity,
     };
   }
 
@@ -759,6 +870,7 @@ export class TelegramUsersAdminService {
   async updateUser(
     telegramUserId: string,
     dto: UpdateTelegramUserAdminDto,
+    actorTelegramUserId?: string | null,
   ): Promise<void> {
     if (!APP_ROLES.has(dto.app_role)) {
       throw new BadRequestException('invalid app_role');
@@ -779,6 +891,11 @@ export class TelegramUsersAdminService {
         throw new ConflictException('cannot demote last admin');
       }
     }
+
+    const prevRole = user.appRole;
+    const prevPortalLogin = Boolean(user.portalLoginEnabled);
+    let passwordSet = false;
+    let portalLoginChanged = false;
 
     if (dto.email !== undefined && dto.email !== null) {
       const email = String(dto.email).trim().toLowerCase();
@@ -809,21 +926,48 @@ export class TelegramUsersAdminService {
 
     if (dto.portal_login_enabled !== undefined) {
       user.portalLoginEnabled = Boolean(dto.portal_login_enabled);
+      portalLoginChanged = prevPortalLogin !== user.portalLoginEnabled;
     }
 
     if (dto.password !== undefined && dto.password !== null) {
       const password = String(dto.password).trim();
       if (password) {
         user.passwordHash = await bcrypt.hash(password, 10);
+        passwordSet = true;
       }
     }
 
     await this.usersRepo.save(user);
+
+    if (prevRole !== dto.app_role) {
+      await this.recordAudit({
+        actorTelegramUserId,
+        action: 'change_role',
+        targetTelegramUserId: telegramUserId,
+        meta: { from: prevRole, to: dto.app_role },
+      });
+    }
+    if (passwordSet) {
+      await this.recordAudit({
+        actorTelegramUserId,
+        action: 'portal_password_set',
+        targetTelegramUserId: telegramUserId,
+      });
+    }
+    if (portalLoginChanged) {
+      await this.recordAudit({
+        actorTelegramUserId,
+        action: 'portal_login_toggle',
+        targetTelegramUserId: telegramUserId,
+        meta: { enabled: user.portalLoginEnabled },
+      });
+    }
   }
 
   async banUser(
     telegramUserId: string,
     dto: BanTelegramUserDto,
+    actorTelegramUserId?: string | null,
   ): Promise<{ ok: true; revoked_sessions: number }> {
     const user = await this.usersRepo.findOne({
       where: { telegramUserId },
@@ -841,10 +985,22 @@ export class TelegramUsersAdminService {
     await this.usersRepo.save(user);
 
     const revoked = await this.sessionsRepo.delete({ telegramUserId });
+    await this.recordAudit({
+      actorTelegramUserId,
+      action: 'ban',
+      targetTelegramUserId: telegramUserId,
+      meta: {
+        reason: reason || null,
+        revoked_sessions: revoked.affected ?? 0,
+      },
+    });
     return { ok: true, revoked_sessions: revoked.affected ?? 0 };
   }
 
-  async unbanUser(telegramUserId: string): Promise<{ ok: true }> {
+  async unbanUser(
+    telegramUserId: string,
+    actorTelegramUserId?: string | null,
+  ): Promise<{ ok: true }> {
     const user = await this.usersRepo.findOne({
       where: { telegramUserId },
     });
@@ -854,11 +1010,17 @@ export class TelegramUsersAdminService {
     user.bannedAt = null;
     user.bannedReason = null;
     await this.usersRepo.save(user);
+    await this.recordAudit({
+      actorTelegramUserId,
+      action: 'unban',
+      targetTelegramUserId: telegramUserId,
+    });
     return { ok: true };
   }
 
   async revokeSessions(
     telegramUserId: string,
+    actorTelegramUserId?: string | null,
   ): Promise<{ ok: true; revoked_sessions: number }> {
     const user = await this.usersRepo.findOne({
       where: { telegramUserId },
@@ -866,6 +1028,12 @@ export class TelegramUsersAdminService {
     if (!user) throw new NotFoundException('user not found');
 
     const revoked = await this.sessionsRepo.delete({ telegramUserId });
+    await this.recordAudit({
+      actorTelegramUserId,
+      action: 'revoke_sessions',
+      targetTelegramUserId: telegramUserId,
+      meta: { revoked: revoked.affected ?? 0 },
+    });
     return { ok: true, revoked_sessions: revoked.affected ?? 0 };
   }
 

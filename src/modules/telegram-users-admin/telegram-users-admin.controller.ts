@@ -6,6 +6,7 @@ import {
   Post,
   Put,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -17,6 +18,10 @@ import {
   UpdateTelegramUserAdminDto,
 } from './telegram-users-admin.dto';
 import { TelegramUsersAdminService } from './telegram-users-admin.service';
+
+type PortalRequest = {
+  portalTelegramUserId?: string;
+};
 
 @ApiTags('Telegram Users Admin')
 @Controller('telegram-users-admin')
@@ -54,26 +59,31 @@ export class TelegramUsersAdminController {
   async update(
     @Param('id') id: string,
     @Body() body: UpdateTelegramUserAdminDto,
+    @Req() req: PortalRequest,
   ) {
-    await this.adminService.updateUser(id, body);
+    await this.adminService.updateUser(id, body, req.portalTelegramUserId);
     return { ok: true };
   }
 
   @Post(':id/ban')
   @ApiOperation({ summary: 'Ban user from mini-app and revoke sessions' })
-  ban(@Param('id') id: string, @Body() body: BanTelegramUserDto) {
-    return this.adminService.banUser(id, body);
+  ban(
+    @Param('id') id: string,
+    @Body() body: BanTelegramUserDto,
+    @Req() req: PortalRequest,
+  ) {
+    return this.adminService.banUser(id, body, req.portalTelegramUserId);
   }
 
   @Post(':id/unban')
   @ApiOperation({ summary: 'Clear mini-app ban' })
-  unban(@Param('id') id: string) {
-    return this.adminService.unbanUser(id);
+  unban(@Param('id') id: string, @Req() req: PortalRequest) {
+    return this.adminService.unbanUser(id, req.portalTelegramUserId);
   }
 
   @Post(':id/revoke-sessions')
   @ApiOperation({ summary: 'Revoke all portal/mini-app sessions for user' })
-  revokeSessions(@Param('id') id: string) {
-    return this.adminService.revokeSessions(id);
+  revokeSessions(@Param('id') id: string, @Req() req: PortalRequest) {
+    return this.adminService.revokeSessions(id, req.portalTelegramUserId);
   }
 }
