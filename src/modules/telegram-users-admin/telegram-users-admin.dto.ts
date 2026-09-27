@@ -46,6 +46,11 @@ export class ListTelegramUsersQueryDto {
   @IsIn(['all', 'with', 'without'])
   usernameFilter?: 'all' | 'with' | 'without';
 
+  /** Account status: banned vs not banned. */
+  @IsOptional()
+  @IsIn(['all', 'banned', 'active'])
+  statusFilter?: 'all' | 'banned' | 'active';
+
   @IsOptional()
   @IsIn(SORT_FIELDS)
   sortBy?: (typeof SORT_FIELDS)[number];

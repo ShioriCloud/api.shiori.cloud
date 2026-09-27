@@ -59,6 +59,8 @@ export type TelegramUsersOverview = {
   activeLast7d: number;
   premiumUsers: number;
   adminUsers: number;
+  moderatorUsers: number;
+  bannedUsers: number;
 };
 
 export type TelegramUserActivityItem = {
@@ -242,14 +244,25 @@ export class TelegramUsersAdminService {
     qb: ReturnType<Repository<TelegramUser>['createQueryBuilder']>,
     query: ListTelegramUsersQueryDto,
   ) {
-    if (query.roleFilter && query.roleFilter !== 'all') {
-      qb.andWhere('u.appRole = :roleFilter', { roleFilter: query.roleFilter });
+    const roleFilter = String(query.roleFilter ?? 'all').trim();
+    if (roleFilter && roleFilter !== 'all') {
+      if (roleFilter === 'staff') {
+        qb.andWhere("u.appRole IN ('admin', 'moderator')");
+      } else {
+        qb.andWhere('u.appRole = :roleFilter', { roleFilter });
+      }
     }
 
     if (query.usernameFilter === 'with') {
       qb.andWhere('u.username IS NOT NULL');
     } else if (query.usernameFilter === 'without') {
       qb.andWhere('u.username IS NULL');
+    }
+
+    if (query.statusFilter === 'banned') {
+      qb.andWhere('u.isBanned = true');
+    } else if (query.statusFilter === 'active') {
+      qb.andWhere('(u.isBanned = false OR u.isBanned IS NULL)');
     }
 
     const tokens = splitSearchTokens(query.search);
@@ -319,6 +332,14 @@ export class TelegramUsersAdminService {
         "SUM(CASE WHEN u.appRole = 'admin' THEN 1 ELSE 0 END)",
         'adminUsers',
       )
+      .addSelect(
+        "SUM(CASE WHEN u.appRole = 'moderator' THEN 1 ELSE 0 END)",
+        'moderatorUsers',
+      )
+      .addSelect(
+        'SUM(CASE WHEN u.isBanned = true THEN 1 ELSE 0 END)',
+        'bannedUsers',
+      )
       .setParameters({ dayAgo, weekAgo })
       .getRawOne<Record<string, string>>();
 
@@ -328,6 +349,8 @@ export class TelegramUsersAdminService {
       activeLast7d: Number(raw?.activeLast7d) || 0,
       premiumUsers: Number(raw?.premiumUsers) || 0,
       adminUsers: Number(raw?.adminUsers) || 0,
+      moderatorUsers: Number(raw?.moderatorUsers) || 0,
+      bannedUsers: Number(raw?.bannedUsers) || 0,
     };
   }
 
