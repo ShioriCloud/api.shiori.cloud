@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
+  AdminAuditEvent,
   AnimeEpisode,
   DownloadTokenLedger,
   TelegramUser,
@@ -13,7 +14,12 @@ import { DownloadTokensService } from './download-tokens.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TelegramUser, AnimeEpisode, DownloadTokenLedger]),
+    TypeOrmModule.forFeature([
+      TelegramUser,
+      AnimeEpisode,
+      DownloadTokenLedger,
+      AdminAuditEvent,
+    ]),
     TelegramModule,
     PortalAuthModule,
   ],

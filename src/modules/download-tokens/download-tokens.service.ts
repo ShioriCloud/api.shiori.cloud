@@ -11,6 +11,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import {
+  AdminAuditEvent,
   AnimeEpisode,
   DownloadTokenLedger,
   TelegramUser,
@@ -54,7 +55,37 @@ export class DownloadTokensService {
     private readonly episodesRepo: Repository<AnimeEpisode>,
     @InjectRepository(DownloadTokenLedger)
     private readonly ledgerRepo: Repository<DownloadTokenLedger>,
+    @InjectRepository(AdminAuditEvent)
+    private readonly auditRepo: Repository<AdminAuditEvent>,
   ) {}
+
+  private async recordAdminGrantAudit(input: {
+    actorTelegramUserId?: string | null;
+    targetTelegramUserId: string;
+    tokens: number;
+    note?: string | null;
+  }): Promise<void> {
+    const actor = String(input.actorTelegramUserId ?? '').trim();
+    if (!actor || input.tokens < 1) return;
+    try {
+      await this.auditRepo.save(
+        this.auditRepo.create({
+          actorTelegramUserId: actor,
+          action: 'grant_tokens',
+          targetTelegramUserId: String(input.targetTelegramUserId),
+          meta: {
+            tokens: input.tokens,
+            ...(input.note?.trim() ? { note: input.note.trim() } : {}),
+          },
+        }),
+      );
+    } catch (err) {
+      console.warn(
+        'admin audit write failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 
   private walletMode(): DownloadTokenWalletMode {
     return parseDownloadTokenWalletMode(
@@ -230,6 +261,7 @@ export class DownloadTokensService {
     reason?: Extract<DownloadTokenReason, 'donation_credit' | 'admin_grant'>;
     refType?: string | null;
     refId?: string | null;
+    actorTelegramUserId?: string | null;
   }): Promise<{ balance: number; credited: number }> {
     const telegramUserId = String(input.telegramUserId).trim();
     if (!telegramUserId) {
@@ -312,6 +344,16 @@ export class DownloadTokensService {
       );
 
       return { balance: next, credited };
+    }).then(async (result) => {
+      if (reason === 'admin_grant' && result.credited > 0) {
+        await this.recordAdminGrantAudit({
+          actorTelegramUserId: input.actorTelegramUserId,
+          targetTelegramUserId: telegramUserId,
+          tokens: result.credited,
+          note: input.note,
+        });
+      }
+      return result;
     });
   }
 

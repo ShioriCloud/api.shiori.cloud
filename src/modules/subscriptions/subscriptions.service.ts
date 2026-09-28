@@ -7,7 +7,12 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AnimeEpisode, Anime, TelegramUser } from '../../entities';
+import {
+  AdminAuditEvent,
+  Anime,
+  AnimeEpisode,
+  TelegramUser,
+} from '../../entities';
 import {
   extendSubscriptionExpiry,
   hasActiveSubscription,
@@ -25,7 +30,37 @@ export class SubscriptionsService {
     private readonly episodesRepo: Repository<AnimeEpisode>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
+    @InjectRepository(AdminAuditEvent)
+    private readonly auditRepo: Repository<AdminAuditEvent>,
   ) {}
+
+  private async recordAdminGrantAudit(input: {
+    actorTelegramUserId?: string | null;
+    targetTelegramUserId: string;
+    days: number;
+    note?: string | null;
+  }): Promise<void> {
+    const actor = String(input.actorTelegramUserId ?? '').trim();
+    if (!actor || input.days < 1) return;
+    try {
+      await this.auditRepo.save(
+        this.auditRepo.create({
+          actorTelegramUserId: actor,
+          action: 'grant_subscription',
+          targetTelegramUserId: String(input.targetTelegramUserId),
+          meta: {
+            days: input.days,
+            ...(input.note?.trim() ? { note: input.note.trim() } : {}),
+          },
+        }),
+      );
+    } catch (err) {
+      console.warn(
+        'admin audit write failed:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
 
   private monthlyAmountIrr(): number {
     const fromConfig = this.config.get<number>('subscription.monthlyAmountIrr');
@@ -79,6 +114,7 @@ export class SubscriptionsService {
     telegramUserId: string;
     days?: number;
     note?: string | null;
+    actorTelegramUserId?: string | null;
   }): Promise<{ active: boolean; expires_at: string; days: number }> {
     const telegramUserId = String(input.telegramUserId).trim();
     if (!telegramUserId) {
@@ -95,6 +131,13 @@ export class SubscriptionsService {
       days,
     );
     await this.usersRepo.save(user);
+
+    await this.recordAdminGrantAudit({
+      actorTelegramUserId: input.actorTelegramUserId,
+      targetTelegramUserId: telegramUserId,
+      days,
+      note: input.note,
+    });
 
     return {
       active: true,

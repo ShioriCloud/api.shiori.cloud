@@ -101,11 +101,15 @@ export class SubscriptionsController {
   @Post('admin-grant')
   @UseGuards(PortalAuthGuard, PortalFullAdminGuard)
   @ApiOperation({ summary: 'Admin grant/extend subscription days' })
-  adminGrant(@Body() body: AdminGrantSubscriptionDto) {
+  adminGrant(
+    @Body() body: AdminGrantSubscriptionDto,
+    @Req() req: { portalTelegramUserId?: string },
+  ) {
     return this.subscriptionsService.grantDays({
       telegramUserId: body.telegram_user_id,
       days: body.days,
       note: body.note,
+      actorTelegramUserId: req.portalTelegramUserId,
     });
   }
 

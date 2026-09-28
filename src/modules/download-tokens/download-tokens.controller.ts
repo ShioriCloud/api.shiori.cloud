@@ -92,13 +92,17 @@ export class DownloadTokensController {
   @ApiOperation({
     summary: 'Admin credit tokens (manual or amount→tier mapping)',
   })
-  credit(@Body() body: CreditDownloadTokensDto) {
+  credit(
+    @Body() body: CreditDownloadTokensDto,
+    @Req() req: { portalTelegramUserId?: string },
+  ) {
     return this.downloadTokensService.creditTokens({
       telegramUserId: body.telegram_user_id,
       tokens: body.tokens,
       amountIrr: body.amount_irr,
       note: body.note,
       reason: body.amount_irr && !body.tokens ? 'donation_credit' : 'admin_grant',
+      actorTelegramUserId: req.portalTelegramUserId,
     });
   }
 
