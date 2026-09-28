@@ -188,6 +188,67 @@ export class FilesAdminService {
     private readonly animeRepo: Repository<Anime>,
   ) {}
 
+  private referencedFileKeysCache: { keys: Set<string>; expiresAt: number } | null = null;
+
+  private async getReferencedFileKeysSet(): Promise<Set<string>> {
+    const now = Date.now();
+    if (this.referencedFileKeysCache && this.referencedFileKeysCache.expiresAt > now) {
+      return this.referencedFileKeysCache.keys;
+    }
+
+    const keys = new Set<string>();
+    const absorbLink = (link: string | null | undefined) => {
+      const parsed = parseTelegramFileKeyFromLink(link);
+      if (parsed) keys.add(parsed);
+    };
+
+    const [episodeRows, subtitleRows, subtitlePackRows, animeRows, packItemRows] =
+      await Promise.all([
+        this.episodeRepo
+          .createQueryBuilder('e')
+          .select('e.downloadLink', 'downloadLink')
+          .where('e.downloadLink IS NOT NULL')
+          .andWhere("e.downloadLink <> ''")
+          .getRawMany<{ downloadLink: string }>(),
+        this.subtitleRepo
+          .createQueryBuilder('s')
+          .select('s.subtitleLink', 'subtitleLink')
+          .where('s.subtitleLink IS NOT NULL')
+          .andWhere("s.subtitleLink <> ''")
+          .getRawMany<{ subtitleLink: string }>(),
+        this.subtitlePackRepo
+          .createQueryBuilder('sp')
+          .select('sp.subtitleLink', 'subtitleLink')
+          .where('sp.subtitleLink IS NOT NULL')
+          .andWhere("sp.subtitleLink <> ''")
+          .getRawMany<{ subtitleLink: string }>(),
+        this.animeRepo
+          .createQueryBuilder('a')
+          .select('a.episodePackLink', 'episodePackLink')
+          .where('a.episodePackLink IS NOT NULL')
+          .andWhere("a.episodePackLink <> ''")
+          .getRawMany<{ episodePackLink: string }>(),
+        this.packItemsRepo
+          .createQueryBuilder('fpi')
+          .select('fpi.fileKey', 'fileKey')
+          .where('fpi.fileKey IS NOT NULL')
+          .andWhere("fpi.fileKey <> ''")
+          .getRawMany<{ fileKey: string }>(),
+      ]);
+
+    for (const row of episodeRows) absorbLink(row.downloadLink);
+    for (const row of subtitleRows) absorbLink(row.subtitleLink);
+    for (const row of subtitlePackRows) absorbLink(row.subtitleLink);
+    for (const row of animeRows) absorbLink(row.episodePackLink);
+    for (const row of packItemRows) {
+      const key = String(row.fileKey ?? '').trim();
+      if (key) keys.add(key);
+    }
+
+    this.referencedFileKeysCache = { keys, expiresAt: now + 60_000 };
+    return keys;
+  }
+
   private applyDownloadListFilters(
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
     query: ListFilesStatsQueryDto,
@@ -384,27 +445,12 @@ export class FilesAdminService {
 
   private applyOrphanOnlyFilter(
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
+    usedKeys: Set<string>,
   ) {
-    qb.andWhere(`NOT EXISTS (
-      SELECT 1 FROM episodes ep
-      WHERE ep.download_link ILIKE '%' || 'get_' || f.key || '%'
-    )`);
-    qb.andWhere(`NOT EXISTS (
-      SELECT 1 FROM subtitles sub
-      WHERE sub.subtitle_link ILIKE '%' || 'get_' || f.key || '%'
-    )`);
-    qb.andWhere(`NOT EXISTS (
-      SELECT 1 FROM subtitle_packs sp
-      WHERE sp.subtitle_link ILIKE '%' || 'get_' || f.key || '%'
-    )`);
-    qb.andWhere(`NOT EXISTS (
-      SELECT 1 FROM anime a
-      WHERE a.episode_pack_link ILIKE '%' || 'get_' || f.key || '%'
-    )`);
-    qb.andWhere(`NOT EXISTS (
-      SELECT 1 FROM file_pack_items fpi
-      WHERE fpi.file_key = f.key
-    )`);
+    if (usedKeys.size === 0) return;
+    qb.andWhere('f.key NOT IN (:...orphanExcludeKeys)', {
+      orphanExcludeKeys: [...usedKeys],
+    });
   }
 
   private async countReferencesByKeysBatch(
@@ -470,7 +516,10 @@ export class FilesAdminService {
     const qb = this.filesRepo.createQueryBuilder('f');
     this.applyStatusFilter(qb, query);
     this.applyFileExtensionFilter(qb, query.fileExtension);
-    if (query.orphanOnly) this.applyOrphanOnlyFilter(qb);
+    if (query.orphanOnly) {
+      const usedKeys = await this.getReferencedFileKeysSet();
+      this.applyOrphanOnlyFilter(qb, usedKeys);
+    }
     this.applyFileSearch(qb, query.search);
 
     const total = await qb.clone().getCount();
