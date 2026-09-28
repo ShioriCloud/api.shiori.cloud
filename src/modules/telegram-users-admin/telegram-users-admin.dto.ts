@@ -126,4 +126,14 @@ export class ListAdminAuditEventsQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  /** ISO date/time — events at or after this instant (UTC). */
+  @IsOptional()
+  @IsString()
+  since?: string;
+
+  /** ISO date/time — events at or before this instant (UTC). */
+  @IsOptional()
+  @IsString()
+  until?: string;
 }

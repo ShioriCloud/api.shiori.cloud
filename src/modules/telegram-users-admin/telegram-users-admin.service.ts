@@ -320,6 +320,8 @@ export class TelegramUsersAdminService {
     const limit = Math.min(100, Math.max(1, query.limit ?? 40));
     const search = String(query.search ?? '').trim();
     const action = query.action;
+    const sinceRaw = String(query.since ?? '').trim();
+    const untilRaw = String(query.until ?? '').trim();
 
     try {
       const qb = this.auditRepo
@@ -328,6 +330,19 @@ export class TelegramUsersAdminService {
 
       if (action) {
         qb.andWhere('a.action = :action', { action });
+      }
+
+      if (sinceRaw) {
+        const since = new Date(sinceRaw);
+        if (!Number.isNaN(since.getTime())) {
+          qb.andWhere('a.createdAt >= :since', { since });
+        }
+      }
+      if (untilRaw) {
+        const until = new Date(untilRaw);
+        if (!Number.isNaN(until.getTime())) {
+          qb.andWhere('a.createdAt <= :until', { until });
+        }
       }
 
       if (search) {
