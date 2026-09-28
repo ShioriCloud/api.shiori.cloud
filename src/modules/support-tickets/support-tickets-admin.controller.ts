@@ -35,6 +35,7 @@ export class SupportTicketsAdminController {
       category: query.category,
       page: query.page,
       limit: query.limit,
+      search: query.search,
     });
   }
 

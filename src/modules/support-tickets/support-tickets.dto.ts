@@ -69,4 +69,10 @@ export class ListSupportTicketsAdminQueryDto {
   @Min(1)
   @Max(10000)
   limit?: number;
+
+  /** Subject, ticket id, telegram id, or user name/username substring. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
 }

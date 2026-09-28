@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Brackets, In, Repository } from 'typeorm';
 import {
   SupportTicket,
   type SupportTicketCategory,
@@ -163,22 +163,52 @@ export class SupportTicketsService {
     category?: SupportTicketCategory;
     page?: number;
     limit?: number;
+    search?: string;
   }): Promise<SupportTicketAdminListResult> {
     const page = filters.page && filters.page > 0 ? filters.page : 1;
     const limit = filters.limit && filters.limit > 0 ? filters.limit : 10;
-    const where: {
-      status?: SupportTicketStatus;
-      category?: SupportTicketCategory;
-    } = {};
-    if (filters.status) where.status = filters.status;
-    if (filters.category) where.category = filters.category;
+    const search = String(filters.search ?? '').trim();
 
-    const [tickets, total] = await this.ticketRepo.findAndCount({
-      where,
-      order: { updatedAt: 'DESC' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.ticketRepo.createQueryBuilder('t').orderBy('t.updatedAt', 'DESC');
+
+    if (filters.status) {
+      qb.andWhere('t.status = :status', { status: filters.status });
+    }
+    if (filters.category) {
+      qb.andWhere('t.category = :category', { category: filters.category });
+    }
+
+    if (search) {
+      qb.leftJoin(TelegramUser, 'u', 'u.telegramUserId = t.telegramUserId');
+      const like = `%${search.replace(/[%_]/g, '\\$&')}%`;
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          search,
+        );
+      const isDigits = /^\d+$/.test(search);
+
+      qb.andWhere(
+        new Brackets((sub) => {
+          sub.where('t.subject ILIKE :like', { like });
+          if (isUuid) {
+            sub.orWhere('t.id = :ticketId', { ticketId: search });
+          }
+          if (isDigits) {
+            sub.orWhere('t.telegramUserId = :tgId', { tgId: search });
+          }
+          sub
+            .orWhere('u.username ILIKE :like', { like })
+            .orWhere('u.firstName ILIKE :like', { like })
+            .orWhere('u.lastName ILIKE :like', { like });
+        }),
+      );
+    }
+
+    const total = await qb.getCount();
+    const tickets = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
 
     const list = await this.toListItems(tickets);
     const users = await this.loadUsers(tickets.map((t) => t.telegramUserId));
