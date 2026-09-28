@@ -180,25 +180,6 @@ export class AnimeCatalogController {
     return this.animeCatalogService.listByIds(list);
   }
 
-  @Get('anilist/batch')
-  @ApiOperation({ summary: 'Resolve local anime ids by AniList ids (batch)' })
-  resolveAnilistBatch(@Query('ids') ids?: string) {
-    const anilistIds = String(ids ?? '')
-      .split(',')
-
-      .map((s) => Number(s.trim()))
-
-      .filter((n) => Number.isFinite(n) && n > 0);
-
-    return this.animeCatalogService.resolveAnilistIdsBatch(anilistIds);
-  }
-
-  @Get('anilist/:anilistId')
-  @ApiOperation({ summary: 'Resolve local anime id by AniList id' })
-  getByAnilist(@Param('anilistId') anilistId: string) {
-    return this.animeCatalogService.getByAnilistId(Number(anilistId));
-  }
-
   @Get('studios/:slug/anime')
   @ApiOperation({ summary: 'Anime catalog for a studio' })
   listStudioAnime(@Param('slug') slug: string) {

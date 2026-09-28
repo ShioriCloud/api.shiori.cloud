@@ -744,11 +744,6 @@ export class AnimeCatalogService {
     };
   }
 
-  async getByAnilistId(anilistId: number): Promise<string | null> {
-    const anime = await this.animeRepo.findOne({ where: { anilistId } });
-    return anime?.id ?? null;
-  }
-
   async listGenres() {
     return this.genreRepo.find({ order: { slug: 'ASC' } });
   }
@@ -759,25 +754,6 @@ export class AnimeCatalogService {
     });
     if (!genre) throw new NotFoundException('Genre not found');
     return genre;
-  }
-
-  async resolveAnilistIdsBatch(
-    anilistIds: number[],
-  ): Promise<Record<string, string>> {
-    const unique = [
-      ...new Set(anilistIds.filter((id) => Number.isFinite(id) && id > 0)),
-    ];
-    if (unique.length === 0) return {};
-
-    const rows = await this.animeRepo.find({
-      where: { anilistId: In(unique) },
-    });
-
-    const result: Record<string, string> = {};
-    for (const row of rows) {
-      if (row.anilistId) result[String(row.anilistId)] = row.id;
-    }
-    return result;
   }
 
   async getStudioBySlug(slug: string) {

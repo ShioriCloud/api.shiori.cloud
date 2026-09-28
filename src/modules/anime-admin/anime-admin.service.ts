@@ -10,12 +10,6 @@ import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
 import {
-  AnilistClientError,
-  fetchAnilistAnimeById,
-  searchAnilistAnime,
-  type AnilistMappedMedia,
-} from '../../common/anilist.client';
-import {
   fetchMalAnimeById,
   JikanClientError,
   searchMalAnime,
@@ -571,21 +565,6 @@ export class AnimeAdminService {
     return this.toAnimeAdminRow(anime);
   }
 
-  private throwAnilistUnavailable(err: unknown): never {
-    const message =
-      err instanceof AnilistClientError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : 'AniList request failed';
-    this.logger.warn(`AniList request failed: ${message}`);
-    throw new ServiceUnavailableException(
-      message.includes('429')
-        ? 'AniList موقتاً شلوغ است؛ کمی بعد دوباره تلاش کنید'
-        : 'ارتباط با AniList برقرار نشد',
-    );
-  }
-
   private throwMalUnavailable(err: unknown): never {
     const message =
       err instanceof JikanClientError
@@ -646,27 +625,6 @@ export class AnimeAdminService {
     return {
       slugs: [...new Set(slugs)],
       displayName: displayName ?? names[0] ?? null,
-    };
-  }
-
-  private toAnilistSearchItem(
-    media: AnilistMappedMedia,
-    local?: { id: string; slug: string | null } | null,
-  ) {
-    return {
-      anilist_id: media.anilist_id,
-      mal_id: media.mal_id,
-      title: media.title,
-      title_romaji: media.title_romaji,
-      title_native: media.title_native,
-      cover_image: media.cover_image,
-      format: media.format,
-      season: media.season,
-      year: media.year,
-      status: media.airing_status,
-      genres: media.anilist_genres,
-      local_anime_id: local?.id ?? null,
-      local_slug: local?.slug ?? null,
     };
   }
 
@@ -833,152 +791,6 @@ export class AnimeAdminService {
     return {
       mal_id: media.mal_id,
       anilist_id: media.anilist_id,
-      title: media.title,
-      title_romaji: media.title_romaji,
-      synopsis: media.synopsis,
-      cover_image: media.cover_image,
-      featured_image: media.featured_image,
-      format: media.format,
-      season: media.season,
-      year: media.year,
-      airing_status: media.airing_status,
-      episodes_count: media.episodes_count,
-      start_date: media.start_date,
-      end_date: media.end_date,
-      studio: studioMatch.displayName,
-      genre_slugs: genreSlugs,
-      studio_slugs: studioMatch.slugs,
-    };
-  }
-
-  async searchAnilist(query?: string) {
-    const q = String(query ?? '').trim();
-    if (q.length < 2) {
-      throw new BadRequestException('حداقل ۲ حرف برای جستجو لازم است');
-    }
-
-    const media = await searchAnilistAnime(q, 12).catch((err) =>
-      this.throwAnilistUnavailable(err),
-    );
-
-    const anilistIds = media.map((item) => item.anilist_id);
-    const locals =
-      anilistIds.length > 0
-        ? await this.animeRepo.find({
-            where: { anilistId: In(anilistIds) },
-            select: { id: true, slug: true, anilistId: true },
-          })
-        : [];
-    const localByAnilist = new Map(
-      locals
-        .filter((row) => row.anilistId != null)
-        .map((row) => [Number(row.anilistId), { id: row.id, slug: row.slug }]),
-    );
-
-    return {
-      items: media.map((item) =>
-        this.toAnilistSearchItem(item, localByAnilist.get(item.anilist_id) ?? null),
-      ),
-    };
-  }
-
-  async importFromAnilist(body: Payload, editorId?: string) {
-    const anilistId = normalizeExternalId(
-      this.pick<unknown>(body, 'anilist_id', 'anilistId'),
-    );
-    if (!anilistId) {
-      throw new BadRequestException('شناسه AniList نامعتبر است');
-    }
-
-    const existing = await this.animeRepo.findOne({
-      where: { anilistId },
-      relations: { lastEditedBy: true },
-    });
-    if (existing) {
-      return { existed: true, ...this.toAnimeAdminRow(existing) };
-    }
-
-    const media = await fetchAnilistAnimeById(anilistId).catch((err) =>
-      this.throwAnilistUnavailable(err),
-    );
-    if (!media) {
-      throw new NotFoundException('این اثر در AniList پیدا نشد');
-    }
-
-    const already = await this.animeRepo.findOne({
-      where: { anilistId: media.anilist_id },
-      relations: { lastEditedBy: true },
-    });
-    if (already) {
-      return { existed: true, ...this.toAnimeAdminRow(already) };
-    }
-
-    const [genres, studios] = await Promise.all([
-      this.genreRepo.find(),
-      this.studioRepo.find(),
-    ]);
-    const genreSlugs = this.matchLocalGenreSlugs(media.anilist_genres, genres);
-    const studioMatch = this.matchLocalStudioSlugs(media.anilist_studios, studios);
-    const slug = await this.uniqueImportSlug(
-      media.title_romaji ?? media.title,
-      media.anilist_id,
-      'anilist',
-    );
-
-    const created = await this.createAnime(
-      {
-        title: media.title,
-        title_romaji: media.title_romaji,
-        slug,
-        synopsis: media.synopsis,
-        cover_image: media.cover_image,
-        featured_image: media.featured_image,
-        format: media.format,
-        season: media.season,
-        year: media.year,
-        airing_status: media.airing_status,
-        episodes_count: media.episodes_count,
-        anilist_id: media.anilist_id,
-        mal_id: media.mal_id,
-        start_date: media.start_date,
-        end_date: media.end_date,
-        studio: studioMatch.displayName,
-        genre_slugs: genreSlugs,
-        studio_slugs: studioMatch.slugs,
-        is_featured: false,
-      },
-      editorId,
-    );
-
-    const refreshed = await this.getAnimeAdmin(created.id);
-    return { existed: false, ...refreshed };
-  }
-
-  async fillFromAnilist(body: Payload) {
-    const anilistId = normalizeExternalId(
-      this.pick<unknown>(body, 'anilist_id', 'anilistId'),
-    );
-    if (!anilistId) {
-      throw new BadRequestException('شناسه AniList نامعتبر است');
-    }
-
-    const media = await fetchAnilistAnimeById(anilistId).catch((err) =>
-      this.throwAnilistUnavailable(err),
-    );
-    if (!media) {
-      throw new NotFoundException('این اثر در AniList پیدا نشد');
-    }
-
-    const [genres, studios] = await Promise.all([
-      this.genreRepo.find(),
-      this.studioRepo.find(),
-    ]);
-    const genreSlugs = this.matchLocalGenreSlugs(media.anilist_genres, genres);
-    const studioMatch = this.matchLocalStudioSlugs(media.anilist_studios, studios);
-
-    return {
-      anilist_id: media.anilist_id,
-      mal_id: media.mal_id,
       title: media.title,
       title_romaji: media.title_romaji,
       synopsis: media.synopsis,
