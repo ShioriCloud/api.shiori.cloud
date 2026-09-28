@@ -14,6 +14,7 @@ import { PortalAuthGuard } from '../portal-auth/portal-auth.guard';
 import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import {
   BanTelegramUserDto,
+  ListAdminAuditEventsQueryDto,
   ListTelegramUsersQueryDto,
   UpdateTelegramUserAdminDto,
 } from './telegram-users-admin.dto';
@@ -46,6 +47,12 @@ export class TelegramUsersAdminController {
   async export(@Query() query: ListTelegramUsersQueryDto) {
     const csv = await this.adminService.exportCsv(query);
     return { csv };
+  }
+
+  @Get('audit-events')
+  @ApiOperation({ summary: 'Paginated staff audit trail across users' })
+  listAuditEvents(@Query() query: ListAdminAuditEventsQueryDto) {
+    return this.adminService.listAuditEvents(query);
   }
 
   @Get(':id')

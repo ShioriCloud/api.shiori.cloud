@@ -92,3 +92,38 @@ export class BanTelegramUserDto {
   @MaxLength(500)
   reason?: string | null;
 }
+
+const AUDIT_ACTIONS = [
+  'change_role',
+  'ban',
+  'unban',
+  'revoke_sessions',
+  'portal_password_set',
+  'portal_login_toggle',
+  'grant_tokens',
+  'grant_subscription',
+] as const;
+
+export class ListAdminAuditEventsQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => Number.parseInt(String(value ?? '1'), 10))
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number.parseInt(String(value ?? '40'), 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @IsOptional()
+  @IsIn(AUDIT_ACTIONS)
+  action?: (typeof AUDIT_ACTIONS)[number];
+
+  /** Match actor/target telegram id or username/name substring. */
+  @IsOptional()
+  @IsString()
+  search?: string;
+}

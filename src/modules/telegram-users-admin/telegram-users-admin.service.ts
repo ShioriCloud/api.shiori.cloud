@@ -25,6 +25,7 @@ import {
 import type { AdminAuditAction } from '../../entities/admin-audit-event.entity';
 import {
   BanTelegramUserDto,
+  ListAdminAuditEventsQueryDto,
   ListTelegramUsersQueryDto,
   UpdateTelegramUserAdminDto,
 } from './telegram-users-admin.dto';
@@ -288,6 +289,118 @@ export class TelegramUsersAdminService {
       }));
     } catch {
       return [];
+    }
+  }
+
+  private userDisplayName(user: TelegramUser | undefined): string | null {
+    if (!user) return null;
+    return (
+      [user.firstName, user.lastName].filter(Boolean).join(' ').trim() ||
+      (user.username ? `@${user.username}` : null)
+    );
+  }
+
+  async listAuditEvents(query: ListAdminAuditEventsQueryDto): Promise<{
+    items: Array<{
+      id: string;
+      at: string | null;
+      action: string;
+      label: string;
+      actor_telegram_user_id: string;
+      actor_display_name: string | null;
+      target_telegram_user_id: string;
+      target_display_name: string | null;
+      meta: Record<string, unknown> | null;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 40));
+    const search = String(query.search ?? '').trim();
+    const action = query.action;
+
+    try {
+      const qb = this.auditRepo
+        .createQueryBuilder('a')
+        .orderBy('a.createdAt', 'DESC');
+
+      if (action) {
+        qb.andWhere('a.action = :action', { action });
+      }
+
+      if (search) {
+        const like = `%${search.replace(/[%_]/g, '\\$&')}%`;
+        const digitsOnly = /^\d+$/.test(search);
+        qb.leftJoin(
+          TelegramUser,
+          'actor',
+          'actor.telegramUserId = a.actorTelegramUserId',
+        );
+        qb.leftJoin(
+          TelegramUser,
+          'target',
+          'target.telegramUserId = a.targetTelegramUserId',
+        );
+        if (digitsOnly) {
+          qb.andWhere(
+            `(a.actorTelegramUserId = :sid OR a.targetTelegramUserId = :sid
+              OR actor.username ILIKE :like OR target.username ILIKE :like
+              OR actor.firstName ILIKE :like OR target.firstName ILIKE :like)`,
+            { sid: search, like },
+          );
+        } else {
+          qb.andWhere(
+            `(actor.username ILIKE :like OR target.username ILIKE :like
+              OR actor.firstName ILIKE :like OR target.firstName ILIKE :like
+              OR actor.lastName ILIKE :like OR target.lastName ILIKE :like)`,
+            { like },
+          );
+        }
+      }
+
+      const total = await qb.getCount();
+      const rows = await qb
+        .skip((page - 1) * limit)
+        .take(limit)
+        .getMany();
+
+      if (rows.length === 0) {
+        return { items: [], total, page, limit };
+      }
+
+      const userIds = [
+        ...new Set([
+          ...rows.map((r) => r.actorTelegramUserId),
+          ...rows.map((r) => r.targetTelegramUserId),
+        ]),
+      ];
+      const users = await this.usersRepo.find({
+        where: { telegramUserId: In(userIds) },
+      });
+      const nameMap = new Map(
+        users.map((u) => [u.telegramUserId, this.userDisplayName(u)] as const),
+      );
+
+      return {
+        items: rows.map((row) => ({
+          id: row.id,
+          at: toIso(row.createdAt),
+          action: row.action,
+          label: this.auditActionLabel(row.action, row.meta),
+          actor_telegram_user_id: row.actorTelegramUserId,
+          actor_display_name: nameMap.get(row.actorTelegramUserId) ?? null,
+          target_telegram_user_id: row.targetTelegramUserId,
+          target_display_name: nameMap.get(row.targetTelegramUserId) ?? null,
+          meta: row.meta,
+        })),
+        total,
+        page,
+        limit,
+      };
+    } catch {
+      return { items: [], total: 0, page, limit };
     }
   }
 
