@@ -1097,6 +1097,38 @@ export class FilesAdminService {
     });
   }
 
+  async addPackItemsBulk(
+    packId: string,
+    fileKeys: string[],
+  ): Promise<{ added: number; skipped: number }> {
+    this.assertPackId(packId);
+    const pack = await this.packsRepo.findOne({ where: { id: packId } });
+    if (!pack) throw new NotFoundException('pack not found');
+
+    const unique = [...new Set(fileKeys.map((k) => String(k ?? '').trim()).filter(Boolean))];
+    if (unique.length === 0) return { added: 0, skipped: 0 };
+
+    const existing = await this.packItemsRepo.find({
+      where: { packId },
+      select: { fileKey: true, sortOrder: true },
+    });
+    const existingKeys = new Set(existing.map((row) => row.fileKey));
+    const toAdd = unique.filter((key) => !existingKeys.has(key));
+    const skipped = unique.length - toAdd.length;
+    if (toAdd.length === 0) return { added: 0, skipped };
+
+    const maxOrder = existing.reduce((max, row) => Math.max(max, row.sortOrder ?? 0), 0);
+    await this.packItemsRepo.save(
+      toAdd.map((fileKey, index) => ({
+        packId,
+        fileKey,
+        sortOrder: maxOrder + index + 1,
+      })),
+    );
+
+    return { added: toAdd.length, skipped };
+  }
+
   async removePackItem(packId: string, fileKey: string): Promise<void> {
     this.assertPackId(packId);
     await this.packItemsRepo.delete({ packId, fileKey });

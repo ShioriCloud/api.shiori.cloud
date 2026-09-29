@@ -160,6 +160,12 @@ export class AddFilePackItemDto {
   sort_order!: number;
 }
 
+export class AddFilePackItemsBulkDto {
+  @IsArray()
+  @IsString({ each: true })
+  file_keys!: string[];
+}
+
 export class UpdatePackItemSortDto {
   @IsInt()
   sort_order!: number;

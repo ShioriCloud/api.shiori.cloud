@@ -14,6 +14,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PortalAuthGuard } from '../portal-auth/portal-auth.guard';
 import {
   AddFilePackItemDto,
+  AddFilePackItemsBulkDto,
   FilePickerKeysQueryDto,
   FilePickerRecentQueryDto,
   FilePickerSearchBodyDto,
@@ -142,6 +143,12 @@ export class FilesAdminController {
   async addPackItem(@Param('id') id: string, @Body() body: AddFilePackItemDto) {
     await this.filesAdminService.addPackItem(id, body);
     return { ok: true };
+  }
+
+  @Post('packs/:id/items/bulk')
+  @ApiOperation({ summary: 'Add multiple files to a pack (skips duplicates)' })
+  async addPackItemsBulk(@Param('id') id: string, @Body() body: AddFilePackItemsBulkDto) {
+    return this.filesAdminService.addPackItemsBulk(id, body.file_keys ?? []);
   }
 
   @Delete('packs/:packId/items/:fileKey')
