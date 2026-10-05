@@ -3,7 +3,19 @@
  * https://docs.api.jikan.moe/
  */
 
-const JIKAN_BASE = 'https://api.jikan.moe/v4';
+import { externalHttpGetJson } from './external-score.util';
+
+const defaultJikanBase = 'https://api.jikan.moe/v4';
+
+const jikanBaseUrl = (): string => {
+  const raw = String(process.env.JIKAN_BASE_URL ?? '').trim().replace(/\/+$/, '');
+  return raw || defaultJikanBase;
+};
+
+export type JikanRequestOptions = {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
 
 const LOCAL_FORMATS = new Set(['TV', 'MOVIE', 'ONA', 'OVA', 'SPECIAL']);
 const LOCAL_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
@@ -57,8 +69,6 @@ const positiveInt = (value: unknown): number | null => {
   const n = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(n) && n > 0 ? Math.trunc(n) : null;
 };
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const mapStatus = (raw: unknown): string | null => {
   const v = String(raw ?? '')
@@ -160,41 +170,31 @@ const mapJikanAnime = (rawUnknown: unknown): MalMappedMedia | null => {
   };
 };
 
-const jikanFetch = async (path: string): Promise<unknown> => {
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      const res = await fetch(`${JIKAN_BASE}${path}`, {
-        headers: { Accept: 'application/json' },
-      });
-      if (res.status === 429) {
-        await sleep(1200 * (attempt + 1));
-        continue;
-      }
-      if (!res.ok) {
-        throw new JikanClientError(
-          `Jikan HTTP ${res.status}`,
-          res.status,
-        );
-      }
-      return await res.json();
-    } catch (err) {
-      lastError = err;
-      if (err instanceof JikanClientError && err.status > 0 && err.status !== 429) {
-        throw err;
-      }
-      await sleep(400 * (attempt + 1));
-    }
+const jikanFetch = async (path: string, options?: JikanRequestOptions): Promise<unknown> => {
+  const url = `${jikanBaseUrl()}${path}`;
+  const result = await externalHttpGetJson(url, {
+    signal: options?.signal,
+    timeoutMs: options?.timeoutMs ?? 20_000,
+  });
+
+  if (result.error === 'Request aborted') {
+    throw new JikanClientError('Request aborted', 0);
   }
-  if (lastError instanceof Error) {
-    throw new JikanClientError(lastError.message || 'Jikan unavailable', 0);
+
+  if (!result.ok) {
+    throw new JikanClientError(
+      result.error ?? (result.status ? `Jikan HTTP ${result.status}` : 'Jikan unavailable'),
+      result.status,
+    );
   }
-  throw new JikanClientError('Jikan unavailable', 0);
+
+  return result.json;
 };
 
 export const searchMalAnime = async (
   query: string,
   limit = 12,
+  options?: JikanRequestOptions,
 ): Promise<MalMappedMedia[]> => {
   const q = query.trim();
   if (q.length < 2) return [];
@@ -204,7 +204,7 @@ export const searchMalAnime = async (
     limit: String(Math.min(Math.max(limit, 1), 25)),
     sfw: 'true',
   });
-  const json = asRecord(await jikanFetch(`/anime?${qs.toString()}`));
+  const json = asRecord(await jikanFetch(`/anime?${qs.toString()}`, options));
   const rows = Array.isArray(json?.data) ? json.data : [];
   return rows
     .map((row) => mapJikanAnime(row))
@@ -213,18 +213,22 @@ export const searchMalAnime = async (
 
 export const fetchMalAnimeById = async (
   malId: number,
+  options?: JikanRequestOptions,
 ): Promise<MalMappedMedia | null> => {
   const id = positiveInt(malId);
   if (!id) return null;
-  const json = asRecord(await jikanFetch(`/anime/${id}/full`));
+  const json = asRecord(await jikanFetch(`/anime/${id}/full`, options));
   return mapJikanAnime(json?.data);
 };
 
 /** MAL score is typically 0–10. Returns null when Jikan has no score. */
-export const fetchMalScoreById = async (malId: number): Promise<number | null> => {
+export const fetchMalScoreById = async (
+  malId: number,
+  options?: JikanRequestOptions,
+): Promise<number | null> => {
   const id = positiveInt(malId);
   if (!id) return null;
-  const json = asRecord(await jikanFetch(`/anime/${id}`));
+  const json = asRecord(await jikanFetch(`/anime/${id}`, options));
   const data = asRecord(json?.data);
   if (!data) return null;
   const score = typeof data.score === 'number' ? data.score : Number(data.score);

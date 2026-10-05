@@ -154,6 +154,13 @@ const formatRequestError = (error: unknown): string => {
   return error.message;
 };
 
+export const isAbortError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return true;
+  const msg = error.message.toLowerCase();
+  return msg.includes('aborted') || msg.includes('abort');
+};
+
 const requestJson = async (
   url: string,
   init?: {
@@ -162,6 +169,7 @@ const requestJson = async (
     body?: string;
     timeoutMs?: number;
     insecureTls?: boolean;
+    signal?: AbortSignal;
   },
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
   const timeoutMs = init?.timeoutMs ?? 25_000;
@@ -169,6 +177,10 @@ const requestJson = async (
   const isHttps = parsed.protocol === 'https:';
   const transport = isHttps ? https : http;
   const useInsecureTls = init?.insecureTls ?? false;
+
+  if (init?.signal?.aborted) {
+    return { ok: false, status: 0, json: null, error: 'Request aborted' };
+  }
 
   return new Promise((resolve) => {
     const req = transport.request(
@@ -225,8 +237,17 @@ const requestJson = async (
       req.destroy(new Error('Request timed out'));
     }, timeoutMs);
 
+    const onAbort = () => {
+      clearTimeout(timer);
+      req.destroy(new Error('Request aborted'));
+    };
+    if (init?.signal) {
+      init.signal.addEventListener('abort', onAbort, { once: true });
+    }
+
     req.on('error', (error) => {
       clearTimeout(timer);
+      if (init?.signal) init.signal.removeEventListener('abort', onAbort);
       resolve({
         ok: false,
         status: 0,
@@ -235,7 +256,10 @@ const requestJson = async (
       });
     });
 
-    req.on('close', () => clearTimeout(timer));
+    req.on('close', () => {
+      clearTimeout(timer);
+      if (init?.signal) init.signal.removeEventListener('abort', onAbort);
+    });
 
     if (init?.body) req.write(init.body);
     req.end();
@@ -250,9 +274,14 @@ const requestJsonWithRetry = async (
   init?: Parameters<typeof requestJson>[1],
   attempt = 0,
 ): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> => {
+  if (init?.signal?.aborted) {
+    return { ok: false, status: 0, json: null, error: 'Request aborted' };
+  }
+
   const result = await requestJson(url, init);
 
   if (result.ok) return result;
+  if (init?.signal?.aborted || result.error === 'Request aborted') return result;
   if (attempt >= 2) return result;
   if (result.status > 0 && !shouldRetryStatus(result.status)) return result;
   if (result.status === 0 && attempt >= 1) return result;
@@ -260,6 +289,19 @@ const requestJsonWithRetry = async (
   await sleep(result.status === 429 ? 1_000 * (attempt + 1) : 750 * (attempt + 1));
   return requestJsonWithRetry(url, init, attempt + 1);
 };
+
+/** GET JSON for external score providers (Jikan, etc.) with public-DNS lookup. */
+export const externalHttpGetJson = async (
+  url: string,
+  init?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<{ ok: boolean; status: number; json: unknown; error?: string }> =>
+  requestJsonWithRetry(url, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    insecureTls: insecureTlsEnabled(),
+    timeoutMs: init?.timeoutMs ?? 20_000,
+    signal: init?.signal,
+  });
 
 /** Shared AniList GraphQL POST (import/search/fill + retries). */
 export const anilistGraphqlRequest = async (

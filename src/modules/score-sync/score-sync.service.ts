@@ -7,7 +7,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { Anime, BotSetting } from '../../entities';
 import { fetchAnilistScoresByIds } from '../../common/anilist.client';
-import { fetchMalScoreById } from '../../common/jikan.client';
+import { fetchMalScoreById, JikanClientError } from '../../common/jikan.client';
+import { isAbortError } from '../../common/external-score.util';
 
 export type ScoreSyncSource = 'mal' | 'anilist';
 
@@ -110,6 +111,17 @@ const KNOWN_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const interruptibleSleep = async (ms: number, shouldStop: () => boolean) => {
+  const step = 100;
+  let remaining = ms;
+  while (remaining > 0) {
+    if (shouldStop()) return;
+    const chunk = Math.min(step, remaining);
+    await sleep(chunk);
+    remaining -= chunk;
+  }
+};
+
 const displayTitle = (title: string, romaji: string | null) => {
   const t = title.trim();
   const r = (romaji ?? '').trim();
@@ -148,6 +160,9 @@ const formatFilterLabel = (filters: ScoreSyncFilters): string => {
 @Injectable()
 export class ScoreSyncService {
   private currentJob: MutableJob | null = null;
+
+  /** Aborts the in-flight Jikan/HTTP request when cancel is requested. */
+  private jobHttpAbort: AbortController | null = null;
 
   constructor(
     @InjectRepository(Anime)
@@ -228,8 +243,16 @@ export class ScoreSyncService {
     }
     job.cancelRequested = true;
     job.status = 'cancelling';
-    this.pushLog(job, 'warn', 'درخواست توقف ثبت شد — بعد از آیتم فعلی قطع می‌شود');
+    this.jobHttpAbort?.abort();
+    this.pushLog(job, 'warn', 'درخواست توقف ثبت شد — درخواست فعلی قطع می‌شود');
     return this.snapshotJob();
+  }
+
+  private isJobStopError(err: unknown): boolean {
+    if (isAbortError(err)) return true;
+    if (err instanceof JikanClientError && err.message === 'Request aborted') return true;
+    const msg = err instanceof Error ? err.message : '';
+    return msg === 'Request aborted';
   }
 
   private parseSource(value: unknown): ScoreSyncSource {
@@ -393,6 +416,7 @@ export class ScoreSyncService {
   }
 
   private async runJob(job: MutableJob, targets: AnimeScoreTarget[]) {
+    this.jobHttpAbort = new AbortController();
     try {
       if (job.source === 'mal') {
         await this.runMal(job, targets);
@@ -417,8 +441,13 @@ export class ScoreSyncService {
     } finally {
       job.current_title = null;
       job.finished_at = new Date().toISOString();
+      this.jobHttpAbort = null;
       await this.persistLastRun(job).catch(() => undefined);
     }
+  }
+
+  private malFetchSignal(): AbortSignal | undefined {
+    return this.jobHttpAbort?.signal;
   }
 
   private async runMal(job: MutableJob, targets: AnimeScoreTarget[]) {
@@ -429,9 +458,13 @@ export class ScoreSyncService {
       job.current_title = title;
 
       try {
-        const score = await fetchMalScoreById(target.externalId);
+        const score = await fetchMalScoreById(target.externalId, {
+          signal: this.malFetchSignal(),
+        });
+        if (job.cancelRequested) break;
         await this.applyScore(job, target, score, 'mal');
       } catch (err) {
+        if (job.cancelRequested || this.isJobStopError(err)) break;
         job.counts.errors += 1;
         const message = err instanceof Error ? err.message : 'خطای Jikan';
         this.pushLog(job, 'error', `${title}: ${message}`, target.id, title);
@@ -440,7 +473,7 @@ export class ScoreSyncService {
 
       job.done = i + 1;
       if (i < targets.length - 1 && !job.cancelRequested) {
-        await sleep(MAL_GAP_MS);
+        await interruptibleSleep(MAL_GAP_MS, () => job.cancelRequested);
       }
     }
   }
@@ -483,7 +516,7 @@ export class ScoreSyncService {
       }
 
       if (offset + ANILIST_BATCH < targets.length && !job.cancelRequested) {
-        await sleep(ANILIST_GAP_MS);
+        await interruptibleSleep(ANILIST_GAP_MS, () => job.cancelRequested);
       }
     }
   }
