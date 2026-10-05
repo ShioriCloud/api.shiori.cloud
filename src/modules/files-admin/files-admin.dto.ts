@@ -59,10 +59,32 @@ export class ListFilesStatsQueryDto {
   @Transform(({ value }) => value === 'true' || value === true)
   @IsBoolean()
   staleOnly?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  orphanOnly?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  orphanWithDownloads?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  inactiveReferenced?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  @IsBoolean()
+  referencedZeroDownloads?: boolean;
 }
 
 const ANIME_DOWNLOAD_SORT_FIELDS = [
   'downloads',
+  'downloads_7d',
+  'downloads_30d',
   'title',
   'last_accessed',
   'episodes',

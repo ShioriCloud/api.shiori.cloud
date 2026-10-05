@@ -66,6 +66,8 @@ export type AnimeDownloadStatRow = {
   anime_title: string;
   anime_slug: string | null;
   total_downloads: number;
+  downloads_last_7d: number;
+  downloads_last_30d: number;
   unique_file_keys: number;
   episodes_with_file: number;
   episodes_total: number;
@@ -80,6 +82,14 @@ export type AnimeDownloadStatDetail = AnimeDownloadStatRow & {
   subtitles: AnimeSubtitleDownloadStatRow[];
   subtitle_packs: AnimeSubtitlePackDownloadStatRow[];
   episode_pack: AnimeEpisodePackDownloadStat | null;
+  daily_trend: DownloadDailyTrendPoint[];
+};
+
+export type FileDownloadCatalogRef = {
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+  label: string;
 };
 
 export type FileDownloadStatRow = {
@@ -91,6 +101,7 @@ export type FileDownloadStatRow = {
   last_accessed: string | null;
   created_at: string | null;
   is_active: boolean;
+  catalog_refs: FileDownloadCatalogRef[];
 };
 
 export type FilePickerItemRow = {
@@ -125,6 +136,7 @@ export type FilesDownloadOverview = {
   mkvDownloads: number;
   zipDownloads: number;
   topFiles: FileDownloadStatRow[];
+  topAnimes: AnimeDownloadStatRow[];
 };
 
 export type FilePackRow = {
@@ -262,9 +274,16 @@ type AnimeDownloadAggInternal = {
   subtitles_with_file: number;
   subtitle_packs_with_file: number;
   total_downloads: number;
+  downloads_last_7d: number;
+  downloads_last_30d: number;
   last_accessed: Date | null;
   countedKeys: Set<string>;
   searchBlob: string;
+};
+
+type FileKeyEventPeriodCounts = {
+  last7d: number;
+  last30d: number;
 };
 
 type AnimeMetaForDownloadAgg = {
@@ -298,10 +317,34 @@ export class FilesAdminService {
   private referencedFileKeysCache: { keys: Set<string>; expiresAt: number } | null = null;
 
   private animeDownloadIndexCache: {
-    listRows: AnimeDownloadStatRow[];
+    baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[];
+    keysByAnimeId: Map<string, string[]>;
     searchBlobByAnimeId: Map<string, string>;
     expiresAt: number;
   } | null = null;
+
+  private async hydrateAnimeDownloadPeriodStats(
+    baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[],
+    keysByAnimeId: Map<string, string[]>,
+  ): Promise<AnimeDownloadStatRow[]> {
+    const eventByKey = await this.loadFileKeyEventPeriodCounts();
+    return baseRows.map((row) => {
+      const keys = keysByAnimeId.get(row.anime_id) ?? [];
+      let downloadsLast7d = 0;
+      let downloadsLast30d = 0;
+      for (const key of keys) {
+        const counts = eventByKey.get(key);
+        if (!counts) continue;
+        downloadsLast7d += counts.last7d;
+        downloadsLast30d += counts.last30d;
+      }
+      return {
+        ...row,
+        downloads_last_7d: downloadsLast7d,
+        downloads_last_30d: downloadsLast30d,
+      };
+    });
+  }
 
   private async getReferencedFileKeysSet(): Promise<Set<string>> {
     const now = Date.now();
@@ -365,6 +408,7 @@ export class FilesAdminService {
   private applyDownloadListFilters(
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
     query: ListFilesStatsQueryDto,
+    referencedKeys?: Set<string>,
   ) {
     if (query.activeOnly) {
       qb.andWhere('f.isActive = true');
@@ -375,7 +419,218 @@ export class FilesAdminService {
     if (query.staleOnly) {
       this.applyStaleFileFilter(qb);
     }
+    if (query.orphanOnly || query.orphanWithDownloads) {
+      const keys = referencedKeys ?? new Set<string>();
+      if (query.orphanWithDownloads) {
+        qb.andWhere('COALESCE(f.downloads, 0) > 0');
+      }
+      this.applyOrphanOnlyFilter(qb, keys);
+    }
+    if (query.inactiveReferenced) {
+      const keys = referencedKeys ?? new Set<string>();
+      qb.andWhere('f.isActive = false');
+      if (keys.size === 0) {
+        qb.andWhere('1 = 0');
+      } else {
+        qb.andWhere('f.key IN (:...referencedKeys)', { referencedKeys: [...keys] });
+      }
+    }
+    if (query.referencedZeroDownloads) {
+      const keys = referencedKeys ?? new Set<string>();
+      qb.andWhere('COALESCE(f.downloads, 0) = 0');
+      if (keys.size === 0) {
+        qb.andWhere('1 = 0');
+      } else {
+        qb.andWhere('f.key IN (:...referencedKeys)', { referencedKeys: [...keys] });
+      }
+    }
     this.applyFileSearch(qb, query.search);
+  }
+
+  private needsReferencedKeysForDownloadFilters(query: ListFilesStatsQueryDto): boolean {
+    return Boolean(
+      query.orphanOnly ||
+        query.orphanWithDownloads ||
+        query.inactiveReferenced ||
+        query.referencedZeroDownloads,
+    );
+  }
+
+  private async loadFileKeyEventPeriodCounts(): Promise<Map<string, FileKeyEventPeriodCounts>> {
+    const rows = await this.downloadEventsRepo
+      .createQueryBuilder('e')
+      .select('e.fileKey', 'file_key')
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= NOW() - INTERVAL '7 days')`,
+        'last7d',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE e.downloadedAt >= NOW() - INTERVAL '30 days')`,
+        'last30d',
+      )
+      .where(`e.downloadedAt >= NOW() - INTERVAL '30 days'`)
+      .groupBy('e.fileKey')
+      .getRawMany<{ file_key: string; last7d: string; last30d: string }>();
+
+    const map = new Map<string, FileKeyEventPeriodCounts>();
+    for (const row of rows) {
+      const key = String(row.file_key ?? '').trim();
+      if (!key) continue;
+      map.set(key, {
+        last7d: Number(row.last7d) || 0,
+        last30d: Number(row.last30d) || 0,
+      });
+    }
+    return map;
+  }
+
+  private applyEventPeriodCountsToAnimeAgg(
+    agg: AnimeDownloadAggInternal,
+    eventByKey: Map<string, FileKeyEventPeriodCounts>,
+  ): void {
+    let last7d = 0;
+    let last30d = 0;
+    for (const key of agg.countedKeys) {
+      const counts = eventByKey.get(key);
+      if (!counts) continue;
+      last7d += counts.last7d;
+      last30d += counts.last30d;
+    }
+    agg.downloads_last_7d = last7d;
+    agg.downloads_last_30d = last30d;
+  }
+
+  private async buildAnimeDailyTrendForKeys(
+    keys: Set<string>,
+    days = 30,
+  ): Promise<DownloadDailyTrendPoint[]> {
+    if (keys.size === 0) return this.buildDailyTrend([], days);
+
+    const trendRows = await this.downloadEventsRepo
+      .createQueryBuilder('e')
+      .select(`(e.downloadedAt AT TIME ZONE 'Asia/Tehran')::date`, 'day')
+      .addSelect('COUNT(*)', 'count')
+      .where('e.fileKey IN (:...keys)', { keys: [...keys] })
+      .andWhere(`e.downloadedAt >= NOW() - INTERVAL '29 days'`)
+      .groupBy('day')
+      .orderBy('day', 'ASC')
+      .getRawMany<{ day: string; count: string }>();
+
+    return this.buildDailyTrend(trendRows, days);
+  }
+
+  private async getCatalogRefsForKeys(
+    keys: string[],
+  ): Promise<Map<string, FileDownloadCatalogRef[]>> {
+    const result = new Map<string, FileDownloadCatalogRef[]>();
+    const uniqueKeys = [...new Set(keys.map((k) => String(k ?? '').trim()).filter(Boolean))];
+    uniqueKeys.forEach((k) => result.set(k, []));
+    if (uniqueKeys.length === 0) return result;
+
+    const keySet = new Set(uniqueKeys);
+    const patterns = uniqueKeys.map((key) => this.fileLinkPattern(key));
+
+    const [episodes, subtitles, subtitlePacks, packItems, animesWithEpisodePack] =
+      await Promise.all([
+        this.episodeRepo
+          .createQueryBuilder('e')
+          .innerJoinAndSelect('e.anime', 'a')
+          .where('e.downloadLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.subtitleRepo
+          .createQueryBuilder('s')
+          .innerJoinAndSelect('s.anime', 'a')
+          .where('s.subtitleLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.subtitlePackRepo
+          .createQueryBuilder('sp')
+          .innerJoinAndSelect('sp.anime', 'a')
+          .where('sp.subtitleLink ILIKE ANY(:patterns)', { patterns })
+          .getMany(),
+        this.packItemsRepo
+          .createQueryBuilder('i')
+          .innerJoinAndSelect('i.pack', 'p')
+          .where('i.fileKey IN (:...keys)', { keys: uniqueKeys })
+          .getMany(),
+        this.animeRepo
+          .createQueryBuilder('a')
+          .where('a.episodePackLink IS NOT NULL')
+          .andWhere("a.episodePackLink <> ''")
+          .getMany(),
+      ]);
+
+    const packSlugToAnimes = new Map<string, Anime[]>();
+    for (const anime of animesWithEpisodePack) {
+      const slug = parseTelegramPackSlugFromLink(anime.episodePackLink);
+      if (!slug) continue;
+      const list = packSlugToAnimes.get(slug) ?? [];
+      list.push(anime);
+      packSlugToAnimes.set(slug, list);
+    }
+
+    const pushRef = (fileKey: string | null, ref: FileDownloadCatalogRef) => {
+      const key = String(fileKey ?? '').trim();
+      if (!key || !keySet.has(key)) return;
+      const list = result.get(key)!;
+      const exists = list.some(
+        (row) => row.anime_id === ref.anime_id && row.label === ref.label,
+      );
+      if (exists) return;
+      if (list.length >= 4) return;
+      list.push(ref);
+    };
+
+    for (const row of episodes) {
+      const fileKey = parseTelegramFileKeyFromLink(row.downloadLink);
+      const anime = row.anime;
+      if (!fileKey || !anime) continue;
+      pushRef(fileKey, {
+        anime_id: anime.id,
+        anime_title: anime.title,
+        anime_slug: anime.slug,
+        label: `قسمت ${row.episodeNumber}`,
+      });
+    }
+
+    for (const row of subtitles) {
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      const anime = row.anime;
+      if (!fileKey || !anime) continue;
+      pushRef(fileKey, {
+        anime_id: anime.id,
+        anime_title: anime.title,
+        anime_slug: anime.slug,
+        label: `زیرنویس ق.${row.episodeNumber}`,
+      });
+    }
+
+    for (const row of subtitlePacks) {
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      const anime = row.anime;
+      if (!fileKey || !anime) continue;
+      pushRef(fileKey, {
+        anime_id: anime.id,
+        anime_title: anime.title,
+        anime_slug: anime.slug,
+        label: row.title?.trim() || 'پک زیرنویس',
+      });
+    }
+
+    for (const item of packItems) {
+      const packSlug = item.pack?.slug;
+      if (!packSlug) continue;
+      const animes = packSlugToAnimes.get(packSlug) ?? [];
+      for (const anime of animes) {
+        pushRef(item.fileKey, {
+          anime_id: anime.id,
+          anime_title: anime.title,
+          anime_slug: anime.slug,
+          label: 'پک قسمت‌ها',
+        });
+      }
+    }
+
+    return result;
   }
 
   /** Active files with no recent download activity (30+ days). */
@@ -817,7 +1072,10 @@ export class FilesAdminService {
     }
   }
 
-  private mapFileStat(file: BotFile): FileDownloadStatRow {
+  private mapFileStat(
+    file: BotFile,
+    catalogRefs: FileDownloadCatalogRef[] = [],
+  ): FileDownloadStatRow {
     return {
       key: file.key,
       file_name: file.fileName,
@@ -827,6 +1085,7 @@ export class FilesAdminService {
       last_accessed: file.lastAccessed?.toISOString?.() ?? null,
       created_at: file.createdAt?.toISOString?.() ?? null,
       is_active: file.isActive !== false,
+      catalog_refs: catalogRefs,
     };
   }
 
@@ -903,6 +1162,8 @@ export class FilesAdminService {
       subtitles_with_file: 0,
       subtitle_packs_with_file: 0,
       total_downloads: 0,
+      downloads_last_7d: 0,
+      downloads_last_30d: 0,
       last_accessed: null,
       countedKeys: new Set(),
       searchBlob,
@@ -948,6 +1209,8 @@ export class FilesAdminService {
       anime_title: agg.anime_title,
       anime_slug: agg.anime_slug,
       total_downloads: agg.total_downloads,
+      downloads_last_7d: agg.downloads_last_7d,
+      downloads_last_30d: agg.downloads_last_30d,
       unique_file_keys: agg.countedKeys.size,
       episodes_with_file: agg.episodes_with_file,
       episodes_total: agg.episodes_total,
@@ -993,7 +1256,8 @@ export class FilesAdminService {
   }> {
     const now = Date.now();
     if (this.animeDownloadIndexCache && this.animeDownloadIndexCache.expiresAt > now) {
-      const { listRows, searchBlobByAnimeId } = this.animeDownloadIndexCache;
+      const { baseRows, keysByAnimeId, searchBlobByAnimeId } = this.animeDownloadIndexCache;
+      const listRows = await this.hydrateAnimeDownloadPeriodStats(baseRows, keysByAnimeId);
       return { listRows, searchBlobByAnimeId };
     }
 
@@ -1087,8 +1351,15 @@ export class FilesAdminService {
       }
     }
 
-    const listRows: AnimeDownloadStatRow[] = [...byAnime.values()].map((agg) =>
-      this.mapAnimeDownloadAggToRow(agg),
+    const baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[] =
+      [...byAnime.values()].map((agg) => {
+        const full = this.mapAnimeDownloadAggToRow(agg);
+        const { downloads_last_7d: _d7, downloads_last_30d: _d30, ...base } = full;
+        return base;
+      });
+
+    const keysByAnimeId = new Map(
+      [...byAnime.values()].map((agg) => [agg.anime_id, [...agg.countedKeys]]),
     );
 
     const searchBlobByAnimeId = new Map(
@@ -1096,24 +1367,24 @@ export class FilesAdminService {
     );
 
     this.animeDownloadIndexCache = {
-      listRows,
+      baseRows,
+      keysByAnimeId,
       searchBlobByAnimeId,
       expiresAt: now + 60_000,
     };
 
+    const listRows = await this.hydrateAnimeDownloadPeriodStats(baseRows, keysByAnimeId);
     return { listRows, searchBlobByAnimeId };
   }
 
-  async listAnimeDownloadStats(
+  private filterSortAnimeDownloadRows(
+    listRows: AnimeDownloadStatRow[],
+    searchBlobByAnimeId: Map<string, string>,
     query: ListAnimeDownloadStatsQueryDto,
-  ): Promise<{ items: AnimeDownloadStatRow[]; total: number }> {
-    const page = query.page && query.page > 0 ? query.page : 1;
-    const limit = query.limit && query.limit > 0 ? query.limit : 20;
+  ): AnimeDownloadStatRow[] {
     const sortDir = query.sortDir === 'asc' ? 1 : -1;
     const sortBy = query.sortBy ?? 'downloads';
     const search = String(query.search ?? '').trim().toLowerCase();
-
-    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
 
     let filtered = listRows;
     if (search) {
@@ -1143,6 +1414,12 @@ export class FilesAdminService {
         case 'episodes':
           cmp = a.episodes_with_file - b.episodes_with_file;
           break;
+        case 'downloads_7d':
+          cmp = a.downloads_last_7d - b.downloads_last_7d;
+          break;
+        case 'downloads_30d':
+          cmp = a.downloads_last_30d - b.downloads_last_30d;
+          break;
         case 'downloads':
         default:
           cmp = a.total_downloads - b.total_downloads;
@@ -1151,9 +1428,64 @@ export class FilesAdminService {
       return cmp * sortDir;
     });
 
+    return filtered;
+  }
+
+  async listAnimeDownloadStats(
+    query: ListAnimeDownloadStatsQueryDto,
+  ): Promise<{ items: AnimeDownloadStatRow[]; total: number }> {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 20;
+
+    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
+    const filtered = this.filterSortAnimeDownloadRows(listRows, searchBlobByAnimeId, query);
+
     const total = filtered.length;
     const items = filtered.slice((page - 1) * limit, page * limit);
     return { items, total };
+  }
+
+  async exportAnimeDownloadStatsCsv(query: ListAnimeDownloadStatsQueryDto): Promise<string> {
+    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
+    const items = this.filterSortAnimeDownloadRows(listRows, searchBlobByAnimeId, query);
+
+    const header = [
+      'anime_id',
+      'anime_title',
+      'anime_slug',
+      'total_downloads',
+      'downloads_last_7d',
+      'downloads_last_30d',
+      'unique_file_keys',
+      'episodes_with_file',
+      'episodes_total',
+      'subtitles_with_file',
+      'subtitles_total',
+      'subtitle_packs_with_file',
+      'last_accessed',
+    ];
+
+    const rows = items.map((row) =>
+      [
+        row.anime_id,
+        row.anime_title,
+        row.anime_slug,
+        row.total_downloads,
+        row.downloads_last_7d,
+        row.downloads_last_30d,
+        row.unique_file_keys,
+        row.episodes_with_file,
+        row.episodes_total,
+        row.subtitles_with_file,
+        row.subtitles_total,
+        row.subtitle_packs_with_file,
+        row.last_accessed,
+      ]
+        .map((cell) => this.escapeCsvCell(cell))
+        .join(','),
+    );
+
+    return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
   }
 
   async getAnimeDownloadStatDetail(animeId: string): Promise<AnimeDownloadStatDetail> {
@@ -1288,6 +1620,10 @@ export class FilesAdminService {
       };
     }
 
+    const eventByKey = await this.loadFileKeyEventPeriodCounts();
+    this.applyEventPeriodCountsToAnimeAgg(agg, eventByKey);
+    const dailyTrend = await this.buildAnimeDailyTrendForKeys(agg.countedKeys);
+
     const summary = this.mapAnimeDownloadAggToRow(agg);
 
     return {
@@ -1296,6 +1632,7 @@ export class FilesAdminService {
       subtitles: subtitleRows,
       subtitle_packs: subtitlePackRows,
       episode_pack: episodePack,
+      daily_trend: dailyTrend,
     };
   }
 
@@ -1306,8 +1643,12 @@ export class FilesAdminService {
     const limit = query.limit && query.limit > 0 ? query.limit : 20;
     const sortDir = query.sortDir === 'asc' ? 'ASC' : 'DESC';
 
+    const referencedKeys = this.needsReferencedKeysForDownloadFilters(query)
+      ? await this.getReferencedFileKeysSet()
+      : undefined;
+
     const qb = this.filesRepo.createQueryBuilder('f');
-    this.applyDownloadListFilters(qb, query);
+    this.applyDownloadListFilters(qb, query, referencedKeys);
 
     const total = await qb.clone().getCount();
     const files = await qb
@@ -1317,8 +1658,10 @@ export class FilesAdminService {
       .take(limit)
       .getMany();
 
+    const catalogRefsByKey = await this.getCatalogRefsForKeys(files.map((f) => f.key));
+
     return {
-      items: files.map((f) => this.mapFileStat(f)),
+      items: files.map((f) => this.mapFileStat(f, catalogRefsByKey.get(f.key) ?? [])),
       total,
     };
   }
@@ -1421,6 +1764,13 @@ export class FilesAdminService {
       take: 10,
     });
 
+    const { listRows: animeRows } = await this.buildAnimeDownloadIndex();
+    const topAnimes = [...animeRows]
+      .sort((a, b) => b.downloads_last_7d - a.downloads_last_7d)
+      .slice(0, 10);
+
+    const topFileCatalogRefs = await this.getCatalogRefsForKeys(topFiles.map((f) => f.key));
+
     return {
       totalFiles,
       totalDownloads,
@@ -1440,7 +1790,10 @@ export class FilesAdminService {
       zipFiles: Number(agg?.zipFiles) || 0,
       mkvDownloads: Number(agg?.mkvDownloads) || 0,
       zipDownloads: Number(agg?.zipDownloads) || 0,
-      topFiles: topFiles.map((f) => this.mapFileStat(f)),
+      topFiles: topFiles.map((f) =>
+        this.mapFileStat(f, topFileCatalogRefs.get(f.key) ?? []),
+      ),
+      topAnimes,
     };
   }
 

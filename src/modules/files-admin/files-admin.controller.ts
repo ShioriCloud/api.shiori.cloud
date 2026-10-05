@@ -54,6 +54,13 @@ export class FilesAdminController {
     return this.filesAdminService.listDownloadStats(query);
   }
 
+  @Get('anime-download-stats/export')
+  @ApiOperation({ summary: 'Export filtered anime download stats as CSV' })
+  async exportAnimeDownloadStats(@Query() query: ListAnimeDownloadStatsQueryDto) {
+    const csv = await this.filesAdminService.exportAnimeDownloadStatsCsv(query);
+    return { csv };
+  }
+
   @Get('anime-download-stats')
   @ApiOperation({ summary: 'Paginated anime download stats (episode video files)' })
   animeDownloadStats(@Query() query: ListAnimeDownloadStatsQueryDto) {
