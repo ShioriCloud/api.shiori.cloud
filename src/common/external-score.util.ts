@@ -137,21 +137,86 @@ const externalHostLookup: https.AgentOptions['lookup'] = (hostname, options, cal
     });
 };
 
+const readErrorCode = (error: unknown): string | null => {
+  if (!(error instanceof Error)) return null;
+  const withCode = error as Error & { code?: unknown; cause?: unknown };
+  if (withCode.code != null && String(withCode.code).trim()) {
+    return String(withCode.code).trim();
+  }
+  const cause = withCode.cause;
+  if (cause instanceof Error && cause.message) {
+    const nested = readErrorCode(cause);
+    if (nested) return nested;
+  }
+  if (typeof cause === 'object' && cause && 'code' in cause) {
+    const code = String((cause as { code?: unknown }).code ?? '').trim();
+    if (code) return code;
+  }
+  return null;
+};
+
 const formatRequestError = (error: unknown): string => {
   if (!(error instanceof Error)) return 'Request failed';
 
+  const code = readErrorCode(error);
   const cause = (error as Error & { cause?: unknown }).cause;
-  if (cause instanceof Error && cause.message && cause.message !== error.message) {
-    return `${error.message} (${cause.message})`;
+  let message = error.message;
+
+  if (cause instanceof Error && cause.message && cause.message !== message) {
+    message = `${message} (${cause.message})`;
   }
-  if (typeof cause === 'object' && cause && 'code' in cause) {
-    const code = String((cause as { code?: unknown }).code ?? '');
-    if (code && !error.message.includes(code)) {
-      return `${error.message} (${code})`;
-    }
+  if (code && !message.toUpperCase().includes(code.toUpperCase())) {
+    message = `${message} [${code}]`;
   }
 
-  return error.message;
+  return message;
+};
+
+/** Human-oriented hint for score-sync / admin logs (Persian). */
+export const explainExternalConnectivityFailure = (
+  hostname: string,
+  technical: string,
+): string => {
+  const t = technical.toLowerCase();
+  const host = hostname || 'external API';
+
+  if (t.includes('request timed out') || t.includes('etimedout') || t.includes('timeout')) {
+    return `${technical} — اتصال به ${host} تمام شد (تایم‌اوت). احتمالاً از IP سرور به Jikan/AniList دسترسی نیست یا فایروال مسدود است.`;
+  }
+  if (t.includes('enotfound') || t.includes('no public ipv') || t.includes('getaddrinfo')) {
+    return `${technical} — نام ${host} resolve نشد یا DNS خصوصی/فیلترشده برگردانده. ANILIST_DNS_SERVERS را روی 8.8.8.8,1.1.1.1 بگذارید.`;
+  }
+  if (t.includes('econnrefused') || t.includes('connection refused')) {
+    return `${technical} — ${host} اتصال را رد کرد (ECONNREFUSED).`;
+  }
+  if (t.includes('cert') || t.includes('tls') || t.includes('ssl')) {
+    return `${technical} — خطای TLS به ${host}. در صورت نیاز EXTERNAL_SCORES_INSECURE_TLS=true (فقط برای تست).`;
+  }
+  if (t.includes('aborted')) {
+    return technical;
+  }
+
+  return `${technical} — خطای شبکه/API هنگام تماس با ${host}.`;
+};
+
+export const formatExternalRequestError = (url: string, error?: string): string => {
+  const fallback = error?.trim() || 'Request failed';
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    hostname = '';
+  }
+  const technical = hostname ? `${hostname}: ${fallback}` : fallback;
+  return explainExternalConnectivityFailure(hostname, technical);
+};
+
+export const isExternalTransportFailure = (message: string, status = 0): boolean => {
+  if (status === 0) return true;
+  const t = message.toLowerCase();
+  return /timed out|etimedout|econnrefused|enotfound|econnreset|socket|no public ipv|getaddrinfo|unreachable|network/i.test(
+    t,
+  );
 };
 
 export const isAbortError = (error: unknown): boolean => {
@@ -252,7 +317,7 @@ const requestJson = async (
         ok: false,
         status: 0,
         json: null,
-        error: formatRequestError(error),
+        error: formatExternalRequestError(url, formatRequestError(error)),
       });
     });
 

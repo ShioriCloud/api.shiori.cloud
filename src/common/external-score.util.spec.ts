@@ -1,5 +1,7 @@
 import {
+  explainExternalConnectivityFailure,
   formatExternalHttpError,
+  isExternalTransportFailure,
   isPrivateExternalIp,
   normalizeExternalId,
 } from './external-score.util';
@@ -22,6 +24,31 @@ describe('formatExternalHttpError', () => {
     expect(formatExternalHttpError(504)).toBe('HTTP 504 (vendor timeout)');
     expect(formatExternalHttpError(502)).toBe('HTTP 502 (vendor timeout)');
     expect(formatExternalHttpError(400)).toBe('HTTP 400');
+  });
+});
+
+describe('explainExternalConnectivityFailure', () => {
+  it('adds Persian hints for timeouts and DNS', () => {
+    const timeout = explainExternalConnectivityFailure(
+      'api.jikan.moe',
+      'api.jikan.moe: Request timed out [ETIMEDOUT]',
+    );
+    expect(timeout).toContain('تایم‌اوت');
+    expect(timeout).toContain('api.jikan.moe');
+
+    const dns = explainExternalConnectivityFailure(
+      'api.jikan.moe',
+      'api.jikan.moe: getaddrinfo ENOTFOUND',
+    );
+    expect(dns).toContain('DNS');
+  });
+});
+
+describe('isExternalTransportFailure', () => {
+  it('treats status 0 and timeout text as transport errors', () => {
+    expect(isExternalTransportFailure('anything', 0)).toBe(true);
+    expect(isExternalTransportFailure('HTTP 429', 429)).toBe(false);
+    expect(isExternalTransportFailure('api.jikan.moe: ETIMEDOUT', 0)).toBe(true);
   });
 });
 

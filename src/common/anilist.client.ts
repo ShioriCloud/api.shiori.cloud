@@ -65,6 +65,14 @@ const positiveInt = (value: unknown): number | null => {
   return Math.trunc(n);
 };
 
+const SCORE_BY_MAL_ID_QUERY = `
+  query ($idMal: Int) {
+    Media(idMal: $idMal, type: ANIME) {
+      averageScore
+    }
+  }
+`;
+
 const SCORES_BY_IDS_QUERY = `
   query ($ids: [Int], $page: Int, $perPage: Int) {
     Page(page: $page, perPage: $perPage) {
@@ -81,6 +89,24 @@ export type AnilistScoreRow = {
   anilist_id: number;
   average_score: number | null;
   title: string | null;
+};
+
+/** MAL-scale 0–10 from AniList idMal when Jikan is unreachable. */
+export const fetchMalScoreByAnilistMalId = async (malId: number): Promise<number | null> => {
+  const id = positiveInt(malId);
+  if (!id) return null;
+
+  const data = await parseGraphql<{ Media?: { averageScore?: number | null } | null }>(
+    SCORE_BY_MAL_ID_QUERY,
+    { idMal: id },
+  );
+
+  const scoreRaw = data.Media?.averageScore;
+  if (typeof scoreRaw !== 'number' || !Number.isFinite(scoreRaw) || scoreRaw <= 0) {
+    return null;
+  }
+  const malScale = scoreRaw / 10;
+  return Math.round(malScale * 100) / 100;
 };
 
 /** AniList averageScore is 0–100. Batches up to 50 IDs per request. */

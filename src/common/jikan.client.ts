@@ -12,6 +12,14 @@ const jikanBaseUrl = (): string => {
   return raw || defaultJikanBase;
 };
 
+export const jikanEndpointHost = (): string => {
+  try {
+    return new URL(jikanBaseUrl()).hostname;
+  } catch {
+    return 'api.jikan.moe';
+  }
+};
+
 export type JikanRequestOptions = {
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -182,10 +190,11 @@ const jikanFetch = async (path: string, options?: JikanRequestOptions): Promise<
   }
 
   if (!result.ok) {
-    throw new JikanClientError(
-      result.error ?? (result.status ? `Jikan HTTP ${result.status}` : 'Jikan unavailable'),
-      result.status,
-    );
+    const host = jikanEndpointHost();
+    const base =
+      result.error ??
+      (result.status ? `Jikan HTTP ${result.status}` : `Jikan (${host}) unavailable`);
+    throw new JikanClientError(base, result.status);
   }
 
   return result.json;

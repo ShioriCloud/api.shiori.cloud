@@ -6,9 +6,17 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Not, Repository } from 'typeorm';
 import { Anime, BotSetting } from '../../entities';
-import { fetchAnilistScoresByIds } from '../../common/anilist.client';
-import { fetchMalScoreById, JikanClientError } from '../../common/jikan.client';
-import { isAbortError } from '../../common/external-score.util';
+import {
+  AnilistClientError,
+  fetchAnilistScoresByIds,
+  fetchMalScoreByAnilistMalId,
+} from '../../common/anilist.client';
+import {
+  explainExternalConnectivityFailure,
+  isAbortError,
+  isExternalTransportFailure,
+} from '../../common/external-score.util';
+import { fetchMalScoreById, jikanEndpointHost, JikanClientError } from '../../common/jikan.client';
 
 export type ScoreSyncSource = 'mal' | 'anilist';
 
@@ -163,6 +171,8 @@ export class ScoreSyncService {
 
   /** Aborts the in-flight Jikan/HTTP request when cancel is requested. */
   private jobHttpAbort: AbortController | null = null;
+
+  private malScoreFallbackWarned = false;
 
   constructor(
     @InjectRepository(Anime)
@@ -450,7 +460,26 @@ export class ScoreSyncService {
     return this.jobHttpAbort?.signal;
   }
 
+  private formatMalFetchError(err: unknown): string {
+    const host = jikanEndpointHost();
+    const raw =
+      err instanceof JikanClientError || err instanceof AnilistClientError || err instanceof Error
+        ? err.message
+        : 'خطای نامشخص';
+    if (err instanceof JikanClientError && err.status === 0) {
+      return explainExternalConnectivityFailure(host, raw);
+    }
+    return raw;
+  }
+
   private async runMal(job: MutableJob, targets: AnimeScoreTarget[]) {
+    this.malScoreFallbackWarned = false;
+    this.pushLog(
+      job,
+      'info',
+      `منبع Jikan: https://${jikanEndpointHost()}/v4 (متغیر JIKAN_BASE_URL)`,
+    );
+
     for (let i = 0; i < targets.length; i += 1) {
       if (job.cancelRequested) break;
       const target = targets[i]!;
@@ -458,15 +487,58 @@ export class ScoreSyncService {
       job.current_title = title;
 
       try {
-        const score = await fetchMalScoreById(target.externalId, {
+        let score = await fetchMalScoreById(target.externalId, {
           signal: this.malFetchSignal(),
         });
         if (job.cancelRequested) break;
         await this.applyScore(job, target, score, 'mal');
       } catch (err) {
         if (job.cancelRequested || this.isJobStopError(err)) break;
+
+        const jikanStatus = err instanceof JikanClientError ? err.status : 0;
+        const jikanMessage = err instanceof Error ? err.message : '';
+        const canFallback =
+          err instanceof JikanClientError &&
+          jikanMessage !== 'Request aborted' &&
+          !jikanMessage.toLowerCase().includes('aborted') &&
+          isExternalTransportFailure(jikanMessage, jikanStatus);
+
+        if (canFallback) {
+          try {
+            const fallbackScore = await fetchMalScoreByAnilistMalId(target.externalId);
+            if (!this.malScoreFallbackWarned) {
+              this.malScoreFallbackWarned = true;
+              this.pushLog(
+                job,
+                'warn',
+                `Jikan در دسترس نیست؛ برای نمرهٔ MAL از AniList (idMal) استفاده می‌شود. نمونه خطا: ${this.formatMalFetchError(err)}`,
+              );
+            }
+            if (job.cancelRequested) break;
+            await this.applyScore(job, target, fallbackScore, 'mal');
+            job.done = i + 1;
+            if (i < targets.length - 1 && !job.cancelRequested) {
+              await interruptibleSleep(MAL_GAP_MS, () => job.cancelRequested);
+            }
+            continue;
+          } catch (fallbackErr) {
+            if (job.cancelRequested || this.isJobStopError(fallbackErr)) break;
+            const message = `${this.formatMalFetchError(err)} · AniList fallback: ${
+              fallbackErr instanceof Error ? fallbackErr.message : 'ناموفق'
+            }`;
+            job.counts.errors += 1;
+            this.pushLog(job, 'error', `${title}: ${message}`, target.id, title);
+            this.pushAttention(job, target.id, title, message);
+            job.done = i + 1;
+            if (i < targets.length - 1 && !job.cancelRequested) {
+              await interruptibleSleep(MAL_GAP_MS, () => job.cancelRequested);
+            }
+            continue;
+          }
+        }
+
         job.counts.errors += 1;
-        const message = err instanceof Error ? err.message : 'خطای Jikan';
+        const message = this.formatMalFetchError(err);
         this.pushLog(job, 'error', `${title}: ${message}`, target.id, title);
         this.pushAttention(job, target.id, title, message);
       }
