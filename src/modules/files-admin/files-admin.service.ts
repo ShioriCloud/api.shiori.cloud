@@ -1746,7 +1746,6 @@ export class FilesAdminService {
     const keys = ranked.map((row) => row.file_key);
     const files = await this.filesRepo.find({ where: { key: In(keys) } });
     const fileMap = new Map(files.map((f) => [f.key, f]));
-    const catalogRefs = await this.getCatalogRefsForKeys(keys);
 
     return ranked.map((row) => {
       const file = fileMap.get(row.file_key);
@@ -1755,7 +1754,6 @@ export class FilesAdminService {
         label: file?.fileName?.trim() || row.file_key,
         value: row.count,
         file_key: row.file_key,
-        catalog_refs: catalogRefs.get(row.file_key) ?? [],
       };
     });
   }
@@ -1770,15 +1768,11 @@ export class FilesAdminService {
       this.buildAnimeDownloadIndex().then((r) => r.listRows),
     ]);
 
-    const lifetimeKeys = topFilesLifetime.map((f) => f.key);
-    const lifetimeRefs = await this.getCatalogRefsForKeys(lifetimeKeys);
-
     const filesLifetime: DownloadLeaderboardEntry[] = topFilesLifetime.map((file) => ({
       id: file.key,
       label: file.fileName?.trim() || file.key,
       value: file.downloads ?? 0,
       file_key: file.key,
-      catalog_refs: lifetimeRefs.get(file.key) ?? [],
     }));
 
     const [files7d, files30d] = await Promise.all([
