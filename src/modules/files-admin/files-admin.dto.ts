@@ -61,6 +61,40 @@ export class ListFilesStatsQueryDto {
   staleOnly?: boolean;
 }
 
+const ANIME_DOWNLOAD_SORT_FIELDS = [
+  'downloads',
+  'title',
+  'last_accessed',
+  'episodes',
+] as const;
+
+export class ListAnimeDownloadStatsQueryDto {
+  @IsOptional()
+  @Transform(({ value }) => Number.parseInt(String(value ?? '1'), 10))
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => Number.parseInt(String(value ?? '20'), 10))
+  @IsInt()
+  @Min(1)
+  @Max(500)
+  limit?: number;
+
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @IsOptional()
+  @IsIn(ANIME_DOWNLOAD_SORT_FIELDS)
+  sortBy?: (typeof ANIME_DOWNLOAD_SORT_FIELDS)[number];
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortDir?: 'asc' | 'desc';
+}
+
 export class FilePickerSearchBodyDto {
   @IsOptional()
   @IsString()

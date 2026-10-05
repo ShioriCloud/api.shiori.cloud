@@ -12,12 +12,36 @@ import {
   FilePickerRecentQueryDto,
   FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
+  ListAnimeDownloadStatsQueryDto,
   ListFilesStatsQueryDto,
   ListBotFilesQueryDto,
   PatchBotFileMetadataDto,
   ReorderFilePackItemsDto,
   UpsertFilePackDto,
 } from './files-admin.dto';
+
+export type AnimeEpisodeDownloadStatRow = {
+  episode_id: string;
+  episode_number: number | null;
+  file_key: string | null;
+  file_name: string | null;
+  downloads: number;
+  last_accessed: string | null;
+};
+
+export type AnimeDownloadStatRow = {
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+  total_downloads: number;
+  episodes_with_file: number;
+  episodes_total: number;
+  last_accessed: string | null;
+};
+
+export type AnimeDownloadStatDetail = AnimeDownloadStatRow & {
+  episodes: AnimeEpisodeDownloadStatRow[];
+};
 
 export type FileDownloadStatRow = {
   key: string;
@@ -773,6 +797,224 @@ export class FilesAdminService {
         );
       }
     });
+  }
+
+  private async buildAnimeDownloadIndex(): Promise<{
+    listRows: AnimeDownloadStatRow[];
+    searchBlobByAnimeId: Map<string, string>;
+  }> {
+    const episodes = await this.episodeRepo
+      .createQueryBuilder('e')
+      .innerJoinAndSelect('e.anime', 'a')
+      .getMany();
+
+    const keys = new Set<string>();
+    for (const ep of episodes) {
+      const key = parseTelegramFileKeyFromLink(ep.downloadLink);
+      if (key) keys.add(key);
+    }
+
+    const files =
+      keys.size > 0
+        ? await this.filesRepo.find({ where: { key: In([...keys]) } })
+        : [];
+    const fileMap = new Map(files.map((f) => [f.key, f]));
+
+    type Agg = {
+      anime_id: string;
+      anime_title: string;
+      anime_slug: string | null;
+      episodes_total: number;
+      episodes_with_file: number;
+      total_downloads: number;
+      last_accessed: Date | null;
+      countedKeys: Set<string>;
+      searchBlob: string;
+    };
+
+    const byAnime = new Map<string, Agg>();
+
+    for (const ep of episodes) {
+      const anime = ep.anime;
+      if (!anime) continue;
+
+      let agg = byAnime.get(ep.animeId);
+      if (!agg) {
+        const searchBlob = [anime.title, anime.slug, anime.titleRomaji]
+          .map((v) => String(v ?? '').trim().toLowerCase())
+          .filter(Boolean)
+          .join(' ');
+        agg = {
+          anime_id: ep.animeId,
+          anime_title: anime.title,
+          anime_slug: anime.slug,
+          episodes_total: 0,
+          episodes_with_file: 0,
+          total_downloads: 0,
+          last_accessed: null,
+          countedKeys: new Set(),
+          searchBlob,
+        };
+        byAnime.set(ep.animeId, agg);
+      }
+
+      agg.episodes_total += 1;
+      const fileKey = parseTelegramFileKeyFromLink(ep.downloadLink);
+      if (!fileKey) continue;
+
+      agg.episodes_with_file += 1;
+      const file = fileMap.get(fileKey);
+      if (!file) continue;
+
+      if (!agg.countedKeys.has(fileKey)) {
+        agg.countedKeys.add(fileKey);
+        agg.total_downloads += file.downloads ?? 0;
+      }
+
+      const accessed = file.lastAccessed;
+      if (accessed && (!agg.last_accessed || accessed > agg.last_accessed)) {
+        agg.last_accessed = accessed;
+      }
+    }
+
+    const listRows: AnimeDownloadStatRow[] = [...byAnime.values()].map((agg) => ({
+      anime_id: agg.anime_id,
+      anime_title: agg.anime_title,
+      anime_slug: agg.anime_slug,
+      total_downloads: agg.total_downloads,
+      episodes_with_file: agg.episodes_with_file,
+      episodes_total: agg.episodes_total,
+      last_accessed: agg.last_accessed?.toISOString?.() ?? null,
+    }));
+
+    const searchBlobByAnimeId = new Map(
+      [...byAnime.values()].map((agg) => [agg.anime_id, agg.searchBlob]),
+    );
+
+    return { listRows, searchBlobByAnimeId };
+  }
+
+  async listAnimeDownloadStats(
+    query: ListAnimeDownloadStatsQueryDto,
+  ): Promise<{ items: AnimeDownloadStatRow[]; total: number }> {
+    const page = query.page && query.page > 0 ? query.page : 1;
+    const limit = query.limit && query.limit > 0 ? query.limit : 20;
+    const sortDir = query.sortDir === 'asc' ? 1 : -1;
+    const sortBy = query.sortBy ?? 'downloads';
+    const search = String(query.search ?? '').trim().toLowerCase();
+
+    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
+
+    let filtered = listRows;
+    if (search) {
+      const tokens = splitFileSearchTokens(search);
+      filtered = listRows.filter((row) => {
+        const blob =
+          searchBlobByAnimeId.get(row.anime_id) ??
+          [row.anime_title, row.anime_slug]
+            .map((v) => String(v ?? '').toLowerCase())
+            .join(' ');
+        return tokens.every((token) => blob.includes(token.toLowerCase()));
+      });
+    }
+
+    filtered.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case 'title':
+          cmp = a.anime_title.localeCompare(b.anime_title, 'fa');
+          break;
+        case 'last_accessed': {
+          const at = a.last_accessed ? Date.parse(a.last_accessed) : 0;
+          const bt = b.last_accessed ? Date.parse(b.last_accessed) : 0;
+          cmp = at - bt;
+          break;
+        }
+        case 'episodes':
+          cmp = a.episodes_with_file - b.episodes_with_file;
+          break;
+        case 'downloads':
+        default:
+          cmp = a.total_downloads - b.total_downloads;
+          break;
+      }
+      return cmp * sortDir;
+    });
+
+    const total = filtered.length;
+    const items = filtered.slice((page - 1) * limit, page * limit);
+    return { items, total };
+  }
+
+  async getAnimeDownloadStatDetail(animeId: string): Promise<AnimeDownloadStatDetail> {
+    const id = String(animeId ?? '').trim();
+    if (!isUuid(id)) throw new BadRequestException('invalid anime id');
+
+    const anime = await this.animeRepo.findOne({ where: { id } });
+    if (!anime) throw new NotFoundException('anime not found');
+
+    const episodes = await this.episodeRepo.find({
+      where: { animeId: id },
+      order: { episodeNumber: 'ASC' },
+    });
+
+    const keys = [
+      ...new Set(
+        episodes
+          .map((ep) => parseTelegramFileKeyFromLink(ep.downloadLink))
+          .filter((k): k is string => Boolean(k)),
+      ),
+    ];
+
+    const files =
+      keys.length > 0
+        ? await this.filesRepo.find({ where: { key: In(keys) } })
+        : [];
+    const fileMap = new Map(files.map((f) => [f.key, f]));
+
+    const countedKeys = new Set<string>();
+    let totalDownloads = 0;
+    let lastAccessed: Date | null = null;
+    let episodesWithFile = 0;
+
+    const episodeRows: AnimeEpisodeDownloadStatRow[] = [];
+    for (const ep of episodes) {
+      const fileKey = parseTelegramFileKeyFromLink(ep.downloadLink);
+      const file = fileKey ? fileMap.get(fileKey) : undefined;
+      if (fileKey && file) {
+        episodesWithFile += 1;
+        if (!countedKeys.has(fileKey)) {
+          countedKeys.add(fileKey);
+          totalDownloads += file.downloads ?? 0;
+        }
+        const accessed = file.lastAccessed;
+        if (accessed && (!lastAccessed || accessed > lastAccessed)) {
+          lastAccessed = accessed;
+        }
+      }
+
+      episodeRows.push({
+        episode_id: ep.id,
+        episode_number: ep.episodeNumber,
+        file_key: fileKey,
+        file_name: file?.fileName ?? null,
+        downloads: file?.downloads ?? 0,
+        last_accessed: file?.lastAccessed?.toISOString?.() ?? null,
+      });
+    }
+
+    const lastAccessedIso = lastAccessed ? lastAccessed.toISOString() : null;
+
+    return {
+      anime_id: anime.id,
+      anime_title: anime.title,
+      anime_slug: anime.slug,
+      total_downloads: totalDownloads,
+      episodes_with_file: episodesWithFile,
+      episodes_total: episodes.length,
+      last_accessed: lastAccessedIso,
+      episodes: episodeRows,
+    };
   }
 
   async listDownloadStats(

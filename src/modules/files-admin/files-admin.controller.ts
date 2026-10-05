@@ -19,6 +19,7 @@ import {
   FilePickerRecentQueryDto,
   FilePickerSearchBodyDto,
   FilePickerSearchQueryDto,
+  ListAnimeDownloadStatsQueryDto,
   ListFilesStatsQueryDto,
   ListBotFilesQueryDto,
   PatchBotFileMetadataDto,
@@ -51,6 +52,18 @@ export class FilesAdminController {
   @ApiOperation({ summary: 'Paginated file download stats' })
   stats(@Query() query: ListFilesStatsQueryDto) {
     return this.filesAdminService.listDownloadStats(query);
+  }
+
+  @Get('anime-download-stats')
+  @ApiOperation({ summary: 'Paginated anime download stats (episode video files)' })
+  animeDownloadStats(@Query() query: ListAnimeDownloadStatsQueryDto) {
+    return this.filesAdminService.listAnimeDownloadStats(query);
+  }
+
+  @Get('anime-download-stats/:animeId')
+  @ApiOperation({ summary: 'Anime download stats with per-episode breakdown' })
+  animeDownloadStatDetail(@Param('animeId') animeId: string) {
+    return this.filesAdminService.getAnimeDownloadStatDetail(animeId);
   }
 
   @Get('files')
