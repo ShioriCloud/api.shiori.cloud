@@ -453,7 +453,13 @@ export class AnimeAdminService {
     search?: string;
     page?: number;
     limit?: number;
-    filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured';
+    filter?:
+      | 'all'
+      | 'has-episodes'
+      | 'no-episodes'
+      | 'featured'
+      | 'no-mal-id'
+      | 'no-anilist-id';
     year?: number;
     season?: string;
     sortBy?: 'updated_at' | 'created_at' | 'title' | 'year_desc' | 'year_asc';
@@ -475,6 +481,10 @@ export class AnimeAdminService {
       qb.andWhere('EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
     } else if (filter === 'no-episodes') {
       qb.andWhere('NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
+    } else if (filter === 'no-mal-id') {
+      qb.andWhere('a.malId IS NULL');
+    } else if (filter === 'no-anilist-id') {
+      qb.andWhere('a.anilistId IS NULL');
     }
     if (Number.isFinite(params?.year) && Number(params?.year) > 0) {
       qb.andWhere('a.year = :year', { year: Number(params?.year) });

@@ -63,7 +63,14 @@ export class AnimeAdminController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
-    @Query('filter') filter?: 'all' | 'has-episodes' | 'no-episodes' | 'featured',
+    @Query('filter')
+    filter?:
+      | 'all'
+      | 'has-episodes'
+      | 'no-episodes'
+      | 'featured'
+      | 'no-mal-id'
+      | 'no-anilist-id',
     @Query('year') year?: string,
     @Query('season') season?: string,
     @Query('sortBy')
