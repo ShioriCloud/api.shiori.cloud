@@ -116,6 +116,22 @@ export type DownloadDailyTrendPoint = {
   count: number;
 };
 
+export type DownloadLeaderboardKey =
+  | 'files_lifetime'
+  | 'files_7d'
+  | 'files_30d'
+  | 'animes_7d'
+  | 'animes_30d';
+
+export type DownloadLeaderboardEntry = {
+  id: string;
+  label: string;
+  value: number;
+  anime_slug?: string | null;
+  file_key?: string | null;
+  catalog_refs?: FileDownloadCatalogRef[];
+};
+
 export type FilesDownloadOverview = {
   totalFiles: number;
   totalDownloads: number;
@@ -135,8 +151,7 @@ export type FilesDownloadOverview = {
   zipFiles: number;
   mkvDownloads: number;
   zipDownloads: number;
-  topFiles: FileDownloadStatRow[];
-  topAnimes: AnimeDownloadStatRow[];
+  leaderboards: Record<DownloadLeaderboardKey, DownloadLeaderboardEntry[]>;
 };
 
 export type FilePackRow = {
@@ -1702,6 +1717,106 @@ export class FilesAdminService {
     return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
   }
 
+  private async getTopFileKeysByEventDays(days: number, limit = 10): Promise<
+    { file_key: string; count: number }[]
+  > {
+    const rows = await this.downloadEventsRepo
+      .createQueryBuilder('e')
+      .select('e.fileKey', 'file_key')
+      .addSelect('COUNT(*)', 'count')
+      .where(`e.downloadedAt >= NOW() - INTERVAL '${days} days'`)
+      .groupBy('e.fileKey')
+      .orderBy('count', 'DESC')
+      .limit(limit)
+      .getRawMany<{ file_key: string; count: string }>();
+
+    return rows
+      .map((row) => ({
+        file_key: String(row.file_key ?? '').trim(),
+        count: Number(row.count) || 0,
+      }))
+      .filter((row) => row.file_key && row.count > 0);
+  }
+
+  private async buildFileLeaderboardEntries(
+    ranked: { file_key: string; count: number }[],
+  ): Promise<DownloadLeaderboardEntry[]> {
+    if (ranked.length === 0) return [];
+
+    const keys = ranked.map((row) => row.file_key);
+    const files = await this.filesRepo.find({ where: { key: In(keys) } });
+    const fileMap = new Map(files.map((f) => [f.key, f]));
+    const catalogRefs = await this.getCatalogRefsForKeys(keys);
+
+    return ranked.map((row) => {
+      const file = fileMap.get(row.file_key);
+      return {
+        id: row.file_key,
+        label: file?.fileName?.trim() || row.file_key,
+        value: row.count,
+        file_key: row.file_key,
+        catalog_refs: catalogRefs.get(row.file_key) ?? [],
+      };
+    });
+  }
+
+  private async buildDownloadLeaderboards(): Promise<
+    Record<DownloadLeaderboardKey, DownloadLeaderboardEntry[]>
+  > {
+    const [topFilesLifetime, topFiles7dRaw, topFiles30dRaw, animeRows] = await Promise.all([
+      this.filesRepo.find({ order: { downloads: 'DESC' }, take: 10 }),
+      this.getTopFileKeysByEventDays(7),
+      this.getTopFileKeysByEventDays(30),
+      this.buildAnimeDownloadIndex().then((r) => r.listRows),
+    ]);
+
+    const lifetimeKeys = topFilesLifetime.map((f) => f.key);
+    const lifetimeRefs = await this.getCatalogRefsForKeys(lifetimeKeys);
+
+    const filesLifetime: DownloadLeaderboardEntry[] = topFilesLifetime.map((file) => ({
+      id: file.key,
+      label: file.fileName?.trim() || file.key,
+      value: file.downloads ?? 0,
+      file_key: file.key,
+      catalog_refs: lifetimeRefs.get(file.key) ?? [],
+    }));
+
+    const [files7d, files30d] = await Promise.all([
+      this.buildFileLeaderboardEntries(topFiles7dRaw),
+      this.buildFileLeaderboardEntries(topFiles30dRaw),
+    ]);
+
+    const animes7d = [...animeRows]
+      .sort((a, b) => b.downloads_last_7d - a.downloads_last_7d)
+      .slice(0, 10)
+      .filter((row) => row.downloads_last_7d > 0)
+      .map((row) => ({
+        id: row.anime_id,
+        label: row.anime_title,
+        value: row.downloads_last_7d,
+        anime_slug: row.anime_slug,
+      }));
+
+    const animes30d = [...animeRows]
+      .sort((a, b) => b.downloads_last_30d - a.downloads_last_30d)
+      .slice(0, 10)
+      .filter((row) => row.downloads_last_30d > 0)
+      .map((row) => ({
+        id: row.anime_id,
+        label: row.anime_title,
+        value: row.downloads_last_30d,
+        anime_slug: row.anime_slug,
+      }));
+
+    return {
+      files_lifetime: filesLifetime,
+      files_7d: files7d,
+      files_30d: files30d,
+      animes_7d: animes7d,
+      animes_30d: animes30d,
+    };
+  }
+
   async getDownloadOverview(): Promise<FilesDownloadOverview> {
     const totalFiles = await this.filesRepo.count();
 
@@ -1759,17 +1874,7 @@ export class FilesAdminService {
           ? 100
           : null;
 
-    const topFiles = await this.filesRepo.find({
-      order: { downloads: 'DESC' },
-      take: 10,
-    });
-
-    const { listRows: animeRows } = await this.buildAnimeDownloadIndex();
-    const topAnimes = [...animeRows]
-      .sort((a, b) => b.downloads_last_7d - a.downloads_last_7d)
-      .slice(0, 10);
-
-    const topFileCatalogRefs = await this.getCatalogRefsForKeys(topFiles.map((f) => f.key));
+    const leaderboards = await this.buildDownloadLeaderboards();
 
     return {
       totalFiles,
@@ -1790,10 +1895,7 @@ export class FilesAdminService {
       zipFiles: Number(agg?.zipFiles) || 0,
       mkvDownloads: Number(agg?.mkvDownloads) || 0,
       zipDownloads: Number(agg?.zipDownloads) || 0,
-      topFiles: topFiles.map((f) =>
-        this.mapFileStat(f, topFileCatalogRefs.get(f.key) ?? []),
-      ),
-      topAnimes,
+      leaderboards,
     };
   }
 
