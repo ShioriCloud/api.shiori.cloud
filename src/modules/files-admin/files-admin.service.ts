@@ -29,18 +29,57 @@ export type AnimeEpisodeDownloadStatRow = {
   last_accessed: string | null;
 };
 
+export type AnimeSubtitleDownloadStatRow = {
+  subtitle_id: string;
+  episode_number: number | null;
+  file_key: string | null;
+  file_name: string | null;
+  downloads: number;
+  last_accessed: string | null;
+};
+
+export type AnimeSubtitlePackDownloadStatRow = {
+  pack_id: string;
+  title: string | null;
+  file_key: string | null;
+  file_name: string | null;
+  downloads: number;
+  last_accessed: string | null;
+};
+
+export type AnimeEpisodePackItemDownloadStatRow = {
+  file_key: string;
+  file_name: string | null;
+  downloads: number;
+  last_accessed: string | null;
+  sort_order: number;
+};
+
+export type AnimeEpisodePackDownloadStat = {
+  pack_slug: string;
+  pack_title: string;
+  items: AnimeEpisodePackItemDownloadStatRow[];
+};
+
 export type AnimeDownloadStatRow = {
   anime_id: string;
   anime_title: string;
   anime_slug: string | null;
   total_downloads: number;
+  unique_file_keys: number;
   episodes_with_file: number;
   episodes_total: number;
+  subtitles_with_file: number;
+  subtitles_total: number;
+  subtitle_packs_with_file: number;
   last_accessed: string | null;
 };
 
 export type AnimeDownloadStatDetail = AnimeDownloadStatRow & {
   episodes: AnimeEpisodeDownloadStatRow[];
+  subtitles: AnimeSubtitleDownloadStatRow[];
+  subtitle_packs: AnimeSubtitlePackDownloadStatRow[];
+  episode_pack: AnimeEpisodePackDownloadStat | null;
 };
 
 export type FileDownloadStatRow = {
@@ -184,12 +223,56 @@ const parseTelegramFileKeyFromLink = (link: string | null | undefined): string |
   }
 };
 
+const parseTelegramPackSlugFromLink = (link: string | null | undefined): string | null => {
+  const raw = String(link ?? '').trim();
+  if (!raw) return null;
+
+  const fromUrl = raw.match(/[?&]start=pack_([^&]+)/i)?.[1];
+  if (fromUrl) {
+    try {
+      return decodeURIComponent(fromUrl).trim() || null;
+    } catch {
+      return fromUrl.trim() || null;
+    }
+  }
+
+  const bare = raw.match(/^pack_(.+)$/i)?.[1];
+  if (!bare) return null;
+  try {
+    return decodeURIComponent(bare).trim() || null;
+  } catch {
+    return bare.trim() || null;
+  }
+};
+
 const splitFileSearchTokens = (query?: string): string[] =>
   String(query ?? '')
     .trim()
     .split(/\s+/)
     .map((t) => t.replace(/,/g, ' ').trim())
     .filter((t) => t.length > 0);
+
+type AnimeDownloadAggInternal = {
+  anime_id: string;
+  anime_title: string;
+  anime_slug: string | null;
+  episodes_total: number;
+  episodes_with_file: number;
+  subtitles_total: number;
+  subtitles_with_file: number;
+  subtitle_packs_with_file: number;
+  total_downloads: number;
+  last_accessed: Date | null;
+  countedKeys: Set<string>;
+  searchBlob: string;
+};
+
+type AnimeMetaForDownloadAgg = {
+  id: string;
+  title: string;
+  slug: string | null;
+  titleRomaji?: string | null;
+};
 
 @Injectable()
 export class FilesAdminService {
@@ -213,6 +296,12 @@ export class FilesAdminService {
   ) {}
 
   private referencedFileKeysCache: { keys: Set<string>; expiresAt: number } | null = null;
+
+  private animeDownloadIndexCache: {
+    listRows: AnimeDownloadStatRow[];
+    searchBlobByAnimeId: Map<string, string>;
+    expiresAt: number;
+  } | null = null;
 
   private async getReferencedFileKeysSet(): Promise<Set<string>> {
     const now = Date.now();
@@ -799,97 +888,218 @@ export class FilesAdminService {
     });
   }
 
-  private async buildAnimeDownloadIndex(): Promise<{
-    listRows: AnimeDownloadStatRow[];
-    searchBlobByAnimeId: Map<string, string>;
-  }> {
-    const episodes = await this.episodeRepo
-      .createQueryBuilder('e')
-      .innerJoinAndSelect('e.anime', 'a')
-      .getMany();
-
-    const keys = new Set<string>();
-    for (const ep of episodes) {
-      const key = parseTelegramFileKeyFromLink(ep.downloadLink);
-      if (key) keys.add(key);
-    }
-
-    const files =
-      keys.size > 0
-        ? await this.filesRepo.find({ where: { key: In([...keys]) } })
-        : [];
-    const fileMap = new Map(files.map((f) => [f.key, f]));
-
-    type Agg = {
-      anime_id: string;
-      anime_title: string;
-      anime_slug: string | null;
-      episodes_total: number;
-      episodes_with_file: number;
-      total_downloads: number;
-      last_accessed: Date | null;
-      countedKeys: Set<string>;
-      searchBlob: string;
+  private createAnimeDownloadAgg(anime: AnimeMetaForDownloadAgg): AnimeDownloadAggInternal {
+    const searchBlob = [anime.title, anime.slug, anime.titleRomaji]
+      .map((v) => String(v ?? '').trim().toLowerCase())
+      .filter(Boolean)
+      .join(' ');
+    return {
+      anime_id: anime.id,
+      anime_title: anime.title,
+      anime_slug: anime.slug,
+      episodes_total: 0,
+      episodes_with_file: 0,
+      subtitles_total: 0,
+      subtitles_with_file: 0,
+      subtitle_packs_with_file: 0,
+      total_downloads: 0,
+      last_accessed: null,
+      countedKeys: new Set(),
+      searchBlob,
     };
+  }
 
-    const byAnime = new Map<string, Agg>();
+  private getOrCreateAnimeDownloadAgg(
+    byAnime: Map<string, AnimeDownloadAggInternal>,
+    anime: AnimeMetaForDownloadAgg,
+  ): AnimeDownloadAggInternal {
+    let agg = byAnime.get(anime.id);
+    if (!agg) {
+      agg = this.createAnimeDownloadAgg(anime);
+      byAnime.set(anime.id, agg);
+    }
+    return agg;
+  }
 
-    for (const ep of episodes) {
-      const anime = ep.anime;
-      if (!anime) continue;
+  private mergeBotFileIntoAnimeAgg(
+    agg: AnimeDownloadAggInternal,
+    fileKey: string | null | undefined,
+    fileMap: Map<string, BotFile>,
+  ): void {
+    const key = String(fileKey ?? '').trim();
+    if (!key) return;
+    const file = fileMap.get(key);
+    if (!file) return;
 
-      let agg = byAnime.get(ep.animeId);
-      if (!agg) {
-        const searchBlob = [anime.title, anime.slug, anime.titleRomaji]
-          .map((v) => String(v ?? '').trim().toLowerCase())
-          .filter(Boolean)
-          .join(' ');
-        agg = {
-          anime_id: ep.animeId,
-          anime_title: anime.title,
-          anime_slug: anime.slug,
-          episodes_total: 0,
-          episodes_with_file: 0,
-          total_downloads: 0,
-          last_accessed: null,
-          countedKeys: new Set(),
-          searchBlob,
-        };
-        byAnime.set(ep.animeId, agg);
-      }
-
-      agg.episodes_total += 1;
-      const fileKey = parseTelegramFileKeyFromLink(ep.downloadLink);
-      if (!fileKey) continue;
-
-      agg.episodes_with_file += 1;
-      const file = fileMap.get(fileKey);
-      if (!file) continue;
-
-      if (!agg.countedKeys.has(fileKey)) {
-        agg.countedKeys.add(fileKey);
-        agg.total_downloads += file.downloads ?? 0;
-      }
-
-      const accessed = file.lastAccessed;
-      if (accessed && (!agg.last_accessed || accessed > agg.last_accessed)) {
-        agg.last_accessed = accessed;
-      }
+    if (!agg.countedKeys.has(key)) {
+      agg.countedKeys.add(key);
+      agg.total_downloads += file.downloads ?? 0;
     }
 
-    const listRows: AnimeDownloadStatRow[] = [...byAnime.values()].map((agg) => ({
+    const accessed = file.lastAccessed;
+    if (accessed && (!agg.last_accessed || accessed > agg.last_accessed)) {
+      agg.last_accessed = accessed;
+    }
+  }
+
+  private mapAnimeDownloadAggToRow(agg: AnimeDownloadAggInternal): AnimeDownloadStatRow {
+    return {
       anime_id: agg.anime_id,
       anime_title: agg.anime_title,
       anime_slug: agg.anime_slug,
       total_downloads: agg.total_downloads,
+      unique_file_keys: agg.countedKeys.size,
       episodes_with_file: agg.episodes_with_file,
       episodes_total: agg.episodes_total,
+      subtitles_with_file: agg.subtitles_with_file,
+      subtitles_total: agg.subtitles_total,
+      subtitle_packs_with_file: agg.subtitle_packs_with_file,
       last_accessed: agg.last_accessed?.toISOString?.() ?? null,
-    }));
+    };
+  }
+
+  private async loadEpisodePackItemsBySlug(
+    packSlugs: string[],
+  ): Promise<Map<string, { pack: FilePack; items: FilePackItem[] }>> {
+    const uniqueSlugs = [...new Set(packSlugs.map((s) => s.trim()).filter(Boolean))];
+    const result = new Map<string, { pack: FilePack; items: FilePackItem[] }>();
+    if (uniqueSlugs.length === 0) return result;
+
+    const packs = await this.packsRepo.find({ where: { slug: In(uniqueSlugs) } });
+    if (packs.length === 0) return result;
+
+    const packById = new Map(packs.map((p) => [p.id, p]));
+    const items = await this.packItemsRepo.find({
+      where: { packId: In(packs.map((p) => p.id)) },
+      order: { sortOrder: 'ASC' },
+    });
+
+    for (const pack of packs) {
+      result.set(pack.slug, { pack, items: [] });
+    }
+    for (const item of items) {
+      const pack = packById.get(item.packId);
+      if (!pack) continue;
+      const bucket = result.get(pack.slug);
+      if (bucket) bucket.items.push(item);
+    }
+
+    return result;
+  }
+
+  private async buildAnimeDownloadIndex(): Promise<{
+    listRows: AnimeDownloadStatRow[];
+    searchBlobByAnimeId: Map<string, string>;
+  }> {
+    const now = Date.now();
+    if (this.animeDownloadIndexCache && this.animeDownloadIndexCache.expiresAt > now) {
+      const { listRows, searchBlobByAnimeId } = this.animeDownloadIndexCache;
+      return { listRows, searchBlobByAnimeId };
+    }
+
+    const [episodes, subtitles, subtitlePacks, animesWithEpisodePack] = await Promise.all([
+      this.episodeRepo.createQueryBuilder('e').innerJoinAndSelect('e.anime', 'a').getMany(),
+      this.subtitleRepo.createQueryBuilder('s').innerJoinAndSelect('s.anime', 'a').getMany(),
+      this.subtitlePackRepo.createQueryBuilder('sp').innerJoinAndSelect('sp.anime', 'a').getMany(),
+      this.animeRepo
+        .createQueryBuilder('a')
+        .where('a.episodePackLink IS NOT NULL')
+        .andWhere("a.episodePackLink <> ''")
+        .getMany(),
+    ]);
+
+    const packSlugByAnimeId = new Map<string, string>();
+    for (const anime of animesWithEpisodePack) {
+      const slug = parseTelegramPackSlugFromLink(anime.episodePackLink);
+      if (slug) packSlugByAnimeId.set(anime.id, slug);
+    }
+
+    const episodePackBySlug = await this.loadEpisodePackItemsBySlug([
+      ...packSlugByAnimeId.values(),
+    ]);
+
+    const allKeys = new Set<string>();
+    const absorbKey = (key: string | null | undefined) => {
+      const clean = String(key ?? '').trim();
+      if (clean) allKeys.add(clean);
+    };
+
+    for (const ep of episodes) absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
+    for (const row of subtitles) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const row of subtitlePacks) {
+      absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    }
+    for (const { items } of episodePackBySlug.values()) {
+      for (const item of items) absorbKey(item.fileKey);
+    }
+
+    const files =
+      allKeys.size > 0
+        ? await this.filesRepo.find({ where: { key: In([...allKeys]) } })
+        : [];
+    const fileMap = new Map(files.map((f) => [f.key, f]));
+
+    const byAnime = new Map<string, AnimeDownloadAggInternal>();
+
+    for (const ep of episodes) {
+      const anime = ep.anime;
+      if (!anime) continue;
+      const agg = this.getOrCreateAnimeDownloadAgg(byAnime, anime);
+      agg.episodes_total += 1;
+      const fileKey = parseTelegramFileKeyFromLink(ep.downloadLink);
+      if (fileKey && fileMap.has(fileKey)) {
+        agg.episodes_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
+      }
+    }
+
+    for (const row of subtitles) {
+      const anime = row.anime;
+      if (!anime) continue;
+      const agg = this.getOrCreateAnimeDownloadAgg(byAnime, anime);
+      agg.subtitles_total += 1;
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      if (fileKey && fileMap.has(fileKey)) {
+        agg.subtitles_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
+      }
+    }
+
+    for (const row of subtitlePacks) {
+      const anime = row.anime;
+      if (!anime) continue;
+      const agg = this.getOrCreateAnimeDownloadAgg(byAnime, anime);
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      if (fileKey && fileMap.has(fileKey)) {
+        agg.subtitle_packs_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
+      }
+    }
+
+    for (const anime of animesWithEpisodePack) {
+      const packSlug = packSlugByAnimeId.get(anime.id);
+      if (!packSlug) continue;
+      const packBucket = episodePackBySlug.get(packSlug);
+      if (!packBucket) continue;
+      const agg = this.getOrCreateAnimeDownloadAgg(byAnime, anime);
+      for (const item of packBucket.items) {
+        this.mergeBotFileIntoAnimeAgg(agg, item.fileKey, fileMap);
+      }
+    }
+
+    const listRows: AnimeDownloadStatRow[] = [...byAnime.values()].map((agg) =>
+      this.mapAnimeDownloadAggToRow(agg),
+    );
 
     const searchBlobByAnimeId = new Map(
       [...byAnime.values()].map((agg) => [agg.anime_id, agg.searchBlob]),
     );
+
+    this.animeDownloadIndexCache = {
+      listRows,
+      searchBlobByAnimeId,
+      expiresAt: now + 60_000,
+    };
 
     return { listRows, searchBlobByAnimeId };
   }
@@ -953,45 +1163,60 @@ export class FilesAdminService {
     const anime = await this.animeRepo.findOne({ where: { id } });
     if (!anime) throw new NotFoundException('anime not found');
 
-    const episodes = await this.episodeRepo.find({
-      where: { animeId: id },
-      order: { episodeNumber: 'ASC' },
-    });
+    const [episodes, subtitles, subtitlePacks] = await Promise.all([
+      this.episodeRepo.find({
+        where: { animeId: id },
+        order: { episodeNumber: 'ASC' },
+      }),
+      this.subtitleRepo.find({
+        where: { animeId: id },
+        order: { episodeNumber: 'ASC' },
+      }),
+      this.subtitlePackRepo.find({
+        where: { animeId: id },
+        order: { title: 'ASC' },
+      }),
+    ]);
 
-    const keys = [
-      ...new Set(
-        episodes
-          .map((ep) => parseTelegramFileKeyFromLink(ep.downloadLink))
-          .filter((k): k is string => Boolean(k)),
-      ),
-    ];
+    const episodePackSlug = parseTelegramPackSlugFromLink(anime.episodePackLink);
+    const episodePackBySlug =
+      episodePackSlug != null
+        ? await this.loadEpisodePackItemsBySlug([episodePackSlug])
+        : new Map<string, { pack: FilePack; items: FilePackItem[] }>();
+    const episodePackBucket = episodePackSlug
+      ? episodePackBySlug.get(episodePackSlug)
+      : undefined;
+
+    const allKeys = new Set<string>();
+    const absorbKey = (key: string | null | undefined) => {
+      const clean = String(key ?? '').trim();
+      if (clean) allKeys.add(clean);
+    };
+
+    for (const ep of episodes) absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
+    for (const row of subtitles) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const row of subtitlePacks) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    if (episodePackBucket) {
+      for (const item of episodePackBucket.items) absorbKey(item.fileKey);
+    }
 
     const files =
-      keys.length > 0
-        ? await this.filesRepo.find({ where: { key: In(keys) } })
+      allKeys.size > 0
+        ? await this.filesRepo.find({ where: { key: In([...allKeys]) } })
         : [];
     const fileMap = new Map(files.map((f) => [f.key, f]));
 
-    const countedKeys = new Set<string>();
-    let totalDownloads = 0;
-    let lastAccessed: Date | null = null;
-    let episodesWithFile = 0;
+    const agg = this.createAnimeDownloadAgg(anime);
 
     const episodeRows: AnimeEpisodeDownloadStatRow[] = [];
     for (const ep of episodes) {
       const fileKey = parseTelegramFileKeyFromLink(ep.downloadLink);
       const file = fileKey ? fileMap.get(fileKey) : undefined;
       if (fileKey && file) {
-        episodesWithFile += 1;
-        if (!countedKeys.has(fileKey)) {
-          countedKeys.add(fileKey);
-          totalDownloads += file.downloads ?? 0;
-        }
-        const accessed = file.lastAccessed;
-        if (accessed && (!lastAccessed || accessed > lastAccessed)) {
-          lastAccessed = accessed;
-        }
+        agg.episodes_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
       }
+      agg.episodes_total += 1;
 
       episodeRows.push({
         episode_id: ep.id,
@@ -1003,17 +1228,74 @@ export class FilesAdminService {
       });
     }
 
-    const lastAccessedIso = lastAccessed ? lastAccessed.toISOString() : null;
+    const subtitleRows: AnimeSubtitleDownloadStatRow[] = [];
+    for (const row of subtitles) {
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      const file = fileKey ? fileMap.get(fileKey) : undefined;
+      agg.subtitles_total += 1;
+      if (fileKey && file) {
+        agg.subtitles_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
+      }
+
+      subtitleRows.push({
+        subtitle_id: row.id,
+        episode_number: row.episodeNumber,
+        file_key: fileKey,
+        file_name: file?.fileName ?? null,
+        downloads: file?.downloads ?? 0,
+        last_accessed: file?.lastAccessed?.toISOString?.() ?? null,
+      });
+    }
+
+    const subtitlePackRows: AnimeSubtitlePackDownloadStatRow[] = [];
+    for (const row of subtitlePacks) {
+      const fileKey = parseTelegramFileKeyFromLink(row.subtitleLink);
+      const file = fileKey ? fileMap.get(fileKey) : undefined;
+      if (fileKey && file) {
+        agg.subtitle_packs_with_file += 1;
+        this.mergeBotFileIntoAnimeAgg(agg, fileKey, fileMap);
+      }
+
+      subtitlePackRows.push({
+        pack_id: row.id,
+        title: row.title,
+        file_key: fileKey,
+        file_name: file?.fileName ?? null,
+        downloads: file?.downloads ?? 0,
+        last_accessed: file?.lastAccessed?.toISOString?.() ?? null,
+      });
+    }
+
+    let episodePack: AnimeEpisodePackDownloadStat | null = null;
+    if (episodePackBucket) {
+      const packItems: AnimeEpisodePackItemDownloadStatRow[] = [];
+      for (const item of episodePackBucket.items) {
+        const file = fileMap.get(item.fileKey);
+        this.mergeBotFileIntoAnimeAgg(agg, item.fileKey, fileMap);
+        packItems.push({
+          file_key: item.fileKey,
+          file_name: file?.fileName ?? null,
+          downloads: file?.downloads ?? 0,
+          last_accessed: file?.lastAccessed?.toISOString?.() ?? null,
+          sort_order: item.sortOrder,
+        });
+      }
+      episodePack = {
+        pack_slug: episodePackBucket.pack.slug,
+        pack_title: episodePackBucket.pack.title,
+        items: packItems,
+      };
+    }
+
+    const summary = this.mapAnimeDownloadAggToRow(agg);
 
     return {
-      anime_id: anime.id,
-      anime_title: anime.title,
-      anime_slug: anime.slug,
-      total_downloads: totalDownloads,
-      episodes_with_file: episodesWithFile,
-      episodes_total: episodes.length,
-      last_accessed: lastAccessedIso,
+      ...summary,
       episodes: episodeRows,
+      subtitles: subtitleRows,
+      subtitle_packs: subtitlePackRows,
+      episode_pack: episodePack,
     };
   }
 
