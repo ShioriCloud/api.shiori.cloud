@@ -109,6 +109,23 @@ export class ListAnimeDownloadStatsQueryDto {
   search?: string;
 
   @IsOptional()
+  @Transform(({ value }) => {
+    const raw = String(value ?? '').trim();
+    if (!raw || raw === 'all') return undefined;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 1900 && n <= 2100 ? n : undefined;
+  })
+  year?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => {
+    const raw = String(value ?? '').trim().toUpperCase();
+    if (!raw || raw === 'ALL') return undefined;
+    return raw;
+  })
+  season?: string;
+
+  @IsOptional()
   @IsIn(ANIME_DOWNLOAD_SORT_FIELDS)
   sortBy?: (typeof ANIME_DOWNLOAD_SORT_FIELDS)[number];
 

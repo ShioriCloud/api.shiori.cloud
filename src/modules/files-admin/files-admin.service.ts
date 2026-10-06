@@ -65,6 +65,8 @@ export type AnimeDownloadStatRow = {
   anime_id: string;
   anime_title: string;
   anime_slug: string | null;
+  anime_year: number | null;
+  anime_season: string | null;
   total_downloads: number;
   downloads_last_7d: number;
   downloads_last_30d: number;
@@ -279,10 +281,25 @@ const splitFileSearchTokens = (query?: string): string[] =>
     .map((t) => t.replace(/,/g, ' ').trim())
     .filter((t) => t.length > 0);
 
+const KNOWN_ANIME_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
+
+const normalizeAnimeSeason = (raw: unknown): string | null => {
+  const key = String(raw ?? '').trim().toUpperCase();
+  return KNOWN_ANIME_SEASONS.has(key) ? key : null;
+};
+
+const normalizeAnimeYear = (raw: unknown): number | null => {
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  if (!Number.isFinite(n) || n < 1900 || n > 2100) return null;
+  return Math.trunc(n);
+};
+
 type AnimeDownloadAggInternal = {
   anime_id: string;
   anime_title: string;
   anime_slug: string | null;
+  anime_year: number | null;
+  anime_season: string | null;
   episodes_total: number;
   episodes_with_file: number;
   subtitles_total: number;
@@ -306,6 +323,8 @@ type AnimeMetaForDownloadAgg = {
   title: string;
   slug: string | null;
   titleRomaji?: string | null;
+  year?: number | null;
+  season?: string | null;
 };
 
 @Injectable()
@@ -1171,6 +1190,8 @@ export class FilesAdminService {
       anime_id: anime.id,
       anime_title: anime.title,
       anime_slug: anime.slug,
+      anime_year: normalizeAnimeYear(anime.year),
+      anime_season: normalizeAnimeSeason(anime.season),
       episodes_total: 0,
       episodes_with_file: 0,
       subtitles_total: 0,
@@ -1223,6 +1244,8 @@ export class FilesAdminService {
       anime_id: agg.anime_id,
       anime_title: agg.anime_title,
       anime_slug: agg.anime_slug,
+      anime_year: agg.anime_year,
+      anime_season: agg.anime_season,
       total_downloads: agg.total_downloads,
       downloads_last_7d: agg.downloads_last_7d,
       downloads_last_30d: agg.downloads_last_30d,
@@ -1402,9 +1425,20 @@ export class FilesAdminService {
     const search = String(query.search ?? '').trim().toLowerCase();
 
     let filtered = listRows;
+
+    if (query.year != null) {
+      filtered = filtered.filter((row) => row.anime_year === query.year);
+    }
+    if (query.season?.trim()) {
+      const season = query.season.trim().toUpperCase();
+      filtered = filtered.filter(
+        (row) => (row.anime_season ?? '').toUpperCase() === season,
+      );
+    }
+
     if (search) {
       const tokens = splitFileSearchTokens(search);
-      filtered = listRows.filter((row) => {
+      filtered = filtered.filter((row) => {
         const blob =
           searchBlobByAnimeId.get(row.anime_id) ??
           [row.anime_title, row.anime_slug]
@@ -1446,18 +1480,36 @@ export class FilesAdminService {
     return filtered;
   }
 
+  private animeDownloadFilterOptions(listRows: AnimeDownloadStatRow[]) {
+    const years = new Set<number>();
+    const seasons = new Set<string>();
+    for (const row of listRows) {
+      if (row.anime_year != null) years.add(row.anime_year);
+      if (row.anime_season) seasons.add(row.anime_season);
+    }
+    return {
+      years: [...years].sort((a, b) => b - a),
+      seasons: ['WINTER', 'SPRING', 'SUMMER', 'FALL'].filter((s) => seasons.has(s)),
+    };
+  }
+
   async listAnimeDownloadStats(
     query: ListAnimeDownloadStatsQueryDto,
-  ): Promise<{ items: AnimeDownloadStatRow[]; total: number }> {
+  ): Promise<{
+    items: AnimeDownloadStatRow[];
+    total: number;
+    filter_options: { years: number[]; seasons: string[] };
+  }> {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? query.limit : 20;
 
     const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
+    const filter_options = this.animeDownloadFilterOptions(listRows);
     const filtered = this.filterSortAnimeDownloadRows(listRows, searchBlobByAnimeId, query);
 
     const total = filtered.length;
     const items = filtered.slice((page - 1) * limit, page * limit);
-    return { items, total };
+    return { items, total, filter_options };
   }
 
   async exportAnimeDownloadStatsCsv(query: ListAnimeDownloadStatsQueryDto): Promise<string> {
@@ -1468,6 +1520,8 @@ export class FilesAdminService {
       'anime_id',
       'anime_title',
       'anime_slug',
+      'anime_year',
+      'anime_season',
       'total_downloads',
       'downloads_last_7d',
       'downloads_last_30d',
@@ -1485,6 +1539,8 @@ export class FilesAdminService {
         row.anime_id,
         row.anime_title,
         row.anime_slug,
+        row.anime_year,
+        row.anime_season,
         row.total_downloads,
         row.downloads_last_7d,
         row.downloads_last_30d,
