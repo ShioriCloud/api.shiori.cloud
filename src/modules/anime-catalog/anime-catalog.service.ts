@@ -723,22 +723,30 @@ export class AnimeCatalogService {
         title: p.title,
         subtitle_link: p.subtitleLink,
       })),
-      translators: translatorLinks.map((l) => ({
-        id: l.id,
-        anime_id: l.animeId,
-        translator_id: l.translatorId,
-        role: l.role,
-        translator: {
-          id: l.translator.id,
-          slug: l.translator.slug,
-          name: l.translator.name,
-          avatar_url: l.translator.avatarUrl,
-          cover_url: l.translator.coverUrl,
-          bio: l.translator.bio,
-          experience: l.translator.experience,
-          is_active: l.translator.isActive,
-        },
-      })),
+      translators: await Promise.all(
+        translatorLinks.map(async (l) => {
+          const linkedTelegramUserId =
+            await this.resolveLinkedTelegramUserId(l.translator);
+          return {
+            id: l.id,
+            anime_id: l.animeId,
+            translator_id: l.translatorId,
+            role: l.role,
+            translator: {
+              id: l.translator.id,
+              slug: l.translator.slug,
+              name: l.translator.name,
+              avatar_url: l.translator.avatarUrl,
+              cover_url: l.translator.coverUrl,
+              bio: l.translator.bio,
+              experience: l.translator.experience,
+              is_active: l.translator.isActive,
+              telegram_user_id: l.translator.telegramUserId,
+              linked_telegram_user_id: linkedTelegramUserId,
+            },
+          };
+        }),
+      ),
       studio_links: studioLinks.map((l) => ({
         slug: l.studio.slug,
         name: l.studio.name,

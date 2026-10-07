@@ -1,10 +1,37 @@
-import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AppUserAuthGuard,
   AppUserAuthedRequest,
 } from '../../telegram/app-user-auth.guard';
 import { UserSocialProfileService } from './user-social-profile.service';
+
+const parsePageLimit = (page?: string, limit?: string) => {
+  const pageNum = page ? parseInt(page, 10) : 1;
+  const limitNum = limit ? parseInt(limit, 10) : 60;
+  return {
+    page: Number.isFinite(pageNum) ? pageNum : 1,
+    limit: Number.isFinite(limitNum) ? limitNum : 60,
+  };
+};
+
+const parseListPageLimit = (page?: string, limit?: string) => {
+  const pageNum = page ? parseInt(page, 10) : 1;
+  const limitNum = limit ? parseInt(limit, 10) : 30;
+  return {
+    page: Number.isFinite(pageNum) ? pageNum : 1,
+    limit: Number.isFinite(limitNum) ? limitNum : 30,
+  };
+};
 
 @ApiTags('User Social Profile')
 @Controller('user-social-profile')
@@ -22,13 +49,19 @@ export class UserSocialProfileController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 60;
-    return this.socialProfile.getMe(
-      String(req.telegramUserId),
-      Number.isFinite(pageNum) ? pageNum : 1,
-      Number.isFinite(limitNum) ? limitNum : 60,
-    );
+    const { page: p, limit: l } = parsePageLimit(page, limit);
+    return this.socialProfile.getMe(String(req.telegramUserId), p, l);
+  }
+
+  @Get('feed')
+  @ApiOperation({ summary: 'Activity feed from users you follow' })
+  feed(
+    @Req() req: AppUserAuthedRequest,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { page: p, limit: l } = parseListPageLimit(page, limit);
+    return this.socialProfile.getFeed(String(req.telegramUserId), p, l);
   }
 
   @Get('users/:telegramUserId')
@@ -42,13 +75,70 @@ export class UserSocialProfileController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 60;
+    const { page: p, limit: l } = parsePageLimit(page, limit);
     return this.socialProfile.getUser(
       String(req.telegramUserId),
       telegramUserId,
-      Number.isFinite(pageNum) ? pageNum : 1,
-      Number.isFinite(limitNum) ? limitNum : 60,
+      p,
+      l,
+    );
+  }
+
+  @Get('users/:telegramUserId/followers')
+  @ApiOperation({ summary: 'Followers of a user (viewer must be in rollout)' })
+  followers(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { page: p, limit: l } = parseListPageLimit(page, limit);
+    return this.socialProfile.listFollowers(
+      String(req.telegramUserId),
+      telegramUserId,
+      p,
+      l,
+    );
+  }
+
+  @Get('users/:telegramUserId/following')
+  @ApiOperation({ summary: 'Users followed by target (viewer must be in rollout)' })
+  following(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { page: p, limit: l } = parseListPageLimit(page, limit);
+    return this.socialProfile.listFollowing(
+      String(req.telegramUserId),
+      telegramUserId,
+      p,
+      l,
+    );
+  }
+
+  @Post('follow/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Follow a user' })
+  follow(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.follow(
+      String(req.telegramUserId),
+      targetTelegramUserId,
+    );
+  }
+
+  @Delete('follow/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Unfollow a user' })
+  unfollow(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.unfollow(
+      String(req.telegramUserId),
+      targetTelegramUserId,
     );
   }
 }

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -8,6 +13,7 @@ import {
   AnimeTranslatorLink,
   TelegramUser,
   UserAnimeListEntry,
+  UserSocialFollow,
 } from '../../entities';
 import {
   isDownloadTokenWalletEnabledFor,
@@ -80,6 +86,47 @@ export type SocialProfileMeResponse = {
       role: string | null;
     }>;
   } | null;
+  relationship?: {
+    is_following: boolean;
+  };
+};
+
+export type SocialProfileUserListItem = {
+  telegram_user_id: string;
+  display_name: string;
+  username: string | null;
+  photo_url: string | null;
+  role_badges: Array<{ id: string; title: string }>;
+};
+
+export type SocialProfileUserListResponse = {
+  enabled: boolean;
+  mode: DownloadTokenWalletMode;
+  items: SocialProfileUserListItem[];
+  total: number;
+  page: number;
+  limit: number;
+};
+
+export type SocialProfileFeedItem = {
+  type: 'watch_progress';
+  actor: SocialProfileUserListItem;
+  anime_id: string;
+  slug: string | null;
+  title: string;
+  image: string;
+  episodes_watched: number;
+  episodes_total: number | null;
+  updated_at: string;
+};
+
+export type SocialProfileFeedResponse = {
+  enabled: boolean;
+  mode: DownloadTokenWalletMode;
+  items: SocialProfileFeedItem[];
+  total: number;
+  page: number;
+  limit: number;
 };
 
 @Injectable()
@@ -90,6 +137,8 @@ export class UserSocialProfileService {
     private readonly usersRepo: Repository<TelegramUser>,
     @InjectRepository(UserAnimeListEntry)
     private readonly listRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(UserSocialFollow)
+    private readonly followRepo: Repository<UserSocialFollow>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeTranslator)
@@ -138,6 +187,12 @@ export class UserSocialProfileService {
     );
   }
 
+  private assertSocialEnabled(viewerTelegramUserId: string): void {
+    if (!this.isEnabledFor(String(viewerTelegramUserId).trim())) {
+      throw new ForbiddenException('Social profile is not enabled for this user');
+    }
+  }
+
   /** Viewer must be in rollout; target must exist in telegram_users. */
   async getUser(
     viewerTelegramUserId: string,
@@ -159,7 +214,13 @@ export class UserSocialProfileService {
       throw new NotFoundException('User not found');
     }
 
-    const payload = await this.buildProfilePayload(targetId, user, page, limit);
+    const payload = await this.buildProfilePayload(
+      targetId,
+      user,
+      page,
+      limit,
+      viewerId,
+    );
     return {
       enabled: true,
       mode,
@@ -189,6 +250,7 @@ export class UserSocialProfileService {
       user,
       page,
       limit,
+      null,
     );
     return {
       enabled: true,
@@ -199,11 +261,269 @@ export class UserSocialProfileService {
     };
   }
 
+  async follow(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    if (viewerId === targetId) {
+      throw new BadRequestException('Cannot follow yourself');
+    }
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+    const existing = await this.followRepo.findOne({
+      where: {
+        followerTelegramUserId: viewerId,
+        followingTelegramUserId: targetId,
+      },
+    });
+    if (!existing) {
+      await this.followRepo.save({
+        followerTelegramUserId: viewerId,
+        followingTelegramUserId: targetId,
+      });
+    }
+    return { ok: true, is_following: true };
+  }
+
+  async unfollow(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    await this.followRepo.delete({
+      followerTelegramUserId: viewerId,
+      followingTelegramUserId: targetId,
+    });
+    return { ok: true, is_following: false };
+  }
+
+  async listFollowers(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+    page = 1,
+    limit = 30,
+  ): Promise<SocialProfileUserListResponse> {
+    return this.listFollowEdges(
+      viewerTelegramUserId,
+      targetTelegramUserId,
+      'followers',
+      page,
+      limit,
+    );
+  }
+
+  async listFollowing(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+    page = 1,
+    limit = 30,
+  ): Promise<SocialProfileUserListResponse> {
+    return this.listFollowEdges(
+      viewerTelegramUserId,
+      targetTelegramUserId,
+      'following',
+      page,
+      limit,
+    );
+  }
+
+  async getFeed(
+    viewerTelegramUserId: string,
+    page = 1,
+    limit = 30,
+  ): Promise<SocialProfileFeedResponse> {
+    const mode = this.mode();
+    const viewerId = String(viewerTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, items: [], total: 0, page: 1, limit: 30 };
+    }
+
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+
+    const followingRows = await this.followRepo.find({
+      where: { followerTelegramUserId: viewerId },
+      select: { followingTelegramUserId: true },
+    });
+    const followingIds = followingRows.map((r) => r.followingTelegramUserId);
+    if (followingIds.length === 0) {
+      return {
+        enabled: true,
+        mode,
+        items: [],
+        total: 0,
+        page: safePage,
+        limit: safeLimit,
+      };
+    }
+
+    const qb = this.listRepo
+      .createQueryBuilder('list')
+      .where('list.telegram_user_id IN (:...ids)', { ids: followingIds })
+      .orderBy('list.updated_at', 'DESC');
+
+    const total = await qb.getCount();
+    const rows = await qb
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getMany();
+
+    const actorIds = [...new Set(rows.map((r) => r.telegramUserId))];
+    const actors = await this.loadProfileListUsers(actorIds);
+    const actorById = new Map(actors.map((a) => [a.telegram_user_id, a]));
+
+    const animeIds = rows.map((r) => r.animeId);
+    const animes =
+      animeIds.length > 0
+        ? await this.animeRepo.find({ where: { id: In(animeIds) } })
+        : [];
+    const animeById = new Map(animes.map((a) => [a.id, a]));
+
+    const items: SocialProfileFeedItem[] = rows
+      .map((row) => {
+        const actor = actorById.get(String(row.telegramUserId));
+        const anime = animeById.get(row.animeId);
+        if (!actor || !anime) return null;
+        return {
+          type: 'watch_progress' as const,
+          actor,
+          anime_id: row.animeId,
+          slug: anime.slug ?? null,
+          title: anime.title ?? '—',
+          image: anime.coverImage || anime.featuredImage || '',
+          episodes_watched: row.episodesWatched ?? 0,
+          episodes_total: anime.episodesCount ?? null,
+          updated_at: row.updatedAt.toISOString(),
+        };
+      })
+      .filter((x): x is SocialProfileFeedItem => x != null);
+
+    return {
+      enabled: true,
+      mode,
+      items,
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  private async listFollowEdges(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+    edge: 'followers' | 'following',
+    page: number,
+    limit: number,
+  ): Promise<SocialProfileUserListResponse> {
+    const mode = this.mode();
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, items: [], total: 0, page: 1, limit: 30 };
+    }
+
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const where =
+      edge === 'followers'
+        ? { followingTelegramUserId: targetId }
+        : { followerTelegramUserId: targetId };
+
+    const [edges, total] = await this.followRepo.findAndCount({
+      where,
+      order: { createdAt: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+
+    const userIds =
+      edge === 'followers'
+        ? edges.map((e) => e.followerTelegramUserId)
+        : edges.map((e) => e.followingTelegramUserId);
+
+    const items = await this.loadProfileListUsers(userIds);
+
+    return {
+      enabled: true,
+      mode,
+      items,
+      total,
+      page: safePage,
+      limit: safeLimit,
+    };
+  }
+
+  private async loadProfileListUsers(
+    telegramUserIds: string[],
+  ): Promise<SocialProfileUserListItem[]> {
+    const unique = [...new Set(telegramUserIds.map(String))].filter(Boolean);
+    if (unique.length === 0) return [];
+
+    const users = await this.usersRepo.find({
+      where: { telegramUserId: In(unique) },
+    });
+    const userById = new Map(users.map((u) => [String(u.telegramUserId), u]));
+
+    const translators = await this.translatorRepo.find({
+      where: { telegramUserId: In(unique) },
+    });
+    const translatorByUserId = new Map(
+      translators
+        .filter((t) => t.telegramUserId)
+        .map((t) => [String(t.telegramUserId), t]),
+    );
+
+    return unique
+      .map((id) => {
+        const user = userById.get(id);
+        if (!user) return null;
+        return this.toProfileListUser(
+          user,
+          translatorByUserId.get(id) ?? null,
+        );
+      })
+      .filter((x): x is SocialProfileUserListItem => x != null);
+  }
+
+  private toProfileListUser(
+    user: TelegramUser,
+    linkedTranslator: AnimeTranslator | null,
+  ): SocialProfileUserListItem {
+    const hideUsername = user.hideTelegramUsername === true;
+    const rawUsername = user.username?.trim() || null;
+    const roleBadges: Array<{ id: string; title: string }> = [];
+    if (linkedTranslator) {
+      roleBadges.push({ id: 'translator', title: 'مترجم' });
+    }
+    return {
+      telegram_user_id: String(user.telegramUserId),
+      display_name:
+        user.firstName?.trim() ||
+        user.username?.trim() ||
+        user.email?.trim() ||
+        'کاربر',
+      username: hideUsername ? null : rawUsername,
+      photo_url: user.photoUrl?.trim() || null,
+      role_badges: roleBadges,
+    };
+  }
+
   private async buildProfilePayload(
     telegramUserId: string,
     user: TelegramUser | null,
     page: number,
     limit: number,
+    viewerTelegramUserId?: string | null,
   ): Promise<Omit<SocialProfileMeResponse, 'enabled' | 'mode' | 'is_self' | 'telegram_user_id'>> {
     const rows = await this.listRepo.find({
       where: { telegramUserId: String(telegramUserId) },
@@ -355,16 +675,35 @@ export class UserSocialProfileService {
       };
     }
 
+    const targetId = String(telegramUserId);
+    const [followersCount, followingCount] = await Promise.all([
+      this.followRepo.count({ where: { followingTelegramUserId: targetId } }),
+      this.followRepo.count({ where: { followerTelegramUserId: targetId } }),
+    ]);
+
+    let relationship: SocialProfileMeResponse['relationship'];
+    const viewerId = viewerTelegramUserId?.trim();
+    if (viewerId && viewerId !== targetId) {
+      const isFollowing = await this.followRepo.exists({
+        where: {
+          followerTelegramUserId: viewerId,
+          followingTelegramUserId: targetId,
+        },
+      });
+      relationship = { is_following: isFollowing };
+    }
+
     return {
       profile: {
         display_name: displayName,
         username: hideUsername ? null : rawUsername,
         photo_url: user?.photoUrl?.trim() || null,
         member_since: (user?.firstSeenAt ?? new Date()).toISOString(),
-        followers_count: 0,
-        following_count: 0,
+        followers_count: followersCount,
+        following_count: followingCount,
         role_badges: roleBadges,
       },
+      relationship,
       summary: {
         anime_count: rows.length,
         episodes_watched: episodesWatched,

@@ -526,3 +526,24 @@ ALTER TABLE translators ADD COLUMN IF NOT EXISTS telegram_user_id bigint;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_translators_telegram_user_id
   ON translators (telegram_user_id)
   WHERE telegram_user_id IS NOT NULL;
+
+-- Social follows (profile network v1)
+CREATE TABLE IF NOT EXISTS user_social_follows (
+  id bigserial PRIMARY KEY,
+  follower_telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  following_telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT user_social_follows_no_self CHECK (
+    follower_telegram_user_id <> following_telegram_user_id
+  ),
+  CONSTRAINT user_social_follows_unique UNIQUE (
+    follower_telegram_user_id,
+    following_telegram_user_id
+  )
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_social_follows_following_created
+  ON user_social_follows (following_telegram_user_id, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_user_social_follows_follower_created
+  ON user_social_follows (follower_telegram_user_id, created_at DESC);

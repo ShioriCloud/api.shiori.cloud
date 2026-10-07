@@ -6,6 +6,7 @@ import {
   AnimeTranslatorLink,
   TelegramUser,
   UserAnimeListEntry,
+  UserSocialFollow,
 } from '../../entities';
 import { UserSocialProfileController } from './user-social-profile.controller';
 import { UserSocialProfileService } from './user-social-profile.service';
@@ -15,6 +16,7 @@ import { UserSocialProfileService } from './user-social-profile.service';
     TypeOrmModule.forFeature([
       TelegramUser,
       UserAnimeListEntry,
+      UserSocialFollow,
       Anime,
       AnimeTranslator,
       AnimeTranslatorLink,
