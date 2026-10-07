@@ -10,7 +10,10 @@ import {
   type DownloadTokenWalletMode,
 } from '../download-tokens/download-token-wallet.util';
 
-const ESTIMATED_MINUTES_PER_EPISODE = 24;
+import {
+  minutesForWatched,
+  normalizeProfileFormat,
+} from './watch-time.util';
 
 export type SocialProfileWatchedItem = {
   anime_id: string;
@@ -124,7 +127,10 @@ export class UserSocialProfileService {
     const activeDayKeys = new Set(
       rows.map((r) => r.updatedAt.toISOString().slice(0, 10)),
     );
-    const estimatedMinutes = episodesWatched * ESTIMATED_MINUTES_PER_EPISODE;
+    const estimatedMinutes = rows.reduce((sum, row) => {
+      const anime = animeById.get(row.animeId);
+      return sum + minutesForWatched(anime?.format, row.episodesWatched ?? 0);
+    }, 0);
     const estimatedHours = Math.round(estimatedMinutes / 60);
 
     const genreCounts = new Map<string, { slug: string; label: string; count: number }>();
@@ -160,7 +166,7 @@ export class UserSocialProfileService {
     const formatCounts = new Map<string, { count: number; episodes: number }>();
     for (const row of rows) {
       const anime = animeById.get(row.animeId);
-      const format = String(anime?.format ?? 'OTHER').trim() || 'OTHER';
+      const format = normalizeProfileFormat(anime?.format);
       const bucket = formatCounts.get(format) ?? { count: 0, episodes: 0 };
       bucket.count += 1;
       bucket.episodes += row.episodesWatched ?? 0;
@@ -230,7 +236,7 @@ export class UserSocialProfileService {
             : null,
         active_days: activeDayKeys.size,
         estimated_watch_hours: estimatedHours,
-        estimated_watch_label: 'تقریبی (۲۴ دقیقه برای هر قسمت)',
+        estimated_watch_label: '',
       },
       top_genres: topGenres,
       by_format: byFormat,
