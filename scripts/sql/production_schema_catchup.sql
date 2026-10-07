@@ -520,3 +520,9 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_actor_created
 
 -- Privacy: hide Telegram username on social profile
 ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS hide_telegram_username boolean NOT NULL DEFAULT false;
+
+-- Link translators to Telegram users for merged social profiles
+ALTER TABLE translators ADD COLUMN IF NOT EXISTS telegram_user_id bigint;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_translators_telegram_user_id
+  ON translators (telegram_user_id)
+  WHERE telegram_user_id IS NOT NULL;

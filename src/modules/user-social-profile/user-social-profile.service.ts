@@ -2,7 +2,13 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Anime, TelegramUser, UserAnimeListEntry } from '../../entities';
+import {
+  Anime,
+  AnimeTranslator,
+  AnimeTranslatorLink,
+  TelegramUser,
+  UserAnimeListEntry,
+} from '../../entities';
 import {
   isDownloadTokenWalletEnabledFor,
   parseDownloadTokenWalletMode,
@@ -56,6 +62,22 @@ export type SocialProfileMeResponse = {
     page: number;
     limit: number;
   };
+  translator?: {
+    id: string;
+    slug: string;
+    name: string;
+    bio: string | null;
+    experience: string | null;
+    is_active: boolean;
+    anime_count: number;
+    anime: Array<{
+      anime_id: string;
+      slug: string | null;
+      title: string;
+      image: string;
+      role: string | null;
+    }>;
+  } | null;
 };
 
 @Injectable()
@@ -68,7 +90,33 @@ export class UserSocialProfileService {
     private readonly listRepo: Repository<UserAnimeListEntry>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
+    @InjectRepository(AnimeTranslator)
+    private readonly translatorRepo: Repository<AnimeTranslator>,
+    @InjectRepository(AnimeTranslatorLink)
+    private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
   ) {}
+
+  private async resolveLinkedTranslator(
+    telegramUserId: string,
+    username: string | null | undefined,
+  ): Promise<AnimeTranslator | null> {
+    const byId = await this.translatorRepo.findOne({
+      where: { telegramUserId: String(telegramUserId) },
+    });
+    if (byId) return byId;
+
+    const handle = String(username ?? '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+    if (!handle) return null;
+
+    // Soft match when admin set translator slug to the Telegram username.
+    return this.translatorRepo
+      .createQueryBuilder('t')
+      .where('LOWER(t.slug) = :handle', { handle })
+      .getOne();
+  }
 
   private mode(): DownloadTokenWalletMode {
     return parseDownloadTokenWalletMode(
@@ -218,12 +266,39 @@ export class UserSocialProfileService {
 
     const hideUsername = user?.hideTelegramUsername === true;
     const rawUsername = user?.username?.trim() || null;
+
+    const linkedTranslator = await this.resolveLinkedTranslator(
+      telegramUserId,
+      rawUsername,
+    );
     const roleBadges: Array<{ id: string; title: string }> = [];
-    const role = String(user?.appRole ?? 'user')
-      .trim()
-      .toLowerCase();
-    if (role === 'translator') {
+    if (linkedTranslator) {
       roleBadges.push({ id: 'translator', title: 'مترجم' });
+    }
+
+    let translatorBlock: SocialProfileMeResponse['translator'] = null;
+    if (linkedTranslator) {
+      const links = await this.translatorLinkRepo.find({
+        where: { translatorId: linkedTranslator.id },
+        relations: { anime: true },
+        order: { id: 'ASC' },
+      });
+      translatorBlock = {
+        id: linkedTranslator.id,
+        slug: linkedTranslator.slug,
+        name: linkedTranslator.name,
+        bio: linkedTranslator.bio,
+        experience: linkedTranslator.experience,
+        is_active: linkedTranslator.isActive !== false,
+        anime_count: links.length,
+        anime: links.map((link) => ({
+          anime_id: link.animeId,
+          slug: link.anime?.slug ?? null,
+          title: link.anime?.title ?? '—',
+          image: link.anime?.coverImage || link.anime?.featuredImage || '',
+          role: link.role,
+        })),
+      };
     }
 
     return {
@@ -259,6 +334,7 @@ export class UserSocialProfileService {
         page: safePage,
         limit: safeLimit,
       },
+      translator: translatorBlock,
     };
   }
 }

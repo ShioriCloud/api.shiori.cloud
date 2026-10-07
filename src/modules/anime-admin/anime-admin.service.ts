@@ -174,6 +174,7 @@ export class AnimeAdminService {
       bio: t.bio,
       experience: t.experience,
       is_active: t.isActive,
+      telegram_user_id: t.telegramUserId ?? null,
       anime_count: t._animeCount ?? 0,
       episode_count: t._episodeCount ?? 0,
     };
@@ -1411,6 +1412,11 @@ export class AnimeAdminService {
       if (body.experience !== undefined) t.experience = (body.experience as string) ?? null;
       if (body.is_active !== undefined) t.isActive = Boolean(body.is_active);
       if (body.isActive !== undefined) t.isActive = Boolean(body.isActive);
+      if (body.telegram_user_id !== undefined || body.telegramUserId !== undefined) {
+        t.telegramUserId = this.parseOptionalTelegramUserId(
+          body.telegram_user_id ?? body.telegramUserId,
+        );
+      }
       return this.toTranslator(await this.translatorRepo.save(t));
     }
     const slug = String(body.slug ?? '').trim();
@@ -1424,8 +1430,20 @@ export class AnimeAdminService {
       bio: (body.bio as string) ?? null,
       experience: (body.experience as string) ?? null,
       isActive: body.is_active !== undefined ? Boolean(body.is_active) : true,
+      telegramUserId: this.parseOptionalTelegramUserId(
+        body.telegram_user_id ?? body.telegramUserId,
+      ),
     });
     return this.toTranslator(await this.translatorRepo.save(t));
+  }
+
+  private parseOptionalTelegramUserId(raw: unknown): string | null {
+    if (raw == null || raw === '') return null;
+    const id = String(raw).trim();
+    if (!/^\d{5,15}$/.test(id)) {
+      throw new BadRequestException('telegram_user_id must be a numeric Telegram id');
+    }
+    return id;
   }
 
   async deleteTranslator(id: string) {

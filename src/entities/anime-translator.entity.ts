@@ -1,4 +1,4 @@
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Column, Entity, Index, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { AnimeTranslatorLink } from './anime-translator-link.entity';
 
 @Entity('translators')
@@ -26,6 +26,14 @@ export class AnimeTranslator {
 
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive: boolean;
+
+  /**
+   * Linked mini-app / Telegram account. When set, badge + translation
+   * activity merge into that user's social profile automatically.
+   */
+  @Index('idx_translators_telegram_user_id', { unique: true })
+  @Column({ type: 'bigint', name: 'telegram_user_id', nullable: true })
+  telegramUserId: string | null;
 
   @OneToMany(() => AnimeTranslatorLink, (link) => link.translator)
   animeLinks: AnimeTranslatorLink[];
