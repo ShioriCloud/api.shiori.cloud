@@ -64,6 +64,7 @@ import { DownloadTokensModule } from './modules/download-tokens/download-tokens.
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
 import { ScoreSyncModule } from './modules/score-sync/score-sync.module';
+import { UserSocialProfileModule } from './modules/user-social-profile/user-social-profile.module';
 import { TelegramDmModule } from './modules/telegram-dm/telegram-dm.module';
 import { TelegramModule } from './telegram/telegram.module';
 
@@ -145,6 +146,7 @@ import { TelegramModule } from './telegram/telegram.module';
     SubscriptionsModule,
     SupportTicketsModule,
     ScoreSyncModule,
+    UserSocialProfileModule,
   ],
 })
 export class AppModule {}

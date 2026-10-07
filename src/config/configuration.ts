@@ -64,6 +64,19 @@ export default () => {
     walletMode: process.env.DOWNLOAD_TOKEN_WALLET_MODE ?? 'off',
     walletAllowlist: process.env.DOWNLOAD_TOKEN_WALLET_ALLOWLIST ?? '',
   },
+  /**
+   * Social profile rollout — defaults to download-token wallet env when unset.
+   */
+  socialProfile: {
+    mode:
+      process.env.SOCIAL_PROFILE_MODE ??
+      process.env.DOWNLOAD_TOKEN_WALLET_MODE ??
+      'off',
+    allowlist:
+      process.env.SOCIAL_PROFILE_ALLOWLIST ??
+      process.env.DOWNLOAD_TOKEN_WALLET_ALLOWLIST ??
+      '',
+  },
   cron: {
     secret: process.env.CRON_SECRET ?? '',
   },
