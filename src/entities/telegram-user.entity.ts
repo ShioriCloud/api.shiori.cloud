@@ -57,6 +57,10 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'hide_telegram_username', default: false })
   hideTelegramUsername: boolean;
 
+  /** When true, watch list / activity is hidden from other users (and omitted from their feed). */
+  @Column({ type: 'boolean', name: 'hide_watch_activity', default: false })
+  hideWatchActivity: boolean;
+
   /** Free-download tokens (1 per free episode claim). New users start at 10. */
   @Column({ type: 'int', name: 'download_token_balance', default: 10 })
   downloadTokenBalance: number;

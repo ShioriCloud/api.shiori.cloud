@@ -547,3 +547,7 @@ CREATE INDEX IF NOT EXISTS idx_user_social_follows_following_created
 
 CREATE INDEX IF NOT EXISTS idx_user_social_follows_follower_created
   ON user_social_follows (follower_telegram_user_id, created_at DESC);
+
+-- Privacy: hide watch activity from other social viewers / feeds
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS hide_watch_activity boolean NOT NULL DEFAULT false;

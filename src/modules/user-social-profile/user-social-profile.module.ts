@@ -6,6 +6,7 @@ import {
   AnimeTranslatorLink,
   TelegramUser,
   UserAnimeListEntry,
+  UserNotification,
   UserSocialFollow,
 } from '../../entities';
 import { UserSocialProfileController } from './user-social-profile.controller';
@@ -17,6 +18,7 @@ import { UserSocialProfileService } from './user-social-profile.service';
       TelegramUser,
       UserAnimeListEntry,
       UserSocialFollow,
+      UserNotification,
       Anime,
       AnimeTranslator,
       AnimeTranslatorLink,

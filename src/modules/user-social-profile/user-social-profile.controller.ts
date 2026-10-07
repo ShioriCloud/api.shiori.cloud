@@ -64,6 +64,21 @@ export class UserSocialProfileController {
     return this.socialProfile.getFeed(String(req.telegramUserId), p, l);
   }
 
+  @Get('search')
+  @ApiOperation({ summary: 'Search users for social discovery' })
+  search(
+    @Req() req: AppUserAuthedRequest,
+    @Query('q') q?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 20;
+    return this.socialProfile.searchUsers(
+      String(req.telegramUserId),
+      q ?? '',
+      Number.isFinite(limitNum) ? limitNum : 20,
+    );
+  }
+
   @Get('users/:telegramUserId')
   @ApiOperation({
     summary:

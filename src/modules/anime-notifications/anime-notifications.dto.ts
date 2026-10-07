@@ -12,6 +12,10 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   hide_telegram_username?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hide_watch_activity?: boolean;
 }
 
 export class SyncAiringRemindersDto {

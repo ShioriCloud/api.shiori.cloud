@@ -13,6 +13,7 @@ import {
   AnimeTranslatorLink,
   TelegramUser,
   UserAnimeListEntry,
+  UserNotification,
   UserSocialFollow,
 } from '../../entities';
 import {
@@ -88,6 +89,10 @@ export type SocialProfileMeResponse = {
   } | null;
   relationship?: {
     is_following: boolean;
+    follows_you: boolean;
+  };
+  privacy?: {
+    watch_activity_hidden: boolean;
   };
 };
 
@@ -109,7 +114,7 @@ export type SocialProfileUserListResponse = {
 };
 
 export type SocialProfileFeedItem = {
-  type: 'watch_progress';
+  type: 'watch_progress' | 'rating' | 'list_add';
   actor: SocialProfileUserListItem;
   anime_id: string;
   slug: string | null;
@@ -117,6 +122,7 @@ export type SocialProfileFeedItem = {
   image: string;
   episodes_watched: number;
   episodes_total: number | null;
+  user_rating: number | null;
   updated_at: string;
 };
 
@@ -139,6 +145,8 @@ export class UserSocialProfileService {
     private readonly listRepo: Repository<UserAnimeListEntry>,
     @InjectRepository(UserSocialFollow)
     private readonly followRepo: Repository<UserSocialFollow>,
+    @InjectRepository(UserNotification)
+    private readonly notificationsRepo: Repository<UserNotification>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeTranslator)
@@ -146,6 +154,29 @@ export class UserSocialProfileService {
     @InjectRepository(AnimeTranslatorLink)
     private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
   ) {}
+
+  private classifyFeedType(
+    row: UserAnimeListEntry,
+  ): SocialProfileFeedItem['type'] {
+    const eps = row.episodesWatched ?? 0;
+    const ratingRaw =
+      row.userRating != null && row.userRating !== ''
+        ? Number(row.userRating)
+        : null;
+    const hasRating = ratingRaw != null && Number.isFinite(ratingRaw);
+    if (eps > 0) return 'watch_progress';
+    if (hasRating) return 'rating';
+    return 'list_add';
+  }
+
+  private displayNameOf(user: TelegramUser): string {
+    return (
+      user.firstName?.trim() ||
+      user.username?.trim() ||
+      user.email?.trim() ||
+      'کاربر'
+    );
+  }
 
   private async resolveLinkedTranslator(
     telegramUserId: string,
@@ -285,8 +316,76 @@ export class UserSocialProfileService {
         followerTelegramUserId: viewerId,
         followingTelegramUserId: targetId,
       });
+
+      const follower = await this.usersRepo.findOne({
+        where: { telegramUserId: viewerId },
+      });
+      const followerName = follower
+        ? this.displayNameOf(follower)
+        : 'یک کاربر';
+      await this.notificationsRepo.save(
+        this.notificationsRepo.create({
+          telegramUserId: targetId,
+          kind: 'social_follow',
+          title: 'دنبال‌کننده جدید',
+          message: `${followerName} دنبالت کرد`,
+          href: `/u/${encodeURIComponent(viewerId)}`,
+          animeId: null,
+          episodeNumber: null,
+          campaignId: null,
+          isRead: false,
+        }),
+      );
     }
     return { ok: true, is_following: true };
+  }
+
+  async searchUsers(
+    viewerTelegramUserId: string,
+    query: string,
+    limit = 20,
+  ): Promise<SocialProfileUserListResponse> {
+    const mode = this.mode();
+    const viewerId = String(viewerTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, items: [], total: 0, page: 1, limit };
+    }
+
+    const q = String(query ?? '')
+      .trim()
+      .replace(/^@/, '')
+      .slice(0, 64);
+    if (q.length < 2) {
+      return { enabled: true, mode, items: [], total: 0, page: 1, limit };
+    }
+
+    const safeLimit = Math.min(30, Math.max(1, limit));
+    const like = `%${q.toLowerCase()}%`;
+    const rows = await this.usersRepo
+      .createQueryBuilder('u')
+      .where('u.is_banned = false')
+      .andWhere(
+        `(LOWER(COALESCE(u.username, '')) LIKE :like
+          OR LOWER(COALESCE(u.first_name, '')) LIKE :like
+          OR LOWER(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) LIKE :like)`,
+        { like },
+      )
+      .orderBy('u.last_seen_at', 'DESC')
+      .take(safeLimit)
+      .getMany();
+
+    const items = await this.loadProfileListUsers(
+      rows.map((u) => String(u.telegramUserId)),
+    );
+
+    return {
+      enabled: true,
+      mode,
+      items,
+      total: items.length,
+      page: 1,
+      limit: safeLimit,
+    };
   }
 
   async unfollow(viewerTelegramUserId: string, targetTelegramUserId: string) {
@@ -360,9 +459,27 @@ export class UserSocialProfileService {
       };
     }
 
+    const followingUsers = await this.usersRepo.find({
+      where: { telegramUserId: In(followingIds) },
+      select: { telegramUserId: true, hideWatchActivity: true },
+    });
+    const visibleIds = followingUsers
+      .filter((u) => u.hideWatchActivity !== true)
+      .map((u) => String(u.telegramUserId));
+    if (visibleIds.length === 0) {
+      return {
+        enabled: true,
+        mode,
+        items: [],
+        total: 0,
+        page: safePage,
+        limit: safeLimit,
+      };
+    }
+
     const qb = this.listRepo
       .createQueryBuilder('list')
-      .where('list.telegram_user_id IN (:...ids)', { ids: followingIds })
+      .where('list.telegram_user_id IN (:...ids)', { ids: visibleIds })
       .orderBy('list.updated_at', 'DESC');
 
     const total = await qb.getCount();
@@ -387,8 +504,12 @@ export class UserSocialProfileService {
         const actor = actorById.get(String(row.telegramUserId));
         const anime = animeById.get(row.animeId);
         if (!actor || !anime) return null;
+        const ratingRaw =
+          row.userRating != null && row.userRating !== ''
+            ? Number(row.userRating)
+            : null;
         return {
-          type: 'watch_progress' as const,
+          type: this.classifyFeedType(row),
           actor,
           anime_id: row.animeId,
           slug: anime.slug ?? null,
@@ -396,6 +517,8 @@ export class UserSocialProfileService {
           image: anime.coverImage || anime.featuredImage || '',
           episodes_watched: row.episodesWatched ?? 0,
           episodes_total: anime.episodesCount ?? null,
+          user_rating:
+            ratingRaw != null && Number.isFinite(ratingRaw) ? ratingRaw : null,
           updated_at: row.updatedAt.toISOString(),
         };
       })
@@ -684,14 +807,29 @@ export class UserSocialProfileService {
     let relationship: SocialProfileMeResponse['relationship'];
     const viewerId = viewerTelegramUserId?.trim();
     if (viewerId && viewerId !== targetId) {
-      const isFollowing = await this.followRepo.exists({
-        where: {
-          followerTelegramUserId: viewerId,
-          followingTelegramUserId: targetId,
-        },
-      });
-      relationship = { is_following: isFollowing };
+      const [isFollowing, followsYou] = await Promise.all([
+        this.followRepo.exists({
+          where: {
+            followerTelegramUserId: viewerId,
+            followingTelegramUserId: targetId,
+          },
+        }),
+        this.followRepo.exists({
+          where: {
+            followerTelegramUserId: targetId,
+            followingTelegramUserId: viewerId,
+          },
+        }),
+      ]);
+      relationship = {
+        is_following: isFollowing,
+        follows_you: followsYou,
+      };
     }
+
+    const isSelf = !viewerId || viewerId === targetId;
+    const watchHidden =
+      !isSelf && user?.hideWatchActivity === true;
 
     return {
       profile: {
@@ -704,24 +842,39 @@ export class UserSocialProfileService {
         role_badges: roleBadges,
       },
       relationship,
-      summary: {
-        anime_count: rows.length,
-        episodes_watched: episodesWatched,
-        ratings_count: ratings.length,
-        average_rating:
-          ratings.length > 0
-            ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10
-            : null,
-        active_days: activeDayKeys.size,
-        estimated_watch_hours: estimatedHours,
-        estimated_watch_label: '',
+      privacy: {
+        watch_activity_hidden: watchHidden,
       },
-      top_genres: topGenres,
-      by_format: byFormat,
-      badges,
+      summary: watchHidden
+        ? {
+            anime_count: 0,
+            episodes_watched: 0,
+            ratings_count: 0,
+            average_rating: null,
+            active_days: 0,
+            estimated_watch_hours: 0,
+            estimated_watch_label: '',
+          }
+        : {
+            anime_count: rows.length,
+            episodes_watched: episodesWatched,
+            ratings_count: ratings.length,
+            average_rating:
+              ratings.length > 0
+                ? Math.round(
+                    (ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10,
+                  ) / 10
+                : null,
+            active_days: activeDayKeys.size,
+            estimated_watch_hours: estimatedHours,
+            estimated_watch_label: '',
+          },
+      top_genres: watchHidden ? [] : topGenres,
+      by_format: watchHidden ? [] : byFormat,
+      badges: watchHidden ? [] : badges,
       watched: {
-        items: watchedItems,
-        total: rows.length,
+        items: watchHidden ? [] : watchedItems,
+        total: watchHidden ? 0 : rows.length,
         page: safePage,
         limit: safeLimit,
       },
