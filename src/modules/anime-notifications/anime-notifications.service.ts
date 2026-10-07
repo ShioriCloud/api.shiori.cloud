@@ -115,6 +115,7 @@ export class AnimeNotificationsService {
     return {
       notify_new_episode: user?.notifyNewEpisode !== false,
       notify_telegram_dm: user?.notifyTelegramDm !== false,
+      hide_telegram_username: user?.hideTelegramUsername === true,
     };
   }
 
@@ -131,11 +132,15 @@ export class AnimeNotificationsService {
     if (body.notify_telegram_dm !== undefined) {
       user.notifyTelegramDm = body.notify_telegram_dm;
     }
+    if (body.hide_telegram_username !== undefined) {
+      user.hideTelegramUsername = body.hide_telegram_username;
+    }
 
     await this.usersRepo.save(user);
     return {
       notify_new_episode: user.notifyNewEpisode,
       notify_telegram_dm: user.notifyTelegramDm,
+      hide_telegram_username: user.hideTelegramUsername === true,
     };
   }
 

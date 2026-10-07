@@ -517,3 +517,6 @@ CREATE INDEX IF NOT EXISTS idx_admin_audit_target_created
 
 CREATE INDEX IF NOT EXISTS idx_admin_audit_actor_created
   ON admin_audit_events (actor_telegram_user_id, created_at DESC);
+
+-- Privacy: hide Telegram username on social profile
+ALTER TABLE telegram_users ADD COLUMN IF NOT EXISTS hide_telegram_username boolean NOT NULL DEFAULT false;

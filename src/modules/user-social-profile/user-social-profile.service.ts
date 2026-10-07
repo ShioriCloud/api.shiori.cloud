@@ -36,6 +36,7 @@ export type SocialProfileMeResponse = {
     member_since: string;
     followers_count: number;
     following_count: number;
+    role_badges: Array<{ id: string; title: string }>;
   };
   summary?: {
     anime_count: number;
@@ -215,16 +216,27 @@ export class UserSocialProfileService {
       user?.email?.trim() ||
       'کاربر';
 
+    const hideUsername = user?.hideTelegramUsername === true;
+    const rawUsername = user?.username?.trim() || null;
+    const roleBadges: Array<{ id: string; title: string }> = [];
+    const role = String(user?.appRole ?? 'user')
+      .trim()
+      .toLowerCase();
+    if (role === 'translator') {
+      roleBadges.push({ id: 'translator', title: 'مترجم' });
+    }
+
     return {
       enabled: true,
       mode,
       profile: {
         display_name: displayName,
-        username: user?.username?.trim() ? user.username.trim() : null,
+        username: hideUsername ? null : rawUsername,
         photo_url: user?.photoUrl?.trim() || null,
         member_since: (user?.firstSeenAt ?? new Date()).toISOString(),
         followers_count: 0,
         following_count: 0,
+        role_badges: roleBadges,
       },
       summary: {
         anime_count: rows.length,

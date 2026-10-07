@@ -8,6 +8,10 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   notify_telegram_dm?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  hide_telegram_username?: boolean;
 }
 
 export class SyncAiringRemindersDto {
