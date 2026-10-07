@@ -13,6 +13,7 @@ import {
   AnimeTranslator,
   AnimeTranslatorLink,
   BotFile,
+  TelegramUser,
   UserAnimeListEntry,
 } from '../../entities';
 import { AnimeCatalogController } from './anime-catalog.controller';
@@ -34,6 +35,7 @@ import { AnimeCatalogService } from './anime-catalog.service';
       AnimeSeriesMember,
       UserAnimeListEntry,
       BotFile,
+      TelegramUser,
     ]),
   ],
   controllers: [AnimeCatalogController],

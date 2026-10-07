@@ -32,6 +32,7 @@ import {
   AnimeTranslator,
   AnimeTranslatorLink,
   BotFile,
+  TelegramUser,
   UserAnimeListEntry,
 } from '../../entities';
 
@@ -157,6 +158,8 @@ export class AnimeCatalogService {
     private readonly userListRepo: Repository<UserAnimeListEntry>,
     @InjectRepository(BotFile)
     private readonly botFileRepo: Repository<BotFile>,
+    @InjectRepository(TelegramUser)
+    private readonly telegramUserRepo: Repository<TelegramUser>,
   ) {}
 
   private num(value: string | number | null | undefined): number | undefined {
@@ -780,6 +783,25 @@ export class AnimeCatalogService {
     return animes.map((a) => this.toCard(a, genreMap.get(a.id) ?? []));
   }
 
+  /** Explicit telegram_user_id on translator, or Telegram username matching slug. */
+  private async resolveLinkedTelegramUserId(
+    translator: AnimeTranslator,
+  ): Promise<string | null> {
+    if (translator.telegramUserId) {
+      return String(translator.telegramUserId);
+    }
+    const handle = String(translator.slug ?? '')
+      .trim()
+      .replace(/^@/, '')
+      .toLowerCase();
+    if (!handle) return null;
+    const user = await this.telegramUserRepo
+      .createQueryBuilder('u')
+      .where('LOWER(u.username) = :handle', { handle })
+      .getOne();
+    return user ? String(user.telegramUserId) : null;
+  }
+
   async getTranslatorBySlug(slug: string) {
     const translator = await this.translatorRepo.findOne({ where: { slug } });
     if (!translator) throw new NotFoundException('Translator not found');
@@ -793,8 +815,12 @@ export class AnimeCatalogService {
       links.map((l) => l.animeId),
     );
 
+    const linkedTelegramUserId =
+      await this.resolveLinkedTelegramUserId(translator);
+
     return {
       translator,
+      linkedTelegramUserId,
       anime: links.map((l) =>
         this.toCard(l.anime, genreMap.get(l.animeId) ?? []),
       ),
