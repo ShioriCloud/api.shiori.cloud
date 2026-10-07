@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -35,6 +35,8 @@ export type SocialProfileWatchedItem = {
 export type SocialProfileMeResponse = {
   enabled: boolean;
   mode: DownloadTokenWalletMode;
+  is_self?: boolean;
+  telegram_user_id?: string;
   profile?: {
     display_name: string;
     username: string | null;
@@ -136,6 +138,37 @@ export class UserSocialProfileService {
     );
   }
 
+  /** Viewer must be in rollout; target must exist in telegram_users. */
+  async getUser(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+    page = 1,
+    limit = 60,
+  ): Promise<SocialProfileMeResponse> {
+    const mode = this.mode();
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, is_self: false };
+    }
+
+    const user = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const payload = await this.buildProfilePayload(targetId, user, page, limit);
+    return {
+      enabled: true,
+      mode,
+      is_self: viewerId === targetId,
+      telegram_user_id: targetId,
+      ...payload,
+    };
+  }
+
   async getMe(
     telegramUserId: string,
     page = 1,
@@ -144,13 +177,34 @@ export class UserSocialProfileService {
     const mode = this.mode();
     const enabled = this.isEnabledFor(telegramUserId);
     if (!enabled) {
-      return { enabled: false, mode };
+      return { enabled: false, mode, is_self: true };
     }
 
     const user = await this.usersRepo.findOne({
       where: { telegramUserId: String(telegramUserId) },
     });
 
+    const payload = await this.buildProfilePayload(
+      telegramUserId,
+      user,
+      page,
+      limit,
+    );
+    return {
+      enabled: true,
+      mode,
+      is_self: true,
+      telegram_user_id: String(telegramUserId),
+      ...payload,
+    };
+  }
+
+  private async buildProfilePayload(
+    telegramUserId: string,
+    user: TelegramUser | null,
+    page: number,
+    limit: number,
+  ): Promise<Omit<SocialProfileMeResponse, 'enabled' | 'mode' | 'is_self' | 'telegram_user_id'>> {
     const rows = await this.listRepo.find({
       where: { telegramUserId: String(telegramUserId) },
       order: { updatedAt: 'DESC' },
@@ -302,8 +356,6 @@ export class UserSocialProfileService {
     }
 
     return {
-      enabled: true,
-      mode,
       profile: {
         display_name: displayName,
         username: hideUsername ? null : rawUsername,
