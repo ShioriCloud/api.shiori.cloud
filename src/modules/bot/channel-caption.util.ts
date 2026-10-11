@@ -491,11 +491,16 @@ export const isCaptionWithinPhotoBudget = (
 ): boolean => telegramHtmlCaptionPlainLength(htmlCaption) <= max;
 
 /**
- * Highest episode end covered by pack / previous-post lines like:
+ * Highest episode end covered by **cour pack** lines like:
  *   P01: Episode [01-12]
- *   S01: Episode [01-12]
+ *
+ * Only `P##` counts — those mean "earlier episodes of this season's numbering
+ * are already in a previous post". `S##: Episode […]` is a previous-season
+ * link and must NOT skip E01/E02 of the current season (e.g. Ao Ashi S2 with
+ * `S01: Episode [01-24]` still needs E01+E02 listed).
+ *
  * Works with HTML wrappers / text_link around the range.
- * Returns 0 when no pack line is present (cour 1 → build from E01).
+ * Returns 0 when no P-pack line is present (build from E01).
  */
 export const getMaxPackedEpisodeEnd = (captionHtml: string): number => {
   const raw = String(captionHtml ?? '');
@@ -503,7 +508,7 @@ export const getMaxPackedEpisodeEnd = (captionHtml: string): number => {
 
   // Strip tags so <b>P01</b>: Episode <a>[01-12]</a> still matches.
   const plain = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-  const re = /[PS]\d{2}\s*:\s*Episode\s*\[(\d+)\s*[-–—]\s*(\d+)\]/gi;
+  const re = /P\d{2}\s*:\s*Episode\s*\[(\d+)\s*[-–—]\s*(\d+)\]/gi;
   let maxEnd = 0;
   let m: RegExpExecArray | null;
   while ((m = re.exec(plain))) {

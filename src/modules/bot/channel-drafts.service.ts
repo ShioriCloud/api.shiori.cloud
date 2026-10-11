@@ -542,7 +542,8 @@ export class ChannelDraftsService {
     }
 
     // Rebuild episode lines for the current cour window only:
-    // if the template has P/S Episode [a-b], start after b; else from E01.
+    // if the template has P##: Episode [a-b], start after b; else from E01.
+    // S## pack lines are previous seasons and do not affect this window.
     const catalogEps = await this.episodeRepo.find({
       where: { animeId },
       order: { episodeNumber: 'ASC' },
@@ -614,7 +615,7 @@ export class ChannelDraftsService {
         `channel draft caption too long anime=${animeId} ep=${episodeNumber} len=${len}/${TELEGRAM_PHOTO_CAPTION_MAX} startAfter=${startAfter} lines=${episodeLines.length}`,
       );
       throw new BadRequestException(
-        `Channel caption too long (${len}/${TELEGRAM_PHOTO_CAPTION_MAX} chars). Add a P/S Episode [a-b] pack line for earlier cours in the bound template, or shorten the caption.`,
+        `Channel caption too long (${len}/${TELEGRAM_PHOTO_CAPTION_MAX} chars). Add a P01: Episode [a-b] pack line for earlier cours in the bound template, or shorten the caption.`,
       );
     }
 

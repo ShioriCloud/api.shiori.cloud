@@ -18,15 +18,26 @@ describe('getMaxPackedEpisodeEnd', () => {
     expect(getMaxPackedEpisodeEnd(caption)).toBe(12);
   });
 
-  it('parses S01 Episode [a-b] lines with HTML wrappers', () => {
+  it('parses P01 with HTML wrappers', () => {
     const caption =
-      '<tg-emoji emoji-id="1">✅</tg-emoji> <b>S01</b>: Episode <a href="https://t.me/x/1">[01-12]</a>';
+      '<tg-emoji emoji-id="1">✅</tg-emoji> <b>P01</b>: Episode <a href="https://t.me/x/1">[01-12]</a>';
     expect(getMaxPackedEpisodeEnd(caption)).toBe(12);
   });
 
-  it('returns the highest end when multiple pack lines exist', () => {
+  it('ignores S## previous-season links so current-season E01 is not skipped', () => {
+    // Ao Ashi S2 / Blue Box / Ranma S3 templates
     const caption =
-      'P01: Episode [01-12]\nS02: Episode [13-24]\n⬇️ <b>E25</b>: x';
+      'Title\n⬇️ <b>E02</b>: x\n✅ S01: Episode [01-24] (https://t.me/TheShioriSub/1124)\nDonation';
+    expect(getMaxPackedEpisodeEnd(caption)).toBe(0);
+
+    const ranma =
+      '✅S01: Episode [01-12]\n✅S02: Episode [01-06]\n⬇️ <b>E02</b>: x';
+    expect(getMaxPackedEpisodeEnd(ranma)).toBe(0);
+  });
+
+  it('returns the highest end when multiple P-pack lines exist', () => {
+    const caption =
+      'P01: Episode [01-12]\nP02: Episode [13-24]\n⬇️ <b>E25</b>: x';
     expect(getMaxPackedEpisodeEnd(caption)).toBe(24);
   });
 });
