@@ -90,10 +90,50 @@ export class BotController {
     return this.botService.getFileByMessageId(messageId);
   }
 
+  @Get('files/by-name')
+  @ApiOperation({
+    summary: 'Get latest active file by exact file_name (softsub worker)',
+  })
+  @ApiQuery({ name: 'fileName', required: false })
+  @ApiQuery({ name: 'file_name', required: false })
+  getFileByName(
+    @Query('fileName') fileName?: string,
+    @Query('file_name') fileNameSnake?: string,
+  ): Promise<BotFileResponseDto> {
+    return this.botService.getFileByFileName(
+      String(fileName ?? fileNameSnake ?? ''),
+    );
+  }
+
   @Get('files/:key')
   @ApiOperation({ summary: 'Get active file by key' })
   getFile(@Param('key') key: string): Promise<BotFileResponseDto> {
     return this.botService.getFileByKey(key);
+  }
+
+  @Post('softsub/complete')
+  @ApiOperation({
+    summary:
+      'Attach softsub download link to episode and queue channel draft (softsub worker)',
+  })
+  softsubComplete(
+    @Body()
+    body: {
+      anime_id?: string;
+      animeId?: string;
+      anime_slug?: string;
+      animeSlug?: string;
+      filename_title?: string;
+      filenameTitle?: string;
+      episode_number?: number;
+      episodeNumber?: number;
+      download_link?: string;
+      downloadLink?: string;
+      create_draft?: boolean;
+      createDraft?: boolean;
+    },
+  ) {
+    return this.channelDrafts.completeSoftsub(body);
   }
 
   @Post('files')

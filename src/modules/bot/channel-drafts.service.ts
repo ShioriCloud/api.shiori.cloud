@@ -207,6 +207,121 @@ export class ChannelDraftsService {
   }
 
   /**
+   * Softsub worker: set episode download_link (+ optional draft).
+   * Resolves anime by id/slug, or exact/soft match on title / title_romaji.
+   */
+  async completeSoftsub(body: {
+    anime_id?: string;
+    animeId?: string;
+    anime_slug?: string;
+    animeSlug?: string;
+    filename_title?: string;
+    filenameTitle?: string;
+    episode_number?: number;
+    episodeNumber?: number;
+    download_link?: string;
+    downloadLink?: string;
+    create_draft?: boolean;
+    createDraft?: boolean;
+  }) {
+    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      throw new BadRequestException('episode_number required');
+    }
+
+    const downloadLink = String(
+      body.download_link ?? body.downloadLink ?? '',
+    ).trim();
+    if (!downloadLink) {
+      throw new BadRequestException('download_link required');
+    }
+
+    const anime =
+      (await this.resolveAnimeOptional(
+        body.anime_id ?? body.animeId ?? body.anime_slug ?? body.animeSlug,
+      )) ??
+      (await this.resolveAnimeByFilenameTitle(
+        body.filename_title ?? body.filenameTitle,
+      ));
+
+    if (!anime) {
+      throw new NotFoundException(
+        'Anime not found — set binding anime_id/slug or filename_title match',
+      );
+    }
+
+    let episode = await this.episodeRepo.findOne({
+      where: { animeId: anime.id, episodeNumber },
+    });
+    if (!episode) {
+      episode = this.episodeRepo.create({
+        animeId: anime.id,
+        episodeNumber,
+        title: null,
+        downloadLink,
+        videoFileType: 'softsub',
+      });
+    } else {
+      episode.downloadLink = downloadLink;
+      if (!episode.videoFileType) episode.videoFileType = 'softsub';
+    }
+    const saved = await this.episodeRepo.save(episode);
+
+    const wantDraft = body.create_draft !== false && body.createDraft !== false;
+    const draft = wantDraft
+      ? await this.createFromEpisode(anime.id, episodeNumber)
+      : { skipped: true as const, reason: 'create_draft_false' };
+
+    return {
+      ok: true as const,
+      anime_id: anime.id,
+      anime_slug: anime.slug,
+      episode_id: saved.id,
+      episode_number: episodeNumber,
+      download_link: saved.downloadLink,
+      draft,
+    };
+  }
+
+  private async resolveAnimeOptional(
+    idOrSlug: string | null | undefined,
+  ): Promise<Anime | null> {
+    const key = String(idOrSlug ?? '').trim();
+    if (!key) return null;
+    try {
+      return await this.resolveAnime(key);
+    } catch {
+      return null;
+    }
+  }
+
+  private async resolveAnimeByFilenameTitle(
+    titleRaw: string | null | undefined,
+  ): Promise<Anime | null> {
+    const title = String(titleRaw ?? '').trim();
+    if (!title) return null;
+
+    const exact = await this.animeRepo
+      .createQueryBuilder('a')
+      .where(
+        '(LOWER(TRIM(a.title)) = LOWER(:t) OR LOWER(TRIM(a.title_romaji)) = LOWER(:t))',
+        { t: title },
+      )
+      .getOne();
+    if (exact) return exact;
+
+    const pattern = `%${title}%`;
+    return this.animeRepo
+      .createQueryBuilder('a')
+      .where(
+        '(a.title ILIKE :q OR a.title_romaji ILIKE :q OR a.slug ILIKE :q)',
+        { q: pattern },
+      )
+      .orderBy('a.updatedAt', 'DESC')
+      .getOne();
+  }
+
+  /**
    * Lightweight anime search for bot bind picker.
    * Matches title / title_romaji / slug (ILIKE).
    */

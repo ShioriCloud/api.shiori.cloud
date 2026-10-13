@@ -42,6 +42,28 @@ export class BotService {
     return { ok: true, data: this.mapFile(file) };
   }
 
+  async getFileByFileName(
+    fileName: string,
+  ): Promise<{ ok: true; data: BotFileDto }> {
+    const name = String(fileName ?? '').trim();
+    if (!name) {
+      throw new NotFoundException();
+    }
+
+    const file = await this.filesRepo
+      .createQueryBuilder('f')
+      .where('f.is_active = true')
+      .andWhere('f.file_name = :name', { name })
+      .orderBy('f.created_at', 'DESC')
+      .getOne();
+
+    if (!file) {
+      throw new NotFoundException();
+    }
+
+    return { ok: true, data: this.mapFile(file) };
+  }
+
   async getFileByMessageId(
     messageId: string,
   ): Promise<{ ok: true; data: BotFileDto }> {
