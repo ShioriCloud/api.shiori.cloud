@@ -41,8 +41,14 @@ import {
   SupportTicketMessage,
   TelegramDmOutbox,
   AdminAuditEvent,
+  AnimeAutomationConfig,
+  AnimeSourceProfile,
+  AutomationJob,
+  AutomationJobEvent,
+  SubtitleSubmission,
 } from './entities';
 import { HomeModule } from './modules/home/home.module';
+import { AutomationModule } from './modules/automation/automation.module';
 import { HomeAdminModule } from './modules/home-admin/home-admin.module';
 import { BootQuotesModule } from './modules/boot-quotes/boot-quotes.module';
 import { BootQuotesAdminModule } from './modules/boot-quotes-admin/boot-quotes-admin.module';
@@ -120,6 +126,11 @@ import { TelegramModule } from './telegram/telegram.module';
           SupportTicketMessage,
           TelegramDmOutbox,
           AdminAuditEvent,
+          AnimeAutomationConfig,
+          AnimeSourceProfile,
+          AutomationJob,
+          AutomationJobEvent,
+          SubtitleSubmission,
         ],
       }),
     }),
@@ -149,6 +160,7 @@ import { TelegramModule } from './telegram/telegram.module';
     SupportTicketsModule,
     ScoreSyncModule,
     UserSocialProfileModule,
+    AutomationModule,
   ],
 })
 export class AppModule {}

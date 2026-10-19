@@ -251,8 +251,18 @@ export class ChannelDraftsService {
     }
 
     let episode = await this.episodeRepo.findOne({
-      where: { animeId: anime.id, episodeNumber },
+      where: {
+        animeId: anime.id,
+        episodeNumber,
+        videoFileType: 'softsub',
+      },
     });
+    if (!episode) {
+      // Legacy rows may lack video_file_type filter match — fall back
+      episode = await this.episodeRepo.findOne({
+        where: { animeId: anime.id, episodeNumber },
+      });
+    }
     if (!episode) {
       episode = this.episodeRepo.create({
         animeId: anime.id,

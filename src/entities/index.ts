@@ -36,3 +36,8 @@ export { SupportTicket } from './support-ticket.entity';
 export { SupportTicketMessage } from './support-ticket-message.entity';
 export { TelegramDmOutbox } from './telegram-dm-outbox.entity';
 export { AdminAuditEvent } from './admin-audit-event.entity';
+export { AnimeAutomationConfig } from './anime-automation-config.entity';
+export { AnimeSourceProfile } from './anime-source-profile.entity';
+export { AutomationJob } from './automation-job.entity';
+export { AutomationJobEvent } from './automation-job-event.entity';
+export { SubtitleSubmission } from './subtitle-submission.entity';
