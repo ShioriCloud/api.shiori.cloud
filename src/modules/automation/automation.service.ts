@@ -453,7 +453,16 @@ export class AutomationService {
   async retryJob(id: string) {
     const job = await this.jobRepo.findOne({ where: { id } });
     if (!job) throw new NotFoundException('Job not found');
-    if (!['FAILED', 'NEEDS_REVIEW', 'CANCELLED'].includes(job.state)) {
+    if (
+      ![
+        'FAILED',
+        'NEEDS_REVIEW',
+        'CANCELLED',
+        'AWAITING_SELECTION',
+        'AWAITING_MANUAL_ARCHIVE',
+        'WAITING_FOR_SUBTITLE',
+      ].includes(job.state)
+    ) {
       throw new BadRequestException('Job is not retryable from current state');
     }
     job.attemptCount += 1;
@@ -461,6 +470,12 @@ export class AutomationService {
     job.errorCode = null;
     job.claimedAt = null;
     job.claimedBy = null;
+    // clear stale candidates so worker re-searches Nyaa
+    if (job.state === 'AWAITING_SELECTION') {
+      job.releaseCandidates = [];
+      job.selectedMagnet = null;
+      job.selectedReleaseName = null;
+    }
     await this.jobRepo.save(job);
     return this.transitionJob(id, 'ELIGIBLE', {
       message: `retry #${job.attemptCount}`,
@@ -802,6 +817,7 @@ export class AutomationService {
     }
 
     const profiles = new Map<string, AnimeSourceProfile>();
+    const submissions = new Map<string, SubtitleSubmission>();
     for (const j of claimed) {
       if (!profiles.has(j.animeId)) {
         const p = await this.profileRepo.findOne({
@@ -809,15 +825,36 @@ export class AutomationService {
         });
         if (p) profiles.set(j.animeId, p);
       }
+      if (j.subtitleSubmissionId && !submissions.has(j.subtitleSubmissionId)) {
+        const s = await this.subRepo.findOne({
+          where: { id: j.subtitleSubmissionId },
+        });
+        if (s) submissions.set(j.subtitleSubmissionId, s);
+      }
     }
 
     return {
-      items: claimed.map((j) => ({
-        ...this.toJobDto(j, j.anime),
-        source_profile: profiles.get(j.animeId)
-          ? this.toProfileDto(profiles.get(j.animeId)!)
-          : null,
-      })),
+      items: claimed.map((j) => {
+        const sub = j.subtitleSubmissionId
+          ? submissions.get(j.subtitleSubmissionId)
+          : null;
+        return {
+          ...this.toJobDto(j, j.anime),
+          source_profile: profiles.get(j.animeId)
+            ? this.toProfileDto(profiles.get(j.animeId)!)
+            : null,
+          subtitle: sub
+            ? {
+                id: sub.id,
+                telegram_file_id: sub.telegramFileId,
+                original_file_name: sub.originalFileName,
+                telegram_chat_id: sub.telegramChatId,
+                telegram_message_id: sub.telegramMessageId,
+                stored_path: sub.storedPath,
+              }
+            : null,
+        };
+      }),
     };
   }
 

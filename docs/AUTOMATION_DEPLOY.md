@@ -22,13 +22,20 @@ Deploy `dash.shiori.cloud` — nav item **اتوماسیون** → `/admin/autom
 
 ## 4. tel-bot
 
-Set:
+Translator channel: **Shiori Files | آرشیو زیرنویس تیم**
 
 ```env
-SUBTITLE_CHANNEL_ID=-100xxxxxxxxxx
+SUBTITLE_CHANNEL_ID=-1003282972743
 ```
 
-Bot must be admin in that channel. Redeploy tel-bot.
+Bot must be **administrator** in that channel (otherwise Telegram never sends `channel_post` and logs stay empty). Redeploy/restart tel-bot, then confirm:
+
+```bash
+docker exec <tel-bot> printenv SUBTITLE_CHANNEL_ID
+docker logs --tail 50 <tel-bot> 2>&1 | grep -E 'SUBTITLE|Channel routing'
+```
+
+Do **not** call `getUpdates` with the same `BOT_TOKEN` (it steals updates from the running bot).
 
 ## 5. Windows worker
 
@@ -41,7 +48,7 @@ npm run watch
 
 ## 6. Smoke test
 
-1. In dash: open an anime automation page → set status `active` → preferred groups.
-2. Create manual job for episode N **or** drop a `Title - N [Shiori].zip` in the subtitle channel.
-3. If no magnet candidates: job → `AWAITING_SELECTION` → admin selects magnet via API/UI (select-release).
-4. After mux: either Local Bot API upload or manual archive → draft preview DM → approve.
+1. In dash: open an anime automation page → set status `active` → `preferred_groups` + `alt_titles`.
+2. Drop a `Title - N [Shiori].zip` in the subtitle channel (or manual job).
+3. Worker searches Nyaa; if unique preferred match → downloads via qBittorrent. If ambiguous/empty → `AWAITING_SELECTION` (pick in dash job page or Retry).
+4. After mux: Local Bot API upload or manual archive → draft preview DM → approve.

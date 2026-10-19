@@ -28,4 +28,9 @@ describe('automation state transitions', () => {
   it('allows same-state no-op', () => {
     expect(canTransition('DOWNLOADING', 'DOWNLOADING')).toBe(true);
   });
+
+  it('allows re-search from awaiting selection', () => {
+    expect(canTransition('AWAITING_SELECTION', 'ELIGIBLE')).toBe(true);
+    expect(canTransition('AWAITING_SELECTION', 'DOWNLOAD_QUEUED')).toBe(true);
+  });
 });
