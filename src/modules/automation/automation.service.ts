@@ -972,6 +972,8 @@ export class AutomationService {
 
   private async resolveAnimeByTitle(title: string) {
     const t = title.trim();
+    if (!t) return { anime: null, note: 'empty_title' };
+
     const exact = await this.animeRepo
       .createQueryBuilder('a')
       .where(
@@ -985,6 +987,31 @@ export class AutomationService {
     if (exact.length > 1) {
       return { anime: null, note: `ambiguous_exact:${exact.length}` };
     }
+
+    // Source-profile short names (alt_titles / canonical_title) for long catalog titles
+    const byAlt = await this.profileRepo
+      .createQueryBuilder('p')
+      .innerJoinAndSelect('p.anime', 'a')
+      .where(
+        `(
+          LOWER(TRIM(COALESCE(p.canonical_title, ''))) = LOWER(:t)
+          OR EXISTS (
+            SELECT 1
+            FROM jsonb_array_elements_text(COALESCE(p.alt_titles, '[]'::jsonb)) AS alt(val)
+            WHERE LOWER(TRIM(alt.val)) = LOWER(:t)
+          )
+        )`,
+        { t },
+      )
+      .getMany();
+
+    if (byAlt.length === 1) {
+      return { anime: byAlt[0].anime, note: 'source_profile_alt' };
+    }
+    if (byAlt.length > 1) {
+      return { anime: null, note: `ambiguous_alt:${byAlt.length}` };
+    }
+
     const fuzzy = await this.animeRepo
       .createQueryBuilder('a')
       .where(
