@@ -33,4 +33,8 @@ describe('automation state transitions', () => {
     expect(canTransition('AWAITING_SELECTION', 'ELIGIBLE')).toBe(true);
     expect(canTransition('AWAITING_SELECTION', 'DOWNLOAD_QUEUED')).toBe(true);
   });
+
+  it('allows retry from cancelled', () => {
+    expect(canTransition('CANCELLED', 'ELIGIBLE')).toBe(true);
+  });
 });

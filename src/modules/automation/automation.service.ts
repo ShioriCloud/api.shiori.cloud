@@ -470,11 +470,16 @@ export class AutomationService {
     job.errorCode = null;
     job.claimedAt = null;
     job.claimedBy = null;
-    // clear stale candidates so worker re-searches Nyaa
-    if (job.state === 'AWAITING_SELECTION') {
+    // clear stale selection so worker re-searches Nyaa
+    if (
+      ['AWAITING_SELECTION', 'CANCELLED', 'FAILED', 'NEEDS_REVIEW'].includes(
+        job.state,
+      )
+    ) {
       job.releaseCandidates = [];
       job.selectedMagnet = null;
       job.selectedReleaseName = null;
+      job.torrentHash = null;
     }
     await this.jobRepo.save(job);
     return this.transitionJob(id, 'ELIGIBLE', {

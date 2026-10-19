@@ -93,7 +93,7 @@ export const ALLOWED_TRANSITIONS: Record<AutomationJobState, AutomationJobState[
     'READY_FOR_ARCHIVE',
     'CANCELLED',
   ],
-  CANCELLED: [],
+  CANCELLED: ['ELIGIBLE', 'FAILED'],
 };
 
 export function canTransition(
