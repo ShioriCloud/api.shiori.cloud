@@ -42,4 +42,8 @@ describe('automation state transitions', () => {
     expect(canTransition('DOWNLOAD_QUEUED', 'NEEDS_REVIEW')).toBe(true);
     expect(canTransition('DOWNLOADING', 'NEEDS_REVIEW')).toBe(true);
   });
+
+  it('allows resume shortcut DOWNLOAD_QUEUED → DOWNLOADED', () => {
+    expect(canTransition('DOWNLOAD_QUEUED', 'DOWNLOADED')).toBe(true);
+  });
 });
