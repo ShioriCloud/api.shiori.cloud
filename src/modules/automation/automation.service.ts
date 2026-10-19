@@ -461,6 +461,8 @@ export class AutomationService {
         'AWAITING_SELECTION',
         'AWAITING_MANUAL_ARCHIVE',
         'WAITING_FOR_SUBTITLE',
+        'SEARCHING',
+        'ELIGIBLE',
       ].includes(job.state)
     ) {
       throw new BadRequestException('Job is not retryable from current state');
@@ -472,20 +474,32 @@ export class AutomationService {
     job.claimedBy = null;
 
     const hadMagnet = Boolean(job.selectedMagnet?.trim());
-    // Re-search only when we never had a magnet (or were stuck on selection).
+    const forceResearch =
+      job.state === 'AWAITING_SELECTION' ||
+      job.state === 'SEARCHING' ||
+      job.state === 'ELIGIBLE' ||
+      !hadMagnet;
+
+    // Re-search when stuck on Nyaa / selection, or never had a magnet.
     // Keep magnet after qB / mux failures so Retry skips flaky Nyaa.
-    if (job.state === 'AWAITING_SELECTION' || !hadMagnet) {
+    if (forceResearch) {
       job.releaseCandidates = [];
       job.selectedMagnet = null;
       job.selectedReleaseName = null;
       job.torrentHash = null;
+      // Clear worker Nyaa cooldown so next claim searches immediately
+      job.progress = {
+        ...(job.progress ?? {}),
+        nyaa_last_attempt_at: 0,
+        nyaa_misses: 0,
+      };
     } else {
       job.releaseCandidates = [];
     }
 
     await this.jobRepo.save(job);
 
-    if (hadMagnet && job.state !== 'AWAITING_SELECTION') {
+    if (hadMagnet && !forceResearch) {
       return this.transitionJob(id, 'DOWNLOAD_QUEUED', {
         message: `retry #${job.attemptCount} — resume with existing magnet`,
       });
