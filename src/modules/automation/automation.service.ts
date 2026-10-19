@@ -470,18 +470,27 @@ export class AutomationService {
     job.errorCode = null;
     job.claimedAt = null;
     job.claimedBy = null;
-    // clear stale selection so worker re-searches Nyaa
-    if (
-      ['AWAITING_SELECTION', 'CANCELLED', 'FAILED', 'NEEDS_REVIEW'].includes(
-        job.state,
-      )
-    ) {
+
+    const hadMagnet = Boolean(job.selectedMagnet?.trim());
+    // Re-search only when we never had a magnet (or were stuck on selection).
+    // Keep magnet after qB / mux failures so Retry skips flaky Nyaa.
+    if (job.state === 'AWAITING_SELECTION' || !hadMagnet) {
       job.releaseCandidates = [];
       job.selectedMagnet = null;
       job.selectedReleaseName = null;
       job.torrentHash = null;
+    } else {
+      job.releaseCandidates = [];
     }
+
     await this.jobRepo.save(job);
+
+    if (hadMagnet && job.state !== 'AWAITING_SELECTION') {
+      return this.transitionJob(id, 'DOWNLOAD_QUEUED', {
+        message: `retry #${job.attemptCount} — resume with existing magnet`,
+      });
+    }
+
     return this.transitionJob(id, 'ELIGIBLE', {
       message: `retry #${job.attemptCount}`,
     });
