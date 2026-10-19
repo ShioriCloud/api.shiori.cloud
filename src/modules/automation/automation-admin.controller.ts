@@ -26,6 +26,15 @@ export class AutomationAdminController {
     return this.automation.overview();
   }
 
+  @Post('sync-from-schedule')
+  @ApiOperation({
+    summary:
+      'Create/activate automation configs for anime on the weekly airing schedule',
+  })
+  syncFromSchedule() {
+    return this.automation.syncFromWeeklySchedule();
+  }
+
   @Get('configs')
   @ApiOperation({ summary: 'List anime automation configs' })
   listConfigs(

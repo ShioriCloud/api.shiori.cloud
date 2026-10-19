@@ -78,6 +78,94 @@ export class AutomationService {
     };
   }
 
+  /**
+   * Seed/update automation configs for titles on the Shiori weekly schedule
+   * (same eligibility as catalog airing schedule: RELEASING / NOT_YET_RELEASED
+   * with airing_weekday + weekly formats).
+   * New/disabled → active; paused/manual left unchanged.
+   */
+  async syncFromWeeklySchedule() {
+    // Keep in sync with anime-catalog SHIORI_WEEKLY_SCHEDULE_FORMATS
+    const weeklyFormats = [
+      'TV',
+      'TV_SHORT',
+      'ONA',
+      'ONA (CHINESE)',
+      'OVA',
+      'SPECIAL',
+    ];
+
+    const rows = await this.animeRepo
+      .createQueryBuilder('a')
+      .where('a.airing_status IN (:...statuses)', {
+        statuses: ['RELEASING', 'NOT_YET_RELEASED'],
+      })
+      .andWhere('a.airing_weekday IS NOT NULL')
+      .andWhere("TRIM(a.airing_weekday) <> ''")
+      .andWhere('UPPER(TRIM(a.format)) IN (:...weeklyFormats)', {
+        weeklyFormats,
+      })
+      .orderBy('a.title', 'ASC')
+      .getMany();
+
+    let created = 0;
+    let activated = 0;
+    let skipped = 0;
+    const items: Array<{
+      anime_id: string;
+      title: string;
+      action: string;
+      status: string;
+    }> = [];
+
+    for (const anime of rows) {
+      let config = await this.configRepo.findOne({
+        where: { animeId: anime.id },
+      });
+      const isNew = !config;
+      if (!config) {
+        config = this.configRepo.create({
+          animeId: anime.id,
+          status: 'active',
+          triggerMode: 'subtitle',
+        });
+        created += 1;
+      } else if (config.status === 'disabled') {
+        config.status = 'active';
+        activated += 1;
+      } else {
+        skipped += 1;
+        items.push({
+          anime_id: anime.id,
+          title: anime.title,
+          action: 'unchanged',
+          status: config.status,
+        });
+        await this.ensureProfile(anime.id, anime);
+        continue;
+      }
+
+      config.updatedAt = new Date();
+      await this.configRepo.save(config);
+      await this.ensureProfile(anime.id, anime);
+      items.push({
+        anime_id: anime.id,
+        title: anime.title,
+        action: isNew ? 'created_active' : 'activated',
+        status: 'active',
+      });
+    }
+
+    return {
+      ok: true as const,
+      schedule_count: rows.length,
+      created,
+      activated,
+      skipped_preserved: skipped,
+      items,
+    };
+  }
+
   async listConfigs(opts: {
     q?: string;
     status?: string;
