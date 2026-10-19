@@ -37,4 +37,9 @@ describe('automation state transitions', () => {
   it('allows retry from cancelled', () => {
     expect(canTransition('CANCELLED', 'ELIGIBLE')).toBe(true);
   });
+
+  it('allows worker to park download failures in NEEDS_REVIEW', () => {
+    expect(canTransition('DOWNLOAD_QUEUED', 'NEEDS_REVIEW')).toBe(true);
+    expect(canTransition('DOWNLOADING', 'NEEDS_REVIEW')).toBe(true);
+  });
 });
