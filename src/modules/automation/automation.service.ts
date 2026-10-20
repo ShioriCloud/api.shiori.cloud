@@ -495,6 +495,29 @@ export class AutomationService {
       );
     }
 
+    // Nyaa numbering: subtitle-local ep + offset = torrent ep (Bleach P4 #9 → 49)
+    const extra = {
+      ...((profile.extra && typeof profile.extra === 'object'
+        ? profile.extra
+        : {}) as Record<string, unknown>),
+    };
+    if (
+      str('episode_search_offset', 'episodeSearchOffset') !== undefined
+    ) {
+      const v = Number(str('episode_search_offset', 'episodeSearchOffset'));
+      if (Number.isFinite(v) && v !== 0) extra.episode_search_offset = v;
+      else delete extra.episode_search_offset;
+    }
+    if (str('search_season', 'searchSeason') !== undefined) {
+      const v = Number(str('search_season', 'searchSeason'));
+      if (Number.isFinite(v) && v > 0) extra.search_season = v;
+      else delete extra.search_season;
+    }
+    if (body.extra && typeof body.extra === 'object') {
+      Object.assign(extra, body.extra as Record<string, unknown>);
+    }
+    profile.extra = extra;
+
     profile.updatedAt = new Date();
     return this.toProfileDto(await this.profileRepo.save(profile));
   }
@@ -2108,6 +2131,9 @@ export class AutomationService {
   }
 
   private toProfileDto(p: AnimeSourceProfile) {
+    const extra = (p.extra ?? {}) as Record<string, unknown>;
+    const offset = Number(extra.episode_search_offset);
+    const season = Number(extra.search_season);
     return {
       id: p.id,
       anime_id: p.animeId,
@@ -2128,7 +2154,9 @@ export class AutomationService {
       handbrake_preset: p.handbrakePreset,
       subtitle_default: p.subtitleDefault,
       subtitle_forced: p.subtitleForced,
-      extra: p.extra ?? {},
+      episode_search_offset: Number.isFinite(offset) ? offset : 0,
+      search_season: Number.isFinite(season) && season > 0 ? season : null,
+      extra,
     };
   }
 
