@@ -59,7 +59,8 @@ const STAGE_HINT_FA: Record<string, string> = {
   AWAITING_MANUAL_ARCHIVE:
     'فایل آماده است ولی حجم بالاست — آپلود دستی به کانال آرشیو لازم است',
   ARCHIVING: 'در حال آپلود به آرشیو…',
-  AWAITING_APPROVAL: 'پیش‌نویس کانال آماده است — تأیید کن تا منتشر شود',
+  AWAITING_APPROVAL:
+    'پیش‌نویس آماده است — با دکمهٔ زیر همین پیام تأیید/ارسال کن',
   PUBLISHED: 'انتشار انجام شد',
   NEEDS_REVIEW: 'کار متوقف شده — جزئیات را در داشبورد ببین',
   FAILED: 'خطا رخ داد — Retry یا جزئیات جاب',
@@ -309,6 +310,45 @@ export class AutomationService {
       anime: { id: anime.id, slug: anime.slug, title: anime.title },
       config: this.toConfigDto(config, anime),
       source_profile: this.toProfileDto(profile),
+      hints: await this.buildAutomationHints(animeId),
+    };
+  }
+
+  /**
+   * Lightweight hints for the simplified anime settings UI:
+   * last successful release → suggest encoder chain for next episodes.
+   */
+  private async buildAutomationHints(animeId: string) {
+    const last = await this.jobRepo.findOne({
+      where: {
+        animeId,
+        state: In([
+          'PUBLISHED',
+          'AWAITING_APPROVAL',
+          'LINKED',
+          'READY_FOR_ARCHIVE',
+          'AWAITING_MANUAL_ARCHIVE',
+          'DOWNLOADED',
+          'MUXING',
+          'DOWNLOADING',
+        ]),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+
+    const releaseName = String(last?.selectedReleaseName ?? '').trim() || null;
+    const groupMatch = releaseName?.match(/^\[([^\]]+)\]/);
+    const lastGroup = groupMatch?.[1]?.trim() || null;
+    const suggested = lastGroup
+      ? [...new Set([lastGroup, 'ASW', 'Judas'].filter(Boolean))]
+      : ['ASW', 'Judas'];
+
+    return {
+      last_episode:
+        last?.episodeNumber != null ? Number(last.episodeNumber) : null,
+      last_release_group: lastGroup,
+      last_release_name: releaseName,
+      suggested_groups: suggested,
     };
   }
 
@@ -454,6 +494,29 @@ export class AutomationService {
         str('allowed_providers', 'allowedProviders'),
       );
     }
+
+    // Nyaa numbering: subtitle-local ep + offset = torrent ep (Bleach P4 #9 → 49)
+    const extra = {
+      ...((profile.extra && typeof profile.extra === 'object'
+        ? profile.extra
+        : {}) as Record<string, unknown>),
+    };
+    if (
+      str('episode_search_offset', 'episodeSearchOffset') !== undefined
+    ) {
+      const v = Number(str('episode_search_offset', 'episodeSearchOffset'));
+      if (Number.isFinite(v) && v !== 0) extra.episode_search_offset = v;
+      else delete extra.episode_search_offset;
+    }
+    if (str('search_season', 'searchSeason') !== undefined) {
+      const v = Number(str('search_season', 'searchSeason'));
+      if (Number.isFinite(v) && v > 0) extra.search_season = v;
+      else delete extra.search_season;
+    }
+    if (body.extra && typeof body.extra === 'object') {
+      Object.assign(extra, body.extra as Record<string, unknown>);
+    }
+    profile.extra = extra;
 
     profile.updatedAt = new Date();
     return this.toProfileDto(await this.profileRepo.save(profile));
@@ -1810,9 +1873,6 @@ export class AutomationService {
     const state = job.state;
     const stateFa = JOB_STATE_FA[state] || state;
     const title = anime?.title || anime?.titleRomaji || anime?.slug || '—';
-    const dashBase =
-      this.config.get<string>('dash.baseUrl') || 'https://dash.shiori.cloud';
-    const dashUrl = `${dashBase}/admin/automation/jobs/${job.id}`;
     const pct = STAGE_PCT[state] ?? 10;
     const filled = Math.round(Math.min(10, Math.max(0, pct) / 10));
     const bar = '▓'.repeat(filled) + '░'.repeat(10 - filled);
@@ -1853,8 +1913,6 @@ export class AutomationService {
         `⚠️ ${this.escapeHtml(this.persianizeWorkerMessage(job.errorMessage) || job.errorMessage)}`,
       );
     }
-    lines.push(``);
-    lines.push(`<a href="${this.escapeHtml(dashUrl)}">مشاهده در داشبورد</a>`);
     return lines.join('\n');
   }
 
@@ -1884,42 +1942,98 @@ export class AutomationService {
     return s;
   }
 
-  /** Tel-bot: jobs whose live status card needs send/edit. */
-  async listPendingLiveStatus(limitRaw?: number) {
-    const limit = Math.min(Math.max(Number(limitRaw) || 15, 1), 40);
-    const rows = await this.jobRepo
-      .createQueryBuilder('j')
-      .leftJoinAndSelect('j.anime', 'a')
-      .where("j.progress->'tg_live'->>'rev' IS NOT NULL")
-      .andWhere(
-        `(
-          j.progress->'tg_live'->>'delivered_rev' IS NULL
-          OR NULLIF(j.progress->'tg_live'->>'delivered_rev', '') IS NULL
-          OR (j.progress->'tg_live'->>'rev')::int >
-             COALESCE((j.progress->'tg_live'->>'delivered_rev')::int, 0)
-        )`,
-      )
-      .orderBy('j.updatedAt', 'ASC')
-      .take(limit)
-      .getMany();
+  /**
+   * Tel-bot: atomically claim live-status updates so intake sync + poller
+   * cannot both send a fresh Telegram message for the same rev.
+   */
+  async claimPendingLiveStatus(opts?: {
+    limit?: number;
+    jobId?: string;
+  }) {
+    const limit = Math.min(Math.max(Number(opts?.limit) || 15, 1), 40);
+    const onlyJobId = String(opts?.jobId ?? '').trim() || null;
 
-    return {
-      items: rows.map((j) => {
-        const live = (j.progress?.tg_live ?? {}) as Record<string, unknown>;
-        return {
+    return this.jobRepo.manager.transaction(async (manager) => {
+      // Lock jobs only (no outer join — Postgres rejects FOR UPDATE with LEFT JOIN).
+      const qb = manager
+        .getRepository(AutomationJob)
+        .createQueryBuilder('j')
+        .setLock('pessimistic_write')
+        .where("j.progress->'tg_live'->>'rev' IS NOT NULL")
+        .andWhere(
+          `(
+            j.progress->'tg_live'->>'delivered_rev' IS NULL
+            OR NULLIF(j.progress->'tg_live'->>'delivered_rev', '') IS NULL
+            OR (j.progress->'tg_live'->>'rev')::int >
+               COALESCE((j.progress->'tg_live'->>'delivered_rev')::int, 0)
+          )`,
+        )
+        .orderBy('j.updatedAt', 'ASC')
+        .take(limit);
+
+      if (onlyJobId) {
+        qb.andWhere('j.id = :onlyJobId', { onlyJobId });
+      }
+
+      const rows = await qb.getMany();
+      const animeIds = [...new Set(rows.map((j) => j.animeId).filter(Boolean))];
+      const animes = animeIds.length
+        ? await manager.getRepository(Anime).find({
+            where: { id: In(animeIds) },
+          })
+        : [];
+      const animeById = new Map(animes.map((a) => [a.id, a]));
+
+      const items: Array<{
+        job_id: string;
+        rev: number;
+        html: string;
+        messages: Record<string, number>;
+        restore_delivered_rev: number;
+        anime_title: string | null;
+        anime_id: string | null;
+        episode_number: number;
+        state: string;
+        draft_id: string | null;
+      }> = [];
+
+      for (const j of rows) {
+        const live = {
+          ...((j.progress?.tg_live ?? {}) as Record<string, unknown>),
+        };
+        const rev = Number(live.rev) || 0;
+        const prevDelivered = Number(live.delivered_rev) || 0;
+        if (rev < 1 || rev <= prevDelivered) continue;
+
+        live.delivered_rev = rev; // claim — concurrent callers skip this rev
+        j.progress = { ...(j.progress ?? {}), tg_live: live };
+        j.updatedAt = new Date();
+        await manager.save(j);
+
+        items.push({
           job_id: j.id,
-          rev: Number(live.rev) || 0,
+          rev,
           html: String(live.html ?? ''),
           messages:
             live.messages && typeof live.messages === 'object'
-              ? (live.messages as Record<string, number>)
+              ? { ...(live.messages as Record<string, number>) }
               : {},
-          anime_title: j.anime?.title ?? null,
+          restore_delivered_rev: prevDelivered,
+          anime_title: animeById.get(j.animeId)?.title ?? null,
+          anime_id: j.animeId ?? null,
           episode_number: Number(j.episodeNumber),
           state: j.state,
-        };
-      }),
-    };
+          draft_id: j.draftId ?? null,
+        });
+      }
+
+      return { items };
+    });
+  }
+
+  /** Older tel-bot builds called GET pending-status — same claim semantics now. */
+  async listPendingLiveStatus(limitRaw?: number) {
+    return this.claimPendingLiveStatus({ limit: limitRaw });
   }
 
   async ackLiveStatus(
@@ -1927,6 +2041,9 @@ export class AutomationService {
     body: {
       rev?: number;
       messages?: Record<string, number | string>;
+      /** Roll back claim when Telegram send/edit failed. */
+      release?: boolean;
+      restore_delivered_rev?: number;
     },
   ) {
     const job = await this.jobRepo.findOne({ where: { id } });
@@ -1940,6 +2057,19 @@ export class AutomationService {
       throw new BadRequestException('rev required');
     }
 
+    if (body.release) {
+      const restore = Number(body.restore_delivered_rev);
+      const delivered = Number(live.delivered_rev) || 0;
+      // Only unwind if we still own this claimed rev and nothing newer arrived.
+      if (delivered === ackRev && currentRev === ackRev) {
+        live.delivered_rev = Number.isFinite(restore) ? Math.max(0, restore) : 0;
+        job.progress = { ...(job.progress ?? {}), tg_live: live };
+        job.updatedAt = new Date();
+        await this.jobRepo.save(job);
+      }
+      return { ok: true as const, released: true as const };
+    }
+
     const prevMessages =
       live.messages && typeof live.messages === 'object'
         ? { ...(live.messages as Record<string, number>) }
@@ -1950,7 +2080,8 @@ export class AutomationService {
       if (chatId && Number.isFinite(n) && n > 0) prevMessages[String(chatId)] = n;
     }
 
-    // Only advance delivered_rev if ack matches latest (or is not behind)
+    // Claim already set delivered_rev; merge message ids. If a newer rev
+    // landed mid-send, leave delivered behind current so poller retries.
     const delivered = Number(live.delivered_rev) || 0;
     live.messages = prevMessages;
     if (ackRev >= delivered) {
@@ -2000,6 +2131,9 @@ export class AutomationService {
   }
 
   private toProfileDto(p: AnimeSourceProfile) {
+    const extra = (p.extra ?? {}) as Record<string, unknown>;
+    const offset = Number(extra.episode_search_offset);
+    const season = Number(extra.search_season);
     return {
       id: p.id,
       anime_id: p.animeId,
@@ -2020,7 +2154,9 @@ export class AutomationService {
       handbrake_preset: p.handbrakePreset,
       subtitle_default: p.subtitleDefault,
       subtitle_forced: p.subtitleForced,
-      extra: p.extra ?? {},
+      episode_search_offset: Number.isFinite(offset) ? offset : 0,
+      search_season: Number.isFinite(season) && season > 0 ? season : null,
+      extra,
     };
   }
 
