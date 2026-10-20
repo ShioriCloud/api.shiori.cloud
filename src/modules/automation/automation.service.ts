@@ -62,6 +62,25 @@ export class AutomationService {
     const awaitingArchive = await this.jobRepo.count({
       where: { state: In(['READY_FOR_ARCHIVE', 'AWAITING_MANUAL_ARCHIVE']) },
     });
+    const awaitingSelection = await this.jobRepo.count({
+      where: { state: 'AWAITING_SELECTION' },
+    });
+    // SEARCHING with several Nyaa misses — treated as attention
+    const searchingStuck = await this.jobRepo
+      .createQueryBuilder('j')
+      .where('j.state = :st', { st: 'SEARCHING' })
+      .andWhere("COALESCE((j.progress->>'nyaa_misses')::int, 0) >= :n", {
+        n: 3,
+      })
+      .getCount();
+
+    const needsAttention =
+      needsReview +
+      awaitingArchive +
+      awaitingSelection +
+      waitingSub +
+      failed +
+      searchingStuck;
 
     return {
       total_configured: configs.length,
@@ -75,6 +94,9 @@ export class AutomationService {
       needs_review: needsReview,
       awaiting_approval: awaitingApproval,
       awaiting_archive: awaitingArchive,
+      awaiting_selection: awaitingSelection,
+      searching_stuck: searchingStuck,
+      needs_attention: needsAttention,
     };
   }
 
@@ -1012,17 +1034,89 @@ export class AutomationService {
     return config;
   }
 
+  /** Default fansub groups used when profile has none — reduces manual magnet. */
+  private static readonly DEFAULT_PREFERRED_GROUPS = [
+    'ASW',
+    'Judas',
+    'Erai-raws',
+    'SubsPlease',
+  ];
+
+  private static readonly DEFAULT_FALLBACK_GROUPS = ['HorribleSubs', 'CameEsp'];
+
+  private buildDefaultAltTitles(anime: Anime): string[] {
+    const out: string[] = [];
+    const push = (raw: string | null | undefined) => {
+      const s = String(raw ?? '')
+        .trim()
+        .replace(/\s+/g, ' ');
+      if (!s) return;
+      if (!out.some((x) => x.toLowerCase() === s.toLowerCase())) out.push(s);
+    };
+
+    push(anime.titleRomaji);
+    if (anime.slug) {
+      const fromSlug = anime.slug
+        .replace(/-/g, ' ')
+        .replace(/\s+season\s+\d+/gi, '')
+        .replace(/\s+s\d+\b/gi, '')
+        .trim();
+      if (fromSlug) {
+        push(
+          fromSlug.replace(/\b\w/g, (c) => c.toUpperCase()),
+        );
+      }
+    }
+    const title = String(anime.title ?? '').trim();
+    if (title && title.split(/\s+/).length <= 6) push(title);
+    // Shorten very long English titles to first 4 words as a search hint
+    if (title && title.split(/\s+/).length > 6) {
+      push(title.split(/\s+/).slice(0, 4).join(' '));
+    }
+    return out;
+  }
+
   private async ensureProfile(animeId: string, anime?: Anime) {
     let profile = await this.profileRepo.findOne({ where: { animeId } });
+    const a = anime ?? (await this.requireAnime(animeId));
     if (!profile) {
-      const a = anime ?? (await this.requireAnime(animeId));
       profile = await this.profileRepo.save(
         this.profileRepo.create({
           animeId,
-          canonicalTitle: a.title,
-          altTitles: a.titleRomaji ? [a.titleRomaji] : [],
+          canonicalTitle: a.titleRomaji || a.title,
+          altTitles: this.buildDefaultAltTitles(a),
+          preferredGroups: [...AutomationService.DEFAULT_PREFERRED_GROUPS],
+          fallbackGroups: [...AutomationService.DEFAULT_FALLBACK_GROUPS],
+          preferredResolution: '1080p',
+          preferredCodec: 'hevc',
+          selectionMode: 'auto',
         }),
       );
+      return profile;
+    }
+
+    // Fill thin profiles without overwriting admin-tuned fields
+    let dirty = false;
+    if (!profile.canonicalTitle) {
+      profile.canonicalTitle = a.titleRomaji || a.title;
+      dirty = true;
+    }
+    if (!profile.altTitles?.length) {
+      profile.altTitles = this.buildDefaultAltTitles(a);
+      dirty = true;
+    }
+    if (!profile.preferredGroups?.length) {
+      profile.preferredGroups = [
+        ...AutomationService.DEFAULT_PREFERRED_GROUPS,
+      ];
+      dirty = true;
+    }
+    if (!profile.fallbackGroups?.length) {
+      profile.fallbackGroups = [...AutomationService.DEFAULT_FALLBACK_GROUPS];
+      dirty = true;
+    }
+    if (dirty) {
+      profile = await this.profileRepo.save(profile);
     }
     return profile;
   }
