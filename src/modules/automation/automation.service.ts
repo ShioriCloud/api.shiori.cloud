@@ -14,43 +14,83 @@ import {
   AutomationJob,
   AutomationJobEvent,
   SubtitleSubmission,
-  TelegramUser,
 } from '../../entities';
 import type { AutomationJobState } from '../../entities/automation-job.entity';
 import type { AutomationStatus } from '../../entities/anime-automation-config.entity';
 import { ChannelDraftsService } from '../bot/channel-drafts.service';
-import { TelegramDmOutboxService } from '../telegram-dm/telegram-dm-outbox.service';
 import { canTransition, WORKER_CLAIMABLE_STATES } from './automation.states';
 
-/** States that warrant an admin Telegram status DM (dash-like summary). */
-const ADMIN_NOTIFY_STATES = new Set<AutomationJobState>([
-  'AWAITING_SELECTION',
-  'NEEDS_REVIEW',
-  'AWAITING_MANUAL_ARCHIVE',
-  'WAITING_FOR_SUBTITLE',
-  'FAILED',
-  'AWAITING_APPROVAL',
-  'PUBLISHED',
-]);
-
+/** Persian-only labels for the live Telegram status card. */
 const JOB_STATE_FA: Record<string, string> = {
+  SUBTITLE_RECEIVED: 'ساب دریافت شد',
+  MATCHED: 'مچ شد',
   ELIGIBLE: 'آماده اجرا',
   SEARCHING: 'جستجوی ریلیز',
-  AWAITING_SELECTION: 'انتخاب ریلیز',
+  AWAITING_SELECTION: 'نیاز به انتخاب ریلیز',
   DOWNLOAD_QUEUED: 'صف دانلود',
   DOWNLOADING: 'در حال دانلود',
   DOWNLOADED: 'دانلود شد',
   WAITING_FOR_SUBTITLE: 'منتظر ساب',
+  ENCODING: 'انکود',
   MUXING: 'مکس ساب',
+  VALIDATING: 'اعتبارسنجی',
   READY_FOR_ARCHIVE: 'آماده آرشیو',
-  AWAITING_MANUAL_ARCHIVE: 'آرشیو دستی',
+  AWAITING_MANUAL_ARCHIVE: 'نیاز به آرشیو دستی',
   ARCHIVING: 'آپلود آرشیو',
   LINKED: 'لینک شد',
-  AWAITING_APPROVAL: 'منتظر تأیید',
+  DRAFT_QUEUED: 'صف پیش‌نویس',
+  AWAITING_APPROVAL: 'منتظر تأیید انتشار',
   PUBLISHED: 'منتشر شد',
   NEEDS_REVIEW: 'نیاز به بررسی',
   FAILED: 'ناموفق',
   CANCELLED: 'لغو شده',
+};
+
+const STAGE_HINT_FA: Record<string, string> = {
+  ELIGIBLE: 'به‌زودی جستجوی ریلیز شروع می‌شود',
+  SEARCHING: 'در حال پیدا کردن فایل روی Nyaa…',
+  AWAITING_SELECTION: 'ریلیز پیدا نشد یا مبهم است — از داشبورد انتخاب کن',
+  DOWNLOAD_QUEUED: 'دانلود در صف qBittorrent',
+  DOWNLOADING: 'در حال دانلود ویدئو…',
+  DOWNLOADED: 'دانلود تمام شد',
+  WAITING_FOR_SUBTITLE: 'ویدئو هست؛ منتظر فایل ساب',
+  MUXING: 'در حال مکس ساب روی ویدئو…',
+  READY_FOR_ARCHIVE: 'خروجی آماده است',
+  AWAITING_MANUAL_ARCHIVE:
+    'فایل آماده است ولی حجم بالاست — آپلود دستی به کانال آرشیو لازم است',
+  ARCHIVING: 'در حال آپلود به آرشیو…',
+  AWAITING_APPROVAL: 'پیش‌نویس کانال آماده است — تأیید کن تا منتشر شود',
+  PUBLISHED: 'انتشار انجام شد',
+  NEEDS_REVIEW: 'کار متوقف شده — جزئیات را در داشبورد ببین',
+  FAILED: 'خطا رخ داد — Retry یا جزئیات جاب',
+};
+
+const TRIGGER_FA: Record<string, string> = {
+  subtitle: 'ساب مترجم',
+  manual: 'دستی',
+  new_episode: 'اپیزود جدید',
+};
+
+const STAGE_PCT: Record<string, number> = {
+  ELIGIBLE: 8,
+  SEARCHING: 15,
+  AWAITING_SELECTION: 18,
+  DOWNLOAD_QUEUED: 25,
+  DOWNLOADING: 40,
+  DOWNLOADED: 55,
+  WAITING_FOR_SUBTITLE: 58,
+  MUXING: 70,
+  VALIDATING: 75,
+  READY_FOR_ARCHIVE: 80,
+  AWAITING_MANUAL_ARCHIVE: 82,
+  ARCHIVING: 88,
+  LINKED: 92,
+  DRAFT_QUEUED: 95,
+  AWAITING_APPROVAL: 97,
+  PUBLISHED: 100,
+  NEEDS_REVIEW: 0,
+  FAILED: 0,
+  CANCELLED: 0,
 };
 
 @Injectable()
@@ -69,10 +109,7 @@ export class AutomationService {
     private readonly eventRepo: Repository<AutomationJobEvent>,
     @InjectRepository(SubtitleSubmission)
     private readonly subRepo: Repository<SubtitleSubmission>,
-    @InjectRepository(TelegramUser)
-    private readonly usersRepo: Repository<TelegramUser>,
     private readonly channelDrafts: ChannelDraftsService,
-    private readonly telegramDmOutbox: TelegramDmOutboxService,
     private readonly config: ConfigService,
   ) {}
 
@@ -505,24 +542,28 @@ export class AutomationService {
         meta: opts.meta ?? {},
       }),
     );
-    const dto = this.toJobDto(saved);
-    if (
-      !opts.skipAdminNotify &&
-      from !== toState &&
-      ADMIN_NOTIFY_STATES.has(toState)
-    ) {
-      void this.notifyAdminsJobStatus(saved, {
-        message: opts.message,
-        fromState: from,
-      }).catch((err) =>
+    const skipLive =
+      opts.skipAdminNotify ||
+      from === toState ||
+      (toState === 'CANCELLED' &&
+        String(opts.message ?? '').includes('superseded'));
+
+    let finalJob = saved;
+    if (!skipLive) {
+      try {
+        finalJob = await this.queueLiveStatus(saved, {
+          message: opts.message,
+          fromState: from,
+        });
+      } catch (err) {
         this.logger.warn(
-          `admin job notify failed: ${
+          `live status queue failed: ${
             err instanceof Error ? err.message : String(err)
           }`,
-        ),
-      );
+        );
+      }
     }
-    return dto;
+    return this.toJobDto(finalJob);
   }
 
   async cancelJob(id: string) {
@@ -709,12 +750,8 @@ export class AutomationService {
       where: { telegramChatId: chatId, telegramMessageId: messageId },
     });
     if (existing) {
-      return {
-        ok: true as const,
-        duplicate: true as const,
-        submission: this.toSubmissionDto(existing),
-        job: null,
-      };
+      // Same Telegram post again (forward/retry): restart pipeline + refresh live status card
+      return this.retriggerExistingSubmission(existing);
     }
 
     let animeId =
@@ -879,11 +916,14 @@ export class AutomationService {
         'NEEDS_REVIEW',
         'manual_mode_awaits_admin',
       );
+      const job = await this.queueLiveStatus(created.job, {
+        message: 'حالت دستی — منتظر اقدام ادمین',
+      });
       return {
         ok: true as const,
         duplicate: false as const,
         submission: this.toSubmissionDto(submission),
-        job: this.toJobDto(created.job, anime),
+        job: this.toJobDto(job, anime),
         awaits_admin: true as const,
         reattached: created.reattached,
       };
@@ -896,11 +936,16 @@ export class AutomationService {
       'ELIGIBLE',
       'subtitle triggered',
     );
+    const job = await this.queueLiveStatus(created.job, {
+      message: created.reattached
+        ? 'ساب به جاب موجود وصل شد'
+        : 'ساب دریافت شد — جاب شروع شد',
+    });
     return {
       ok: true as const,
       duplicate: false as const,
       submission: this.toSubmissionDto(submission),
-      job: this.toJobDto(created.job, anime),
+      job: this.toJobDto(job, anime),
       reattached: created.reattached,
     };
   }
@@ -1066,6 +1111,147 @@ export class AutomationService {
     return { ok: true as const, checked: rows.length, escalated, minutes };
   }
 
+  /**
+   * Re-processing the same channel post: restart (or resume) and bump live TG card.
+   */
+  private async retriggerExistingSubmission(submission: SubtitleSubmission) {
+    const animeId = String(submission.animeId ?? '').trim();
+    const episodeNumber = Number(submission.episodeNumber);
+    if (!animeId || !Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      return {
+        ok: true as const,
+        duplicate: true as const,
+        submission: this.toSubmissionDto(submission),
+        job: null,
+        needs_review: true as const,
+        reason: 'anime_or_episode_unresolved',
+      };
+    }
+
+    const anime = await this.requireAnime(animeId);
+    let job =
+      (await this.jobRepo.findOne({
+        where: { subtitleSubmissionId: submission.id },
+        order: { createdAt: 'DESC' },
+      })) ??
+      (await this.jobRepo.findOne({
+        where: {
+          animeId,
+          episodeNumber,
+          state: In([
+            'ELIGIBLE',
+            'SEARCHING',
+            'AWAITING_SELECTION',
+            'DOWNLOAD_QUEUED',
+            'DOWNLOADING',
+            'DOWNLOADED',
+            'WAITING_FOR_SUBTITLE',
+            'MUXING',
+            'READY_FOR_ARCHIVE',
+            'AWAITING_MANUAL_ARCHIVE',
+            'ARCHIVING',
+            'LINKED',
+            'DRAFT_QUEUED',
+            'AWAITING_APPROVAL',
+            'NEEDS_REVIEW',
+            'FAILED',
+          ]),
+        },
+        order: { updatedAt: 'DESC' },
+      }));
+
+    if (job) {
+      // Includes PUBLISHED/CANCELLED — force a fresh ELIGIBLE run on the same row
+      // (createJobFromSubtitle would no-op on the existing idempotency key).
+      job = await this.resetJobToEligible(
+        job,
+        submission.id,
+        'پست ساب دوباره ارسال شد',
+      );
+    } else {
+      const created = await this.createJobFromSubtitle(
+        animeId,
+        episodeNumber,
+        submission.id,
+        'ELIGIBLE',
+        'subtitle re-posted',
+      );
+      job = created.job;
+      if (job.state !== 'ELIGIBLE') {
+        job = await this.resetJobToEligible(
+          job,
+          submission.id,
+          'پست ساب دوباره ارسال شد',
+        );
+      }
+    }
+
+    job = await this.queueLiveStatus(job, {
+      message: 'پست ساب دوباره ارسال شد — اجرای مجدد از اول',
+    });
+
+    return {
+      ok: true as const,
+      duplicate: true as const,
+      restarted: true as const,
+      submission: this.toSubmissionDto(submission),
+      job: this.toJobDto(job, anime),
+    };
+  }
+
+  /** Clear download/mux fields and park job at ELIGIBLE for a fresh worker run. */
+  private async resetJobToEligible(
+    job: AutomationJob,
+    submissionId: string,
+    message: string,
+  ) {
+    const from = job.state;
+    const prevLive = (job.progress?.tg_live ?? {}) as Record<string, unknown>;
+    const keepMessages =
+      prevLive.messages && typeof prevLive.messages === 'object'
+        ? prevLive.messages
+        : {};
+
+    job.state = 'ELIGIBLE';
+    job.subtitleSubmissionId = submissionId;
+    job.selectedMagnet = null;
+    job.selectedReleaseName = null;
+    job.torrentHash = null;
+    job.downloadPath = null;
+    job.outputPath = null;
+    job.outputFileName = null;
+    job.archiveFileKey = null;
+    job.downloadLink = null;
+    job.draftId = null;
+    job.releaseCandidates = [];
+    job.errorMessage = null;
+    job.errorCode = null;
+    job.claimedAt = null;
+    job.claimedBy = null;
+    job.attemptCount = (job.attemptCount ?? 0) + 1;
+    job.progress = {
+      tg_live: {
+        html: String(prevLive.html ?? ''),
+        rev: Number(prevLive.rev) || 0,
+        delivered_rev: Number(prevLive.delivered_rev) || 0,
+        messages: keepMessages,
+      },
+    };
+    job.updatedAt = new Date();
+    const saved = await this.jobRepo.save(job);
+    await this.eventRepo.save(
+      this.eventRepo.create({
+        jobId: saved.id,
+        fromState: from,
+        toState: 'ELIGIBLE',
+        message,
+        meta: { submission_id: submissionId, restarted: true },
+      }),
+    );
+    await this.touchConfigJob(job.animeId, Number(job.episodeNumber));
+    return saved;
+  }
+
   private async createJobFromSubtitle(
     animeId: string,
     episodeNumber: number,
@@ -1116,7 +1302,7 @@ export class AutomationService {
       }
     }
 
-    // supersede older open jobs for same ep
+    // supersede older open jobs for same ep (full restart when new subtitle arrives)
     const open = await this.jobRepo.find({
       where: {
         animeId,
@@ -1126,11 +1312,35 @@ export class AutomationService {
           'SEARCHING',
           'AWAITING_SELECTION',
           'DOWNLOAD_QUEUED',
+          'DOWNLOADING',
+          'DOWNLOADED',
+          'WAITING_FOR_SUBTITLE',
+          'ENCODING',
+          'MUXING',
+          'VALIDATING',
+          'READY_FOR_ARCHIVE',
+          'AWAITING_MANUAL_ARCHIVE',
+          'ARCHIVING',
+          'LINKED',
+          'DRAFT_QUEUED',
+          'AWAITING_APPROVAL',
           'NEEDS_REVIEW',
+          'FAILED',
         ]),
       },
     });
+    const inheritedMessages: Record<string, number> = {};
     for (const j of open) {
+      const live = (j.progress?.tg_live ?? {}) as Record<string, unknown>;
+      const msgs = live.messages;
+      if (msgs && typeof msgs === 'object') {
+        for (const [chatId, msgId] of Object.entries(
+          msgs as Record<string, number>,
+        )) {
+          const n = Number(msgId);
+          if (chatId && Number.isFinite(n) && n > 0) inheritedMessages[chatId] = n;
+        }
+      }
       j.state = 'CANCELLED';
       j.errorMessage = 'superseded by newer subtitle submission';
       await this.jobRepo.save(j);
@@ -1144,6 +1354,17 @@ export class AutomationService {
         state,
         triggerSource: 'subtitle',
         subtitleSubmissionId: submissionId,
+        progress:
+          Object.keys(inheritedMessages).length > 0
+            ? {
+                tg_live: {
+                  html: '',
+                  rev: 0,
+                  delivered_rev: 0,
+                  messages: inheritedMessages,
+                },
+              }
+            : {},
       }),
     );
     await this.eventRepo.save(
@@ -1286,7 +1507,16 @@ export class AutomationService {
 
     const patch: Partial<AutomationJob> = {};
     if (body.progress) {
+      const prevLive = job.progress?.tg_live;
       patch.progress = { ...(job.progress ?? {}), ...body.progress };
+      // Worker patches must not wipe the live Telegram card bookkeeping.
+      if (
+        prevLive &&
+        !(body.progress as { tg_live?: unknown }).tg_live &&
+        patch.progress
+      ) {
+        (patch.progress as Record<string, unknown>).tg_live = prevLive;
+      }
     }
     if (body.selected_release_name != null)
       patch.selectedReleaseName = body.selected_release_name;
@@ -1540,49 +1770,74 @@ export class AutomationService {
   }
 
   /**
-   * Queue admin DMs (via tel-bot outbox) with a dash-like job status card.
-   * Used for attention / terminal milestones — intake start is notified by tel-bot directly.
+   * Bump a single editable Telegram status card (tel-bot sends/edits + ack).
+   * Stored on job.progress.tg_live — not a flood of new DMs.
    */
-  private async notifyAdminsJobStatus(
+  private async queueLiveStatus(
     job: AutomationJob,
     opts: { message?: string; fromState?: AutomationJobState | null } = {},
-  ) {
-    const recipients = await this.resolveAutomationAdminIds();
-    if (!recipients.length) return;
-
+  ): Promise<AutomationJob> {
     const anime =
       (await this.animeRepo.findOne({ where: { id: job.animeId } })) ?? null;
+    const html = this.buildLiveStatusHtml(job, anime, opts);
+    const prev = (job.progress?.tg_live ?? {}) as Record<string, unknown>;
+    const prevRev = Number(prev.rev) || 0;
+    const messages =
+      prev.messages && typeof prev.messages === 'object' && prev.messages
+        ? (prev.messages as Record<string, number>)
+        : {};
+    const deliveredRev = Number(prev.delivered_rev) || 0;
+
+    job.progress = {
+      ...(job.progress ?? {}),
+      tg_live: {
+        html,
+        rev: prevRev + 1,
+        delivered_rev: deliveredRev,
+        messages,
+        updated_at: new Date().toISOString(),
+      },
+    };
+    job.updatedAt = new Date();
+    return this.jobRepo.save(job);
+  }
+
+  private buildLiveStatusHtml(
+    job: AutomationJob,
+    anime: Anime | null,
+    opts: { message?: string; fromState?: AutomationJobState | null } = {},
+  ) {
     const state = job.state;
     const stateFa = JOB_STATE_FA[state] || state;
     const title = anime?.title || anime?.titleRomaji || anime?.slug || '—';
     const dashBase =
       this.config.get<string>('dash.baseUrl') || 'https://dash.shiori.cloud';
     const dashUrl = `${dashBase}/admin/automation/jobs/${job.id}`;
+    const pct = STAGE_PCT[state] ?? 10;
+    const filled = Math.round(Math.min(10, Math.max(0, pct) / 10));
+    const bar = '▓'.repeat(filled) + '░'.repeat(10 - filled);
+    const trigger = TRIGGER_FA[String(job.triggerSource ?? '')] || 'اتوماسیون';
+    const hint =
+      STAGE_HINT_FA[state] ||
+      this.persianizeWorkerMessage(opts.message) ||
+      '';
+
+    const epNum = Number(job.episodeNumber);
+    const epLabel = Number.isFinite(epNum)
+      ? Math.round(epNum * 100) % 100 === 0
+        ? String(Math.round(epNum))
+        : String(epNum)
+      : String(job.episodeNumber ?? '');
 
     const lines = [
       `🎬 <b>اتوماسیون سافت‌ساب</b>`,
-      `<b>${this.escapeHtml(title)}</b> — قسمت <code>${this.escapeHtml(
-        String(job.episodeNumber),
-      )}</code>`,
-      `وضعیت: <b>${this.escapeHtml(stateFa)}</b> <code>${this.escapeHtml(
-        state,
-      )}</code>`,
+      `<b>${this.escapeHtml(title)}</b> — قسمت ${this.escapeHtml(epLabel)}`,
+      ``,
+      `<b>${this.escapeHtml(stateFa)}</b>`,
+      `<code>${bar}</code> ${pct}٪`,
     ];
-    if (opts.fromState && opts.fromState !== state) {
-      lines.push(
-        `انتقال: <code>${this.escapeHtml(opts.fromState)}</code> → <code>${this.escapeHtml(
-          state,
-        )}</code>`,
-      );
-    }
-    if (opts.message) {
-      lines.push(this.escapeHtml(opts.message));
-    }
-    if (job.errorMessage) {
-      lines.push(
-        `خطا: <code>${this.escapeHtml(job.errorMessage)}</code>`,
-      );
-    }
+    if (hint) lines.push(this.escapeHtml(hint));
+    lines.push(`منبع: ${this.escapeHtml(trigger)}`);
     if (job.selectedReleaseName) {
       lines.push(
         `ریلیز: <code>${this.escapeHtml(job.selectedReleaseName)}</code>`,
@@ -1593,36 +1848,117 @@ export class AutomationService {
         `خروجی: <code>${this.escapeHtml(job.outputFileName)}</code>`,
       );
     }
-    lines.push(`<a href="${this.escapeHtml(dashUrl)}">باز کردن در داشبورد</a>`);
-
-    const text = lines.join('\n');
-    await this.telegramDmOutbox.enqueueMany(
-      recipients.map((chatId) => ({ chatId, text })),
-    );
+    if (job.errorMessage) {
+      lines.push(
+        `⚠️ ${this.escapeHtml(this.persianizeWorkerMessage(job.errorMessage) || job.errorMessage)}`,
+      );
+    }
+    lines.push(``);
+    lines.push(`<a href="${this.escapeHtml(dashUrl)}">مشاهده در داشبورد</a>`);
+    return lines.join('\n');
   }
 
-  private async resolveAutomationAdminIds(): Promise<number[]> {
-    const ids = new Set<number>();
-    const raw = String(
-      this.config.get<string>('telegram.adminUserId') ?? '',
-    ).trim();
-    if (raw) {
-      for (const part of raw.split(/[,;\s]+/)) {
-        const n = Number(part.trim());
-        if (Number.isFinite(n) && n > 0) ids.add(n);
-      }
+  /** Soften common English worker/API messages for admin DMs. */
+  private persianizeWorkerMessage(raw?: string | null): string | null {
+    const s = String(raw ?? '').trim();
+    if (!s) return null;
+    if (/local bot api|telegramApiRoot|>\s*50\s*mb/i.test(s)) {
+      return 'فایل حجیم است — آپلود دستی به کانال آرشیو لازم است';
     }
-    const staff = await this.usersRepo
-      .createQueryBuilder('u')
-      .select('u.telegram_user_id', 'telegram_user_id')
-      .where("u.app_role IN ('admin', 'moderator')")
-      .andWhere('u.is_banned = false')
-      .getRawMany<{ telegram_user_id: string }>();
-    for (const row of staff) {
-      const n = Number(row.telegram_user_id);
-      if (Number.isFinite(n) && n > 0) ids.add(n);
+    if (/awaiting admin approval/i.test(s)) {
+      return 'پیش‌نویس آماده است — منتظر تأیید شما';
     }
-    return [...ids];
+    if (/searching releases|subtitle triggered/i.test(s)) {
+      return null;
+    }
+    if (/nyaa/i.test(s) && /miss|exhaust|0 magnet/i.test(s)) {
+      return 'ریلیز مناسب روی Nyaa پیدا نشد';
+    }
+    if (/channel draft queued/i.test(s)) return 'پیش‌نویس کانال در صف است';
+    if (/manual_mode/i.test(s)) return 'حالت دستی — منتظر ادمین';
+    // Drop raw English transition noise
+    if (/^[A-Z_]+$/.test(s) || /^state →/i.test(s)) return null;
+    if (/^[A-Za-z0-9 _\-→>.]+$/.test(s) && /[A-Z]{3,}/.test(s)) {
+      return null;
+    }
+    return s;
+  }
+
+  /** Tel-bot: jobs whose live status card needs send/edit. */
+  async listPendingLiveStatus(limitRaw?: number) {
+    const limit = Math.min(Math.max(Number(limitRaw) || 15, 1), 40);
+    const rows = await this.jobRepo
+      .createQueryBuilder('j')
+      .leftJoinAndSelect('j.anime', 'a')
+      .where("j.progress->'tg_live'->>'rev' IS NOT NULL")
+      .andWhere(
+        `(
+          j.progress->'tg_live'->>'delivered_rev' IS NULL
+          OR NULLIF(j.progress->'tg_live'->>'delivered_rev', '') IS NULL
+          OR (j.progress->'tg_live'->>'rev')::int >
+             COALESCE((j.progress->'tg_live'->>'delivered_rev')::int, 0)
+        )`,
+      )
+      .orderBy('j.updatedAt', 'ASC')
+      .take(limit)
+      .getMany();
+
+    return {
+      items: rows.map((j) => {
+        const live = (j.progress?.tg_live ?? {}) as Record<string, unknown>;
+        return {
+          job_id: j.id,
+          rev: Number(live.rev) || 0,
+          html: String(live.html ?? ''),
+          messages:
+            live.messages && typeof live.messages === 'object'
+              ? (live.messages as Record<string, number>)
+              : {},
+          anime_title: j.anime?.title ?? null,
+          episode_number: Number(j.episodeNumber),
+          state: j.state,
+        };
+      }),
+    };
+  }
+
+  async ackLiveStatus(
+    id: string,
+    body: {
+      rev?: number;
+      messages?: Record<string, number | string>;
+    },
+  ) {
+    const job = await this.jobRepo.findOne({ where: { id } });
+    if (!job) throw new NotFoundException('Job not found');
+    const live = {
+      ...((job.progress?.tg_live ?? {}) as Record<string, unknown>),
+    };
+    const currentRev = Number(live.rev) || 0;
+    const ackRev = Number(body.rev);
+    if (!Number.isFinite(ackRev) || ackRev < 1) {
+      throw new BadRequestException('rev required');
+    }
+
+    const prevMessages =
+      live.messages && typeof live.messages === 'object'
+        ? { ...(live.messages as Record<string, number>) }
+        : {};
+    const incoming = body.messages ?? {};
+    for (const [chatId, msgId] of Object.entries(incoming)) {
+      const n = Number(msgId);
+      if (chatId && Number.isFinite(n) && n > 0) prevMessages[String(chatId)] = n;
+    }
+
+    // Only advance delivered_rev if ack matches latest (or is not behind)
+    const delivered = Number(live.delivered_rev) || 0;
+    live.messages = prevMessages;
+    if (ackRev >= delivered) {
+      live.delivered_rev = Math.min(ackRev, currentRev || ackRev);
+    }
+    job.progress = { ...(job.progress ?? {}), tg_live: live };
+    await this.jobRepo.save(job);
+    return { ok: true as const, delivered_rev: live.delivered_rev };
   }
 
   private escapeHtml(s: string) {
