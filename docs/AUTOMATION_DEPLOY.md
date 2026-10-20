@@ -54,3 +54,7 @@ npm run watch
 4. New/thin profiles auto-seed `alt_titles` + preferred groups (ASW/Judas/Erai-raws/SubsPlease). Overview «نیاز به اقدام» includes selection, stuck search, waiting subtitle, failed.
 5. After mux: Local Bot API upload or manual archive → draft preview DM → approve.
 6. Admin DMs: tel-bot notifies on subtitle→job start (dash-like status + link). Later attention states (`NEEDS_REVIEW`, `AWAITING_SELECTION`, archive/approval, …) enqueue via API `telegram_dm_outbox`. Set `SHIORI_DASH_URL` on tel-bot (and optionally API) for deep links.
+7. Cron (header `x-cron-secret` = `CRON_SECRET`):
+   - `POST /api/v1/automation/sync-from-schedule-cron` — weekly config seed
+   - `POST /api/v1/automation/escalate-stale-cron` — mid-pipeline stale → `NEEDS_REVIEW`
+8. Dash can approve `AWAITING_APPROVAL` jobs (`request-publish`); tel-bot poller publishes then marks job `PUBLISHED`. Ambiguous subs: tab «ساب مبهم».

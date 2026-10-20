@@ -11,6 +11,8 @@ import {
   Anime,
   AnimeEpisode,
   AnimeSubtitle,
+  AutomationJob,
+  AutomationJobEvent,
   ChannelPostDraft,
   TelegramUser,
 } from '../../entities';
@@ -54,6 +56,10 @@ export class ChannelDraftsService {
     private readonly draftRepo: Repository<ChannelPostDraft>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
+    @InjectRepository(AutomationJob)
+    private readonly automationJobRepo: Repository<AutomationJob>,
+    @InjectRepository(AutomationJobEvent)
+    private readonly automationEventRepo: Repository<AutomationJobEvent>,
     private readonly config: ConfigService,
   ) {}
 
@@ -622,6 +628,30 @@ export class ChannelDraftsService {
     // on the next publish.
     anime.updatedAt = new Date();
     await this.animeRepo.save(anime);
+
+    // Close linked softsub automation job if any
+    const job = await this.automationJobRepo.findOne({
+      where: { draftId: draft.id, state: 'AWAITING_APPROVAL' },
+    });
+    if (job) {
+      const from = job.state;
+      job.state = 'PUBLISHED';
+      job.progress = {
+        ...(job.progress ?? {}),
+        publish_completed_at: new Date().toISOString(),
+      };
+      job.updatedAt = new Date();
+      await this.automationJobRepo.save(job);
+      await this.automationEventRepo.save(
+        this.automationEventRepo.create({
+          jobId: job.id,
+          fromState: from,
+          toState: 'PUBLISHED',
+          message: 'published via channel draft',
+          meta: { draft_id: draft.id, published_message_id: messageId },
+        }),
+      );
+    }
 
     return this.toDraftDto(draft, anime);
   }

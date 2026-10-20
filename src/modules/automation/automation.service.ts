@@ -762,6 +762,90 @@ export class AutomationService {
       };
     }
 
+    return this.processMatchedSubmission(submission);
+  }
+
+  /** List subtitle submissions for admin inbox (ambiguous / ineligible / …). */
+  async listSubtitleSubmissions(opts: {
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const offset = Math.max(opts.offset ?? 0, 0);
+    const qb = this.subRepo
+      .createQueryBuilder('s')
+      .leftJoinAndSelect('s.anime', 'a')
+      .orderBy('s.createdAt', 'DESC')
+      .take(limit)
+      .skip(offset);
+    if (opts.status && opts.status !== 'all') {
+      qb.andWhere('s.status = :st', { st: opts.status });
+    }
+    const [rows, total] = await qb.getManyAndCount();
+    return {
+      total,
+      items: rows.map((s) => ({
+        ...this.toSubmissionDto(s),
+        anime_title: s.anime?.title ?? null,
+        anime_slug: s.anime?.slug ?? null,
+      })),
+    };
+  }
+
+  async resolveSubtitleSubmission(
+    id: string,
+    body: { anime_id?: string; animeId?: string; episode_number?: number; episodeNumber?: number },
+  ) {
+    const submission = await this.subRepo.findOne({ where: { id } });
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    const animeId = String(body.anime_id ?? body.animeId ?? '').trim();
+    const episodeNumber = Number(body.episode_number ?? body.episodeNumber);
+    if (!animeId) throw new BadRequestException('anime_id required');
+    if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      throw new BadRequestException('episode_number required');
+    }
+    await this.requireAnime(animeId);
+
+    submission.animeId = animeId;
+    submission.episodeNumber = episodeNumber;
+    submission.status = 'matched';
+    submission.matchNote = 'resolved_by_admin';
+    submission.revision = (submission.revision ?? 1) + 1;
+    await this.subRepo.save(submission);
+
+    return this.processMatchedSubmission(submission);
+  }
+
+  async rejectSubtitleSubmission(id: string) {
+    const submission = await this.subRepo.findOne({ where: { id } });
+    if (!submission) throw new NotFoundException('Submission not found');
+    submission.status = 'rejected';
+    submission.matchNote = submission.matchNote
+      ? `${submission.matchNote};rejected_by_admin`
+      : 'rejected_by_admin';
+    await this.subRepo.save(submission);
+    return { ok: true as const, submission: this.toSubmissionDto(submission) };
+  }
+
+  /**
+   * After anime+episode are known: eligibility check → create/reattach job.
+   */
+  private async processMatchedSubmission(submission: SubtitleSubmission) {
+    const animeId = String(submission.animeId ?? '').trim();
+    const episodeNumber = Number(submission.episodeNumber);
+    if (!animeId || !Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      return {
+        ok: true as const,
+        duplicate: false as const,
+        submission: this.toSubmissionDto(submission),
+        job: null,
+        needs_review: true as const,
+        reason: 'anime_or_episode_unresolved',
+      };
+    }
+
     const eligibility = await this.checkEligibility(animeId, episodeNumber);
     if (!eligibility.ok) {
       submission.status = 'ineligible';
@@ -811,6 +895,167 @@ export class AutomationService {
       job: this.toJobDto(created.job, anime),
       reattached: created.reattached,
     };
+  }
+
+  /** Dash: queue channel publish via tel-bot poller (API cannot reach Telegram). */
+  async requestPublish(jobId: string) {
+    const job = await this.jobRepo.findOne({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Job not found');
+    if (job.state !== 'AWAITING_APPROVAL') {
+      throw new BadRequestException(
+        `Job must be AWAITING_APPROVAL (got ${job.state})`,
+      );
+    }
+    if (!job.draftId) {
+      throw new BadRequestException('Job has no draft_id — cannot publish');
+    }
+    const progress = { ...(job.progress ?? {}) };
+    delete progress.publish_claimed_at;
+    progress.publish_requested_at = new Date().toISOString();
+    job.progress = progress;
+    job.updatedAt = new Date();
+    await this.jobRepo.save(job);
+    await this.eventRepo.save(
+      this.eventRepo.create({
+        jobId: job.id,
+        fromState: job.state,
+        toState: job.state,
+        message: 'publish requested from dash — awaiting tel-bot',
+        meta: { draft_id: job.draftId },
+      }),
+    );
+    return this.toJobDto(job);
+  }
+
+  /** Tel-bot: claim jobs whose dash publish was requested. */
+  async claimPendingPublish(limitRaw?: number) {
+    const limit = Math.min(Math.max(Number(limitRaw) || 5, 1), 20);
+    const rows = await this.jobRepo
+      .createQueryBuilder('j')
+      .leftJoinAndSelect('j.anime', 'a')
+      .where('j.state = :st', { st: 'AWAITING_APPROVAL' })
+      .andWhere("j.draft_id IS NOT NULL")
+      .andWhere("NULLIF(j.progress->>'publish_requested_at', '') IS NOT NULL")
+      .andWhere("NULLIF(j.progress->>'publish_claimed_at', '') IS NULL")
+      .orderBy('j.updatedAt', 'ASC')
+      .take(limit)
+      .getMany();
+
+    const items: Array<{
+      job_id: string;
+      draft_id: string;
+      anime_title: string | null;
+      episode_number: number;
+    }> = [];
+
+    for (const job of rows) {
+      job.progress = {
+        ...(job.progress ?? {}),
+        publish_claimed_at: new Date().toISOString(),
+      };
+      await this.jobRepo.save(job);
+      items.push({
+        job_id: job.id,
+        draft_id: String(job.draftId),
+        anime_title: job.anime?.title ?? null,
+        episode_number: Number(job.episodeNumber),
+      });
+    }
+    return { items };
+  }
+
+  /** Called after channel draft mark-published — close automation job. */
+  async markPublishedByDraftId(draftId: string) {
+    const job = await this.jobRepo.findOne({
+      where: { draftId, state: 'AWAITING_APPROVAL' as AutomationJobState },
+    });
+    if (!job) return null;
+    return this.transitionJob(job.id, 'PUBLISHED', {
+      message: 'published via channel draft',
+      patch: {
+        progress: {
+          ...(job.progress ?? {}),
+          publish_completed_at: new Date().toISOString(),
+        },
+      },
+    });
+  }
+
+  async bulkRetryJobs(opts: {
+    state?: string;
+    error_code?: string;
+    errorCode?: string;
+    limit?: number;
+  }) {
+    const state = String(opts.state ?? 'NEEDS_REVIEW').trim();
+    const errorCode = String(opts.error_code ?? opts.errorCode ?? '').trim();
+    const limit = Math.min(Math.max(Number(opts.limit) || 20, 1), 50);
+    const qb = this.jobRepo
+      .createQueryBuilder('j')
+      .where('j.state = :state', { state })
+      .orderBy('j.updatedAt', 'ASC')
+      .take(limit);
+    if (errorCode) {
+      qb.andWhere('j.error_code = :ec', { ec: errorCode });
+    }
+    const rows = await qb.getMany();
+    const results: Array<{ id: string; ok: boolean; error?: string }> = [];
+    for (const job of rows) {
+      try {
+        await this.retryJob(job.id);
+        results.push({ id: job.id, ok: true });
+      } catch (err) {
+        results.push({
+          id: job.id,
+          ok: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+    return {
+      ok: true as const,
+      attempted: results.length,
+      succeeded: results.filter((r) => r.ok).length,
+      results,
+    };
+  }
+
+  /** Escalate jobs stuck mid-pipeline with no updates. */
+  async escalateStaleJobs(opts?: { olderThanMinutes?: number; limit?: number }) {
+    const minutes = Math.max(Number(opts?.olderThanMinutes) || 180, 30);
+    const limit = Math.min(Math.max(Number(opts?.limit) || 40, 1), 100);
+    const staleStates: AutomationJobState[] = [
+      'DOWNLOADING',
+      'MUXING',
+      'ARCHIVING',
+      'ENCODING',
+      'VALIDATING',
+      'SEARCHING',
+    ];
+    const rows = await this.jobRepo
+      .createQueryBuilder('j')
+      .where('j.state IN (:...states)', { states: staleStates })
+      .andWhere(`j.updated_at < now() - make_interval(mins => :m)`, {
+        m: minutes,
+      })
+      .orderBy('j.updatedAt', 'ASC')
+      .take(limit)
+      .getMany();
+
+    let escalated = 0;
+    for (const job of rows) {
+      await this.transitionJob(job.id, 'NEEDS_REVIEW', {
+        message: `pipeline stale — no update for ${minutes}+ minutes`,
+        patch: {
+          errorCode: 'pipeline_stale',
+          errorMessage: `stale in ${job.state}`,
+          claimedAt: null,
+          claimedBy: null,
+        },
+      });
+      escalated += 1;
+    }
+    return { ok: true as const, checked: rows.length, escalated, minutes };
   }
 
   private async createJobFromSubtitle(
@@ -1457,7 +1702,7 @@ export class AutomationService {
       output_file_name: j.outputFileName,
       archive_file_key: j.archiveFileKey,
       download_link: j.downloadLink,
-      draft_id: j.draftId,
+      draft_id: j.draftId ?? null,
       release_candidates: j.releaseCandidates ?? [],
       progress: j.progress ?? {},
       error_message: j.errorMessage,
