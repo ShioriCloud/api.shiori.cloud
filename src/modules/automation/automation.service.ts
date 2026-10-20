@@ -750,12 +750,8 @@ export class AutomationService {
       where: { telegramChatId: chatId, telegramMessageId: messageId },
     });
     if (existing) {
-      return {
-        ok: true as const,
-        duplicate: true as const,
-        submission: this.toSubmissionDto(existing),
-        job: null,
-      };
+      // Same Telegram post again (forward/retry): restart pipeline + refresh live status card
+      return this.retriggerExistingSubmission(existing);
     }
 
     let animeId =
@@ -1115,6 +1111,147 @@ export class AutomationService {
     return { ok: true as const, checked: rows.length, escalated, minutes };
   }
 
+  /**
+   * Re-processing the same channel post: restart (or resume) and bump live TG card.
+   */
+  private async retriggerExistingSubmission(submission: SubtitleSubmission) {
+    const animeId = String(submission.animeId ?? '').trim();
+    const episodeNumber = Number(submission.episodeNumber);
+    if (!animeId || !Number.isFinite(episodeNumber) || episodeNumber <= 0) {
+      return {
+        ok: true as const,
+        duplicate: true as const,
+        submission: this.toSubmissionDto(submission),
+        job: null,
+        needs_review: true as const,
+        reason: 'anime_or_episode_unresolved',
+      };
+    }
+
+    const anime = await this.requireAnime(animeId);
+    let job =
+      (await this.jobRepo.findOne({
+        where: { subtitleSubmissionId: submission.id },
+        order: { createdAt: 'DESC' },
+      })) ??
+      (await this.jobRepo.findOne({
+        where: {
+          animeId,
+          episodeNumber,
+          state: In([
+            'ELIGIBLE',
+            'SEARCHING',
+            'AWAITING_SELECTION',
+            'DOWNLOAD_QUEUED',
+            'DOWNLOADING',
+            'DOWNLOADED',
+            'WAITING_FOR_SUBTITLE',
+            'MUXING',
+            'READY_FOR_ARCHIVE',
+            'AWAITING_MANUAL_ARCHIVE',
+            'ARCHIVING',
+            'LINKED',
+            'DRAFT_QUEUED',
+            'AWAITING_APPROVAL',
+            'NEEDS_REVIEW',
+            'FAILED',
+          ]),
+        },
+        order: { updatedAt: 'DESC' },
+      }));
+
+    if (job) {
+      // Includes PUBLISHED/CANCELLED — force a fresh ELIGIBLE run on the same row
+      // (createJobFromSubtitle would no-op on the existing idempotency key).
+      job = await this.resetJobToEligible(
+        job,
+        submission.id,
+        'پست ساب دوباره ارسال شد',
+      );
+    } else {
+      const created = await this.createJobFromSubtitle(
+        animeId,
+        episodeNumber,
+        submission.id,
+        'ELIGIBLE',
+        'subtitle re-posted',
+      );
+      job = created.job;
+      if (job.state !== 'ELIGIBLE') {
+        job = await this.resetJobToEligible(
+          job,
+          submission.id,
+          'پست ساب دوباره ارسال شد',
+        );
+      }
+    }
+
+    job = await this.queueLiveStatus(job, {
+      message: 'پست ساب دوباره ارسال شد — اجرای مجدد از اول',
+    });
+
+    return {
+      ok: true as const,
+      duplicate: true as const,
+      restarted: true as const,
+      submission: this.toSubmissionDto(submission),
+      job: this.toJobDto(job, anime),
+    };
+  }
+
+  /** Clear download/mux fields and park job at ELIGIBLE for a fresh worker run. */
+  private async resetJobToEligible(
+    job: AutomationJob,
+    submissionId: string,
+    message: string,
+  ) {
+    const from = job.state;
+    const prevLive = (job.progress?.tg_live ?? {}) as Record<string, unknown>;
+    const keepMessages =
+      prevLive.messages && typeof prevLive.messages === 'object'
+        ? prevLive.messages
+        : {};
+
+    job.state = 'ELIGIBLE';
+    job.subtitleSubmissionId = submissionId;
+    job.selectedMagnet = null;
+    job.selectedReleaseName = null;
+    job.torrentHash = null;
+    job.downloadPath = null;
+    job.outputPath = null;
+    job.outputFileName = null;
+    job.archiveFileKey = null;
+    job.downloadLink = null;
+    job.draftId = null;
+    job.releaseCandidates = [];
+    job.errorMessage = null;
+    job.errorCode = null;
+    job.claimedAt = null;
+    job.claimedBy = null;
+    job.attemptCount = (job.attemptCount ?? 0) + 1;
+    job.progress = {
+      tg_live: {
+        html: String(prevLive.html ?? ''),
+        rev: Number(prevLive.rev) || 0,
+        delivered_rev: Number(prevLive.delivered_rev) || 0,
+        messages: keepMessages,
+      },
+    };
+    job.updatedAt = new Date();
+    const saved = await this.jobRepo.save(job);
+    await this.eventRepo.save(
+      this.eventRepo.create({
+        jobId: saved.id,
+        fromState: from,
+        toState: 'ELIGIBLE',
+        message,
+        meta: { submission_id: submissionId, restarted: true },
+      }),
+    );
+    await this.touchConfigJob(job.animeId, Number(job.episodeNumber));
+    return saved;
+  }
+
   private async createJobFromSubtitle(
     animeId: string,
     episodeNumber: number,
@@ -1165,7 +1302,7 @@ export class AutomationService {
       }
     }
 
-    // supersede older open jobs for same ep
+    // supersede older open jobs for same ep (full restart when new subtitle arrives)
     const open = await this.jobRepo.find({
       where: {
         animeId,
@@ -1175,11 +1312,35 @@ export class AutomationService {
           'SEARCHING',
           'AWAITING_SELECTION',
           'DOWNLOAD_QUEUED',
+          'DOWNLOADING',
+          'DOWNLOADED',
+          'WAITING_FOR_SUBTITLE',
+          'ENCODING',
+          'MUXING',
+          'VALIDATING',
+          'READY_FOR_ARCHIVE',
+          'AWAITING_MANUAL_ARCHIVE',
+          'ARCHIVING',
+          'LINKED',
+          'DRAFT_QUEUED',
+          'AWAITING_APPROVAL',
           'NEEDS_REVIEW',
+          'FAILED',
         ]),
       },
     });
+    const inheritedMessages: Record<string, number> = {};
     for (const j of open) {
+      const live = (j.progress?.tg_live ?? {}) as Record<string, unknown>;
+      const msgs = live.messages;
+      if (msgs && typeof msgs === 'object') {
+        for (const [chatId, msgId] of Object.entries(
+          msgs as Record<string, number>,
+        )) {
+          const n = Number(msgId);
+          if (chatId && Number.isFinite(n) && n > 0) inheritedMessages[chatId] = n;
+        }
+      }
       j.state = 'CANCELLED';
       j.errorMessage = 'superseded by newer subtitle submission';
       await this.jobRepo.save(j);
@@ -1193,6 +1354,17 @@ export class AutomationService {
         state,
         triggerSource: 'subtitle',
         subtitleSubmissionId: submissionId,
+        progress:
+          Object.keys(inheritedMessages).length > 0
+            ? {
+                tg_live: {
+                  html: '',
+                  rev: 0,
+                  delivered_rev: 0,
+                  messages: inheritedMessages,
+                },
+              }
+            : {},
       }),
     );
     await this.eventRepo.save(
@@ -1335,7 +1507,16 @@ export class AutomationService {
 
     const patch: Partial<AutomationJob> = {};
     if (body.progress) {
+      const prevLive = job.progress?.tg_live;
       patch.progress = { ...(job.progress ?? {}), ...body.progress };
+      // Worker patches must not wipe the live Telegram card bookkeeping.
+      if (
+        prevLive &&
+        !(body.progress as { tg_live?: unknown }).tg_live &&
+        patch.progress
+      ) {
+        (patch.progress as Record<string, unknown>).tg_live = prevLive;
+      }
     }
     if (body.selected_release_name != null)
       patch.selectedReleaseName = body.selected_release_name;
@@ -1641,11 +1822,16 @@ export class AutomationService {
       this.persianizeWorkerMessage(opts.message) ||
       '';
 
+    const epNum = Number(job.episodeNumber);
+    const epLabel = Number.isFinite(epNum)
+      ? Math.round(epNum * 100) % 100 === 0
+        ? String(Math.round(epNum))
+        : String(epNum)
+      : String(job.episodeNumber ?? '');
+
     const lines = [
       `🎬 <b>اتوماسیون سافت‌ساب</b>`,
-      `<b>${this.escapeHtml(title)}</b> — قسمت ${this.escapeHtml(
-        String(job.episodeNumber),
-      )}`,
+      `<b>${this.escapeHtml(title)}</b> — قسمت ${this.escapeHtml(epLabel)}`,
       ``,
       `<b>${this.escapeHtml(stateFa)}</b>`,
       `<code>${bar}</code> ${pct}٪`,
