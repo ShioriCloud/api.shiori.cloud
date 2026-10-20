@@ -42,12 +42,35 @@ export class AutomationBotController {
 
   @Get('jobs/pending-status')
   @ApiOperation({
-    summary: 'Tel-bot: live status cards to send or edit',
+    summary: 'Tel-bot: claim live status cards to send or edit',
   })
-  pendingStatus(@Query('limit') limit?: string) {
-    return this.automation.listPendingLiveStatus(
-      limit ? Number(limit) : undefined,
-    );
+  pendingStatus(
+    @Query('limit') limit?: string,
+    @Query('job_id') jobId?: string,
+    @Query('jobId') jobIdCamel?: string,
+  ) {
+    return this.automation.claimPendingLiveStatus({
+      limit: limit ? Number(limit) : undefined,
+      jobId: jobId ?? jobIdCamel,
+    });
+  }
+
+  @Post('jobs/claim-status')
+  @ApiOperation({
+    summary: 'Tel-bot: claim live status cards (preferred over GET pending-status)',
+  })
+  claimStatus(
+    @Body()
+    body?: {
+      limit?: number;
+      job_id?: string;
+      jobId?: string;
+    },
+  ) {
+    return this.automation.claimPendingLiveStatus({
+      limit: body?.limit,
+      jobId: body?.job_id ?? body?.jobId,
+    });
   }
 
   @Post('jobs/:id/ack-status')
@@ -60,6 +83,8 @@ export class AutomationBotController {
     body: {
       rev?: number;
       messages?: Record<string, number | string>;
+      release?: boolean;
+      restore_delivered_rev?: number;
     },
   ) {
     return this.automation.ackLiveStatus(id, body ?? {});

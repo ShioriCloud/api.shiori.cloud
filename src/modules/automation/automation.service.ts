@@ -1884,42 +1884,94 @@ export class AutomationService {
     return s;
   }
 
-  /** Tel-bot: jobs whose live status card needs send/edit. */
-  async listPendingLiveStatus(limitRaw?: number) {
-    const limit = Math.min(Math.max(Number(limitRaw) || 15, 1), 40);
-    const rows = await this.jobRepo
-      .createQueryBuilder('j')
-      .leftJoinAndSelect('j.anime', 'a')
-      .where("j.progress->'tg_live'->>'rev' IS NOT NULL")
-      .andWhere(
-        `(
-          j.progress->'tg_live'->>'delivered_rev' IS NULL
-          OR NULLIF(j.progress->'tg_live'->>'delivered_rev', '') IS NULL
-          OR (j.progress->'tg_live'->>'rev')::int >
-             COALESCE((j.progress->'tg_live'->>'delivered_rev')::int, 0)
-        )`,
-      )
-      .orderBy('j.updatedAt', 'ASC')
-      .take(limit)
-      .getMany();
+  /**
+   * Tel-bot: atomically claim live-status updates so intake sync + poller
+   * cannot both send a fresh Telegram message for the same rev.
+   */
+  async claimPendingLiveStatus(opts?: {
+    limit?: number;
+    jobId?: string;
+  }) {
+    const limit = Math.min(Math.max(Number(opts?.limit) || 15, 1), 40);
+    const onlyJobId = String(opts?.jobId ?? '').trim() || null;
 
-    return {
-      items: rows.map((j) => {
-        const live = (j.progress?.tg_live ?? {}) as Record<string, unknown>;
-        return {
+    return this.jobRepo.manager.transaction(async (manager) => {
+      // Lock jobs only (no outer join — Postgres rejects FOR UPDATE with LEFT JOIN).
+      const qb = manager
+        .getRepository(AutomationJob)
+        .createQueryBuilder('j')
+        .setLock('pessimistic_write')
+        .where("j.progress->'tg_live'->>'rev' IS NOT NULL")
+        .andWhere(
+          `(
+            j.progress->'tg_live'->>'delivered_rev' IS NULL
+            OR NULLIF(j.progress->'tg_live'->>'delivered_rev', '') IS NULL
+            OR (j.progress->'tg_live'->>'rev')::int >
+               COALESCE((j.progress->'tg_live'->>'delivered_rev')::int, 0)
+          )`,
+        )
+        .orderBy('j.updatedAt', 'ASC')
+        .take(limit);
+
+      if (onlyJobId) {
+        qb.andWhere('j.id = :onlyJobId', { onlyJobId });
+      }
+
+      const rows = await qb.getMany();
+      const animeIds = [...new Set(rows.map((j) => j.animeId).filter(Boolean))];
+      const animes = animeIds.length
+        ? await manager.getRepository(Anime).find({
+            where: { id: In(animeIds) },
+          })
+        : [];
+      const animeById = new Map(animes.map((a) => [a.id, a]));
+
+      const items: Array<{
+        job_id: string;
+        rev: number;
+        html: string;
+        messages: Record<string, number>;
+        restore_delivered_rev: number;
+        anime_title: string | null;
+        episode_number: number;
+        state: string;
+      }> = [];
+
+      for (const j of rows) {
+        const live = {
+          ...((j.progress?.tg_live ?? {}) as Record<string, unknown>),
+        };
+        const rev = Number(live.rev) || 0;
+        const prevDelivered = Number(live.delivered_rev) || 0;
+        if (rev < 1 || rev <= prevDelivered) continue;
+
+        live.delivered_rev = rev; // claim — concurrent callers skip this rev
+        j.progress = { ...(j.progress ?? {}), tg_live: live };
+        j.updatedAt = new Date();
+        await manager.save(j);
+
+        items.push({
           job_id: j.id,
-          rev: Number(live.rev) || 0,
+          rev,
           html: String(live.html ?? ''),
           messages:
             live.messages && typeof live.messages === 'object'
-              ? (live.messages as Record<string, number>)
+              ? { ...(live.messages as Record<string, number>) }
               : {},
-          anime_title: j.anime?.title ?? null,
+          restore_delivered_rev: prevDelivered,
+          anime_title: animeById.get(j.animeId)?.title ?? null,
           episode_number: Number(j.episodeNumber),
           state: j.state,
-        };
-      }),
-    };
+        });
+      }
+
+      return { items };
+    });
+  }
+
+  /** Older tel-bot builds called GET pending-status — same claim semantics now. */
+  async listPendingLiveStatus(limitRaw?: number) {
+    return this.claimPendingLiveStatus({ limit: limitRaw });
   }
 
   async ackLiveStatus(
@@ -1927,6 +1979,9 @@ export class AutomationService {
     body: {
       rev?: number;
       messages?: Record<string, number | string>;
+      /** Roll back claim when Telegram send/edit failed. */
+      release?: boolean;
+      restore_delivered_rev?: number;
     },
   ) {
     const job = await this.jobRepo.findOne({ where: { id } });
@@ -1940,6 +1995,19 @@ export class AutomationService {
       throw new BadRequestException('rev required');
     }
 
+    if (body.release) {
+      const restore = Number(body.restore_delivered_rev);
+      const delivered = Number(live.delivered_rev) || 0;
+      // Only unwind if we still own this claimed rev and nothing newer arrived.
+      if (delivered === ackRev && currentRev === ackRev) {
+        live.delivered_rev = Number.isFinite(restore) ? Math.max(0, restore) : 0;
+        job.progress = { ...(job.progress ?? {}), tg_live: live };
+        job.updatedAt = new Date();
+        await this.jobRepo.save(job);
+      }
+      return { ok: true as const, released: true as const };
+    }
+
     const prevMessages =
       live.messages && typeof live.messages === 'object'
         ? { ...(live.messages as Record<string, number>) }
@@ -1950,7 +2018,8 @@ export class AutomationService {
       if (chatId && Number.isFinite(n) && n > 0) prevMessages[String(chatId)] = n;
     }
 
-    // Only advance delivered_rev if ack matches latest (or is not behind)
+    // Claim already set delivered_rev; merge message ids. If a newer rev
+    // landed mid-send, leave delivered behind current so poller retries.
     const delivered = Number(live.delivered_rev) || 0;
     live.messages = prevMessages;
     if (ackRev >= delivered) {
