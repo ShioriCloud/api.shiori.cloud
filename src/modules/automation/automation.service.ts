@@ -1379,15 +1379,13 @@ export class AutomationService {
     return config;
   }
 
-  /** Default fansub groups used when profile has none — reduces manual magnet. */
-  private static readonly DEFAULT_PREFERRED_GROUPS = [
-    'ASW',
-    'Judas',
-    'Erai-raws',
-    'SubsPlease',
-  ];
+  /**
+   * Default ordered chain: ASW first, then Judas.
+   * Other encoders only via per-anime profile (streaming / self-encode titles).
+   */
+  private static readonly DEFAULT_PREFERRED_GROUPS = ['ASW', 'Judas'];
 
-  private static readonly DEFAULT_FALLBACK_GROUPS = ['HorribleSubs', 'CameEsp'];
+  private static readonly DEFAULT_FALLBACK_GROUPS: string[] = [];
 
   private buildDefaultAltTitles(anime: Anime): string[] {
     const out: string[] = [];
@@ -1434,7 +1432,7 @@ export class AutomationService {
           fallbackGroups: [...AutomationService.DEFAULT_FALLBACK_GROUPS],
           preferredResolution: '1080p',
           preferredCodec: 'hevc',
-          selectionMode: 'auto',
+          selectionMode: 'prefer_group',
         }),
       );
       return profile;
