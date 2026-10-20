@@ -30,6 +30,16 @@ export class AutomationBotController {
     );
   }
 
+  @Get('jobs/pending-publish')
+  @ApiOperation({
+    summary: 'Tel-bot: claim dash-requested channel publishes',
+  })
+  pendingPublish(@Query('limit') limit?: string) {
+    return this.automation.claimPendingPublish(
+      limit ? Number(limit) : undefined,
+    );
+  }
+
   @Post('jobs/:id/progress')
   @ApiOperation({ summary: 'Worker progress / state update' })
   progress(
