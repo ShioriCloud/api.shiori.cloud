@@ -59,7 +59,8 @@ const STAGE_HINT_FA: Record<string, string> = {
   AWAITING_MANUAL_ARCHIVE:
     'فایل آماده است ولی حجم بالاست — آپلود دستی به کانال آرشیو لازم است',
   ARCHIVING: 'در حال آپلود به آرشیو…',
-  AWAITING_APPROVAL: 'پیش‌نویس کانال آماده است — تأیید کن تا منتشر شود',
+  AWAITING_APPROVAL:
+    'پیش‌نویس آماده است — با دکمهٔ زیر همین پیام تأیید/ارسال کن',
   PUBLISHED: 'انتشار انجام شد',
   NEEDS_REVIEW: 'کار متوقف شده — جزئیات را در داشبورد ببین',
   FAILED: 'خطا رخ داد — Retry یا جزئیات جاب',
@@ -1810,9 +1811,6 @@ export class AutomationService {
     const state = job.state;
     const stateFa = JOB_STATE_FA[state] || state;
     const title = anime?.title || anime?.titleRomaji || anime?.slug || '—';
-    const dashBase =
-      this.config.get<string>('dash.baseUrl') || 'https://dash.shiori.cloud';
-    const dashUrl = `${dashBase}/admin/automation/jobs/${job.id}`;
     const pct = STAGE_PCT[state] ?? 10;
     const filled = Math.round(Math.min(10, Math.max(0, pct) / 10));
     const bar = '▓'.repeat(filled) + '░'.repeat(10 - filled);
@@ -1853,8 +1851,6 @@ export class AutomationService {
         `⚠️ ${this.escapeHtml(this.persianizeWorkerMessage(job.errorMessage) || job.errorMessage)}`,
       );
     }
-    lines.push(``);
-    lines.push(`<a href="${this.escapeHtml(dashUrl)}">مشاهده در داشبورد</a>`);
     return lines.join('\n');
   }
 
@@ -1933,8 +1929,10 @@ export class AutomationService {
         messages: Record<string, number>;
         restore_delivered_rev: number;
         anime_title: string | null;
+        anime_id: string | null;
         episode_number: number;
         state: string;
+        draft_id: string | null;
       }> = [];
 
       for (const j of rows) {
@@ -1960,8 +1958,10 @@ export class AutomationService {
               : {},
           restore_delivered_rev: prevDelivered,
           anime_title: animeById.get(j.animeId)?.title ?? null,
+          anime_id: j.animeId ?? null,
           episode_number: Number(j.episodeNumber),
           state: j.state,
+          draft_id: j.draftId ?? null,
         });
       }
 
