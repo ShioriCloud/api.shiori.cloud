@@ -310,6 +310,45 @@ export class AutomationService {
       anime: { id: anime.id, slug: anime.slug, title: anime.title },
       config: this.toConfigDto(config, anime),
       source_profile: this.toProfileDto(profile),
+      hints: await this.buildAutomationHints(animeId),
+    };
+  }
+
+  /**
+   * Lightweight hints for the simplified anime settings UI:
+   * last successful release → suggest encoder chain for next episodes.
+   */
+  private async buildAutomationHints(animeId: string) {
+    const last = await this.jobRepo.findOne({
+      where: {
+        animeId,
+        state: In([
+          'PUBLISHED',
+          'AWAITING_APPROVAL',
+          'LINKED',
+          'READY_FOR_ARCHIVE',
+          'AWAITING_MANUAL_ARCHIVE',
+          'DOWNLOADED',
+          'MUXING',
+          'DOWNLOADING',
+        ]),
+      },
+      order: { updatedAt: 'DESC' },
+    });
+
+    const releaseName = String(last?.selectedReleaseName ?? '').trim() || null;
+    const groupMatch = releaseName?.match(/^\[([^\]]+)\]/);
+    const lastGroup = groupMatch?.[1]?.trim() || null;
+    const suggested = lastGroup
+      ? [...new Set([lastGroup, 'ASW', 'Judas'].filter(Boolean))]
+      : ['ASW', 'Judas'];
+
+    return {
+      last_episode:
+        last?.episodeNumber != null ? Number(last.episodeNumber) : null,
+      last_release_group: lastGroup,
+      last_release_name: releaseName,
+      suggested_groups: suggested,
     };
   }
 
