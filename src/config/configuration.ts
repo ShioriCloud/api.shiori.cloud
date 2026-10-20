@@ -34,6 +34,14 @@ export default () => {
       process.env.ADDITIONAL_CHANNEL_ID ||
       '',
   },
+  /** Dash base URL for automation job deep links in admin Telegram DMs */
+  dash: {
+    baseUrl: (
+      process.env.SHIORI_DASH_URL ||
+      process.env.DASH_BASE_URL ||
+      'https://dash.shiori.cloud'
+    ).replace(/\/$/, ''),
+  },
   miniApp: {
     baseUrl: process.env.MINI_APP_URL ?? '',
   },

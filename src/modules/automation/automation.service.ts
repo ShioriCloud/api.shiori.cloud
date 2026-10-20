@@ -4,6 +4,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
@@ -13,11 +14,44 @@ import {
   AutomationJob,
   AutomationJobEvent,
   SubtitleSubmission,
+  TelegramUser,
 } from '../../entities';
 import type { AutomationJobState } from '../../entities/automation-job.entity';
 import type { AutomationStatus } from '../../entities/anime-automation-config.entity';
 import { ChannelDraftsService } from '../bot/channel-drafts.service';
+import { TelegramDmOutboxService } from '../telegram-dm/telegram-dm-outbox.service';
 import { canTransition, WORKER_CLAIMABLE_STATES } from './automation.states';
+
+/** States that warrant an admin Telegram status DM (dash-like summary). */
+const ADMIN_NOTIFY_STATES = new Set<AutomationJobState>([
+  'AWAITING_SELECTION',
+  'NEEDS_REVIEW',
+  'AWAITING_MANUAL_ARCHIVE',
+  'WAITING_FOR_SUBTITLE',
+  'FAILED',
+  'AWAITING_APPROVAL',
+  'PUBLISHED',
+]);
+
+const JOB_STATE_FA: Record<string, string> = {
+  ELIGIBLE: 'آماده اجرا',
+  SEARCHING: 'جستجوی ریلیز',
+  AWAITING_SELECTION: 'انتخاب ریلیز',
+  DOWNLOAD_QUEUED: 'صف دانلود',
+  DOWNLOADING: 'در حال دانلود',
+  DOWNLOADED: 'دانلود شد',
+  WAITING_FOR_SUBTITLE: 'منتظر ساب',
+  MUXING: 'مکس ساب',
+  READY_FOR_ARCHIVE: 'آماده آرشیو',
+  AWAITING_MANUAL_ARCHIVE: 'آرشیو دستی',
+  ARCHIVING: 'آپلود آرشیو',
+  LINKED: 'لینک شد',
+  AWAITING_APPROVAL: 'منتظر تأیید',
+  PUBLISHED: 'منتشر شد',
+  NEEDS_REVIEW: 'نیاز به بررسی',
+  FAILED: 'ناموفق',
+  CANCELLED: 'لغو شده',
+};
 
 @Injectable()
 export class AutomationService {
@@ -35,7 +69,11 @@ export class AutomationService {
     private readonly eventRepo: Repository<AutomationJobEvent>,
     @InjectRepository(SubtitleSubmission)
     private readonly subRepo: Repository<SubtitleSubmission>,
+    @InjectRepository(TelegramUser)
+    private readonly usersRepo: Repository<TelegramUser>,
     private readonly channelDrafts: ChannelDraftsService,
+    private readonly telegramDmOutbox: TelegramDmOutboxService,
+    private readonly config: ConfigService,
   ) {}
 
   // ── Overview / list ─────────────────────────────────────────────
@@ -442,6 +480,8 @@ export class AutomationService {
       message?: string;
       meta?: Record<string, unknown>;
       patch?: Partial<AutomationJob>;
+      /** Skip admin Telegram notify (e.g. intake already messaged admins). */
+      skipAdminNotify?: boolean;
     } = {},
   ) {
     const job = await this.jobRepo.findOne({ where: { id } });
@@ -465,7 +505,24 @@ export class AutomationService {
         meta: opts.meta ?? {},
       }),
     );
-    return this.toJobDto(saved);
+    const dto = this.toJobDto(saved);
+    if (
+      !opts.skipAdminNotify &&
+      from !== toState &&
+      ADMIN_NOTIFY_STATES.has(toState)
+    ) {
+      void this.notifyAdminsJobStatus(saved, {
+        message: opts.message,
+        fromState: from,
+      }).catch((err) =>
+        this.logger.warn(
+          `admin job notify failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        ),
+      );
+    }
+    return dto;
   }
 
   async cancelJob(id: string) {
@@ -720,8 +777,10 @@ export class AutomationService {
       };
     }
 
+    const anime = await this.requireAnime(animeId);
+
     if (eligibility.mode === 'manual') {
-      const job = await this.createJobFromSubtitle(
+      const created = await this.createJobFromSubtitle(
         animeId,
         episodeNumber,
         submission.id,
@@ -732,12 +791,13 @@ export class AutomationService {
         ok: true as const,
         duplicate: false as const,
         submission: this.toSubmissionDto(submission),
-        job: this.toJobDto(job),
+        job: this.toJobDto(created.job, anime),
         awaits_admin: true as const,
+        reattached: created.reattached,
       };
     }
 
-    const job = await this.createJobFromSubtitle(
+    const created = await this.createJobFromSubtitle(
       animeId,
       episodeNumber,
       submission.id,
@@ -748,7 +808,8 @@ export class AutomationService {
       ok: true as const,
       duplicate: false as const,
       submission: this.toSubmissionDto(submission),
-      job: this.toJobDto(job),
+      job: this.toJobDto(created.job, anime),
+      reattached: created.reattached,
     };
   }
 
@@ -758,10 +819,49 @@ export class AutomationService {
     submissionId: string,
     state: AutomationJobState,
     message: string,
-  ) {
+  ): Promise<{ job: AutomationJob; reattached: boolean }> {
     const key = `sub:${animeId}:${episodeNumber}:${submissionId}`;
     let job = await this.jobRepo.findOne({ where: { idempotencyKey: key } });
-    if (job) return job;
+    if (job) return { job, reattached: false };
+
+    // Re-attach subtitle to a job already waiting mid-pipeline (don't spawn a twin)
+    if (state === 'ELIGIBLE') {
+      const attachable = await this.jobRepo.find({
+        where: {
+          animeId,
+          episodeNumber,
+          state: In(['WAITING_FOR_SUBTITLE', 'DOWNLOADED']),
+        },
+        order: { updatedAt: 'DESC' },
+        take: 1,
+      });
+      if (attachable.length) {
+        const target = attachable[0];
+        const from = target.state;
+        target.subtitleSubmissionId = submissionId;
+        target.claimedAt = null;
+        target.claimedBy = null;
+        target.errorMessage = null;
+        target.errorCode = null;
+        // Keep WAITING_FOR_SUBTITLE so worker reclaims and retries mux with new file_id
+        if (target.state === 'DOWNLOADED') {
+          target.state = 'WAITING_FOR_SUBTITLE';
+        }
+        target.updatedAt = new Date();
+        job = await this.jobRepo.save(target);
+        await this.eventRepo.save(
+          this.eventRepo.create({
+            jobId: job.id,
+            fromState: from,
+            toState: job.state,
+            message: 'subtitle reattached — resume mux',
+            meta: { submission_id: submissionId },
+          }),
+        );
+        await this.touchConfigJob(animeId, episodeNumber);
+        return { job, reattached: true };
+      }
+    }
 
     // supersede older open jobs for same ep
     const open = await this.jobRepo.find({
@@ -803,7 +903,7 @@ export class AutomationService {
       }),
     );
     await this.touchConfigJob(animeId, episodeNumber);
-    return job;
+    return { job, reattached: false };
   }
 
   async checkEligibility(animeId: string, episodeNumber: number) {
@@ -1186,6 +1286,99 @@ export class AutomationService {
       return { anime: null, note: `ambiguous_fuzzy:${fuzzy.length}` };
     }
     return { anime: null, note: 'not_found' };
+  }
+
+  /**
+   * Queue admin DMs (via tel-bot outbox) with a dash-like job status card.
+   * Used for attention / terminal milestones — intake start is notified by tel-bot directly.
+   */
+  private async notifyAdminsJobStatus(
+    job: AutomationJob,
+    opts: { message?: string; fromState?: AutomationJobState | null } = {},
+  ) {
+    const recipients = await this.resolveAutomationAdminIds();
+    if (!recipients.length) return;
+
+    const anime =
+      (await this.animeRepo.findOne({ where: { id: job.animeId } })) ?? null;
+    const state = job.state;
+    const stateFa = JOB_STATE_FA[state] || state;
+    const title = anime?.title || anime?.titleRomaji || anime?.slug || '—';
+    const dashBase =
+      this.config.get<string>('dash.baseUrl') || 'https://dash.shiori.cloud';
+    const dashUrl = `${dashBase}/admin/automation/jobs/${job.id}`;
+
+    const lines = [
+      `🎬 <b>اتوماسیون سافت‌ساب</b>`,
+      `<b>${this.escapeHtml(title)}</b> — قسمت <code>${this.escapeHtml(
+        String(job.episodeNumber),
+      )}</code>`,
+      `وضعیت: <b>${this.escapeHtml(stateFa)}</b> <code>${this.escapeHtml(
+        state,
+      )}</code>`,
+    ];
+    if (opts.fromState && opts.fromState !== state) {
+      lines.push(
+        `انتقال: <code>${this.escapeHtml(opts.fromState)}</code> → <code>${this.escapeHtml(
+          state,
+        )}</code>`,
+      );
+    }
+    if (opts.message) {
+      lines.push(this.escapeHtml(opts.message));
+    }
+    if (job.errorMessage) {
+      lines.push(
+        `خطا: <code>${this.escapeHtml(job.errorMessage)}</code>`,
+      );
+    }
+    if (job.selectedReleaseName) {
+      lines.push(
+        `ریلیز: <code>${this.escapeHtml(job.selectedReleaseName)}</code>`,
+      );
+    }
+    if (job.outputFileName) {
+      lines.push(
+        `خروجی: <code>${this.escapeHtml(job.outputFileName)}</code>`,
+      );
+    }
+    lines.push(`<a href="${this.escapeHtml(dashUrl)}">باز کردن در داشبورد</a>`);
+
+    const text = lines.join('\n');
+    await this.telegramDmOutbox.enqueueMany(
+      recipients.map((chatId) => ({ chatId, text })),
+    );
+  }
+
+  private async resolveAutomationAdminIds(): Promise<number[]> {
+    const ids = new Set<number>();
+    const raw = String(
+      this.config.get<string>('telegram.adminUserId') ?? '',
+    ).trim();
+    if (raw) {
+      for (const part of raw.split(/[,;\s]+/)) {
+        const n = Number(part.trim());
+        if (Number.isFinite(n) && n > 0) ids.add(n);
+      }
+    }
+    const staff = await this.usersRepo
+      .createQueryBuilder('u')
+      .select('u.telegram_user_id', 'telegram_user_id')
+      .where("u.app_role IN ('admin', 'moderator')")
+      .andWhere('u.is_banned = false')
+      .getRawMany<{ telegram_user_id: string }>();
+    for (const row of staff) {
+      const n = Number(row.telegram_user_id);
+      if (Number.isFinite(n) && n > 0) ids.add(n);
+    }
+    return [...ids];
+  }
+
+  private escapeHtml(s: string) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   private asNumberArray(v: unknown): number[] {
