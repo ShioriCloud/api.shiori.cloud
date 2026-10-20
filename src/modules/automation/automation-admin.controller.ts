@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -227,6 +228,14 @@ export class AutomationAdminController {
   @ApiHeader({ name: 'x-portal-token', required: true })
   cancel(@Param('id') id: string) {
     return this.automation.cancelJob(id);
+  }
+
+  @Delete('jobs/:id')
+  @UseGuards(PortalAuthGuard)
+  @ApiHeader({ name: 'x-portal-token', required: true })
+  @ApiOperation({ summary: 'Delete job from list (hard remove)' })
+  deleteJob(@Param('id') id: string) {
+    return this.automation.deleteJob(id);
   }
 
   @Post('jobs/:id/retry')

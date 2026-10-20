@@ -529,6 +529,14 @@ export class AutomationService {
     return this.transitionJob(id, 'CANCELLED', { message: 'cancelled by admin' });
   }
 
+  /** Hard-remove job (+ cascaded events) so it leaves the dash list. */
+  async deleteJob(id: string) {
+    const job = await this.jobRepo.findOne({ where: { id } });
+    if (!job) throw new NotFoundException('Job not found');
+    await this.jobRepo.remove(job);
+    return { ok: true as const, id };
+  }
+
   async retryJob(id: string) {
     const job = await this.jobRepo.findOne({ where: { id } });
     if (!job) throw new NotFoundException('Job not found');
