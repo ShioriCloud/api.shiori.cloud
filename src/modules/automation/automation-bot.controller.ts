@@ -40,6 +40,31 @@ export class AutomationBotController {
     );
   }
 
+  @Get('jobs/pending-status')
+  @ApiOperation({
+    summary: 'Tel-bot: live status cards to send or edit',
+  })
+  pendingStatus(@Query('limit') limit?: string) {
+    return this.automation.listPendingLiveStatus(
+      limit ? Number(limit) : undefined,
+    );
+  }
+
+  @Post('jobs/:id/ack-status')
+  @ApiOperation({
+    summary: 'Tel-bot: ack live status message ids after send/edit',
+  })
+  ackStatus(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      rev?: number;
+      messages?: Record<string, number | string>;
+    },
+  ) {
+    return this.automation.ackLiveStatus(id, body ?? {});
+  }
+
   @Post('jobs/:id/progress')
   @ApiOperation({ summary: 'Worker progress / state update' })
   progress(
