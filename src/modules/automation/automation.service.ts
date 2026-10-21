@@ -513,13 +513,42 @@ export class AutomationService {
       if (Number.isFinite(v) && v > 0) extra.search_season = v;
       else delete extra.search_season;
     }
+    // Translator-channel subtitle title (match incoming .ass / zip names)
+    if (str('subtitle_title', 'subtitleTitle') !== undefined) {
+      const raw = str('subtitle_title', 'subtitleTitle');
+      const cleaned =
+        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+      if (cleaned) extra.subtitle_title = cleaned;
+      else delete extra.subtitle_title;
+    }
+    // Archive/out filename title segment (not used for Nyaa search)
+    if (str('output_title', 'outputTitle') !== undefined) {
+      const raw = str('output_title', 'outputTitle');
+      const cleaned =
+        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+      if (cleaned) extra.output_title = cleaned;
+      else delete extra.output_title;
+    }
     if (body.extra && typeof body.extra === 'object') {
       Object.assign(extra, body.extra as Record<string, unknown>);
     }
-    profile.extra = extra;
+    // New object so TypeORM always persists jsonb changes
+    profile.extra = { ...extra };
+
+    // Keep subtitle_title inside alt_titles too so intake matching works even
+    // if a caller only checks alt_titles (and as a safety net for older code).
+    const subTitle = String(extra.subtitle_title ?? '').trim();
+    if (subTitle) {
+      const alts = Array.isArray(profile.altTitles) ? [...profile.altTitles] : [];
+      const norm = (s: string) => this.normalizeMatchTitle(s);
+      if (!alts.some((a) => norm(String(a)) === norm(subTitle))) {
+        profile.altTitles = [subTitle, ...alts];
+      }
+    }
 
     profile.updatedAt = new Date();
-    return this.toProfileDto(await this.profileRepo.save(profile));
+    const saved = await this.profileRepo.save(profile);
+    return this.toProfileDto(saved);
   }
 
   // ── Jobs ────────────────────────────────────────────────────────
@@ -1773,15 +1802,25 @@ export class AutomationService {
     await this.configRepo.save(config);
   }
 
+  /** Normalize titles for subtitle ↔ profile matching (case/spaces/dashes). */
+  private normalizeMatchTitle(raw: string): string {
+    return String(raw || '')
+      .toLowerCase()
+      .replace(/[\u2010-\u2015\u2212－]/g, '-')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   private async resolveAnimeByTitle(title: string) {
-    const t = title.trim();
+    const tRaw = title.trim();
+    const t = this.normalizeMatchTitle(tRaw);
     if (!t) return { anime: null, note: 'empty_title' };
 
     const exact = await this.animeRepo
       .createQueryBuilder('a')
       .where(
         '(LOWER(TRIM(a.title)) = LOWER(:t) OR LOWER(TRIM(a.title_romaji)) = LOWER(:t))',
-        { t },
+        { t: tRaw },
       )
       .getMany();
     if (exact.length === 1) {
@@ -1791,22 +1830,19 @@ export class AutomationService {
       return { anime: null, note: `ambiguous_exact:${exact.length}` };
     }
 
-    // Source-profile short names (alt_titles / canonical_title) for long catalog titles
-    const byAlt = await this.profileRepo
-      .createQueryBuilder('p')
-      .innerJoinAndSelect('p.anime', 'a')
-      .where(
-        `(
-          LOWER(TRIM(COALESCE(p.canonical_title, ''))) = LOWER(:t)
-          OR EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements_text(COALESCE(p.alt_titles, '[]'::jsonb)) AS alt(val)
-            WHERE LOWER(TRIM(alt.val)) = LOWER(:t)
-          )
-        )`,
-        { t },
-      )
-      .getMany();
+    // Prefer in-memory normalize so hyphen/spacing variants still match
+    const profiles = await this.profileRepo.find({ relations: { anime: true } });
+    const byAlt = profiles.filter((p) => {
+      const extra = (p.extra ?? {}) as Record<string, unknown>;
+      const candidates = [
+        extra.subtitle_title,
+        p.canonicalTitle,
+        ...(Array.isArray(p.altTitles) ? p.altTitles : []),
+      ]
+        .map((v) => this.normalizeMatchTitle(String(v ?? '')))
+        .filter(Boolean);
+      return candidates.includes(t);
+    });
 
     if (byAlt.length === 1) {
       return { anime: byAlt[0].anime, note: 'source_profile_alt' };
@@ -1819,7 +1855,7 @@ export class AutomationService {
       .createQueryBuilder('a')
       .where(
         '(a.title ILIKE :q OR a.title_romaji ILIKE :q OR a.slug ILIKE :q)',
-        { q: `%${t}%` },
+        { q: `%${tRaw}%` },
       )
       .take(5)
       .getMany();
@@ -2134,6 +2170,8 @@ export class AutomationService {
     const extra = (p.extra ?? {}) as Record<string, unknown>;
     const offset = Number(extra.episode_search_offset);
     const season = Number(extra.search_season);
+    const outputTitle = String(extra.output_title ?? '').trim();
+    const subtitleTitle = String(extra.subtitle_title ?? '').trim();
     return {
       id: p.id,
       anime_id: p.animeId,
@@ -2156,6 +2194,10 @@ export class AutomationService {
       subtitle_forced: p.subtitleForced,
       episode_search_offset: Number.isFinite(offset) ? offset : 0,
       search_season: Number.isFinite(season) && season > 0 ? season : null,
+      /** Expected translator-file title segment (e.g. BLEACH Sennen Kessen-hen P4). */
+      subtitle_title: subtitleTitle || null,
+      /** Title segment for [Shiori] {output_title} - {ep} [1080p …].mkv */
+      output_title: outputTitle || null,
       extra,
     };
   }
