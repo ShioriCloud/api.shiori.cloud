@@ -513,6 +513,14 @@ export class AutomationService {
       if (Number.isFinite(v) && v > 0) extra.search_season = v;
       else delete extra.search_season;
     }
+    // Archive/out filename title segment (not used for Nyaa search)
+    if (str('output_title', 'outputTitle') !== undefined) {
+      const raw = str('output_title', 'outputTitle');
+      const cleaned =
+        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+      if (cleaned) extra.output_title = cleaned;
+      else delete extra.output_title;
+    }
     if (body.extra && typeof body.extra === 'object') {
       Object.assign(extra, body.extra as Record<string, unknown>);
     }
@@ -2134,6 +2142,7 @@ export class AutomationService {
     const extra = (p.extra ?? {}) as Record<string, unknown>;
     const offset = Number(extra.episode_search_offset);
     const season = Number(extra.search_season);
+    const outputTitle = String(extra.output_title ?? '').trim();
     return {
       id: p.id,
       anime_id: p.animeId,
@@ -2156,6 +2165,8 @@ export class AutomationService {
       subtitle_forced: p.subtitleForced,
       episode_search_offset: Number.isFinite(offset) ? offset : 0,
       search_season: Number.isFinite(season) && season > 0 ? season : null,
+      /** Title segment for [Shiori] {output_title} - {ep} [1080p …].mkv */
+      output_title: outputTitle || null,
       extra,
     };
   }
