@@ -513,6 +513,14 @@ export class AutomationService {
       if (Number.isFinite(v) && v > 0) extra.search_season = v;
       else delete extra.search_season;
     }
+    // Translator-channel subtitle title (match incoming .ass / zip names)
+    if (str('subtitle_title', 'subtitleTitle') !== undefined) {
+      const raw = str('subtitle_title', 'subtitleTitle');
+      const cleaned =
+        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+      if (cleaned) extra.subtitle_title = cleaned;
+      else delete extra.subtitle_title;
+    }
     // Archive/out filename title segment (not used for Nyaa search)
     if (str('output_title', 'outputTitle') !== undefined) {
       const raw = str('output_title', 'outputTitle');
@@ -1799,13 +1807,14 @@ export class AutomationService {
       return { anime: null, note: `ambiguous_exact:${exact.length}` };
     }
 
-    // Source-profile short names (alt_titles / canonical_title) for long catalog titles
+    // Dedicated subtitle_title, then alt_titles / canonical_title
     const byAlt = await this.profileRepo
       .createQueryBuilder('p')
       .innerJoinAndSelect('p.anime', 'a')
       .where(
         `(
-          LOWER(TRIM(COALESCE(p.canonical_title, ''))) = LOWER(:t)
+          LOWER(TRIM(COALESCE(p.extra->>'subtitle_title', ''))) = LOWER(:t)
+          OR LOWER(TRIM(COALESCE(p.canonical_title, ''))) = LOWER(:t)
           OR EXISTS (
             SELECT 1
             FROM jsonb_array_elements_text(COALESCE(p.alt_titles, '[]'::jsonb)) AS alt(val)
@@ -2143,6 +2152,7 @@ export class AutomationService {
     const offset = Number(extra.episode_search_offset);
     const season = Number(extra.search_season);
     const outputTitle = String(extra.output_title ?? '').trim();
+    const subtitleTitle = String(extra.subtitle_title ?? '').trim();
     return {
       id: p.id,
       anime_id: p.animeId,
@@ -2165,6 +2175,8 @@ export class AutomationService {
       subtitle_forced: p.subtitleForced,
       episode_search_offset: Number.isFinite(offset) ? offset : 0,
       search_season: Number.isFinite(season) && season > 0 ? season : null,
+      /** Expected translator-file title segment (e.g. BLEACH Sennen Kessen-hen P4). */
+      subtitle_title: subtitleTitle || null,
       /** Title segment for [Shiori] {output_title} - {ep} [1080p …].mkv */
       output_title: outputTitle || null,
       extra,
