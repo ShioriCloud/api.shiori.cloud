@@ -40,6 +40,26 @@ export class AppUserAuthService {
     private readonly usersRepo: Repository<TelegramUser>,
   ) {}
 
+  /** Keep admin last-seen in sync even when Mini App auth uses a stored session. */
+  private async touchLastSeen(telegramUserId: string): Promise<void> {
+    const id = String(telegramUserId ?? '').trim();
+    if (!id) return;
+    await this.usersRepo.query(
+      `
+      UPDATE telegram_users
+      SET
+        last_seen_at = NOW(),
+        visit_count = visit_count + CASE
+          WHEN last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '30 minutes' THEN 1
+          ELSE 0
+        END
+      WHERE telegram_user_id = $1
+        AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '5 minutes')
+      `,
+      [id],
+    );
+  }
+
   async assertNotBanned(telegramUserId: number): Promise<void> {
     const user = await this.usersRepo.findOne({
       where: { telegramUserId: String(telegramUserId) },
@@ -60,6 +80,7 @@ export class AppUserAuthService {
     if (initData) {
       const verified = verifyTelegramInitData(initData, botTokens);
       if (verified.userId != null) {
+        await this.touchLastSeen(String(verified.userId));
         return { telegramUserId: verified.userId, authMethod: 'telegram' };
       }
 
@@ -77,8 +98,10 @@ export class AppUserAuthService {
     });
 
     if (session && session.expiresAt.getTime() > Date.now()) {
+      const telegramUserId = Number(session.telegramUserId);
+      await this.touchLastSeen(String(session.telegramUserId));
       return {
-        telegramUserId: Number(session.telegramUserId),
+        telegramUserId,
         authMethod: 'session',
       };
     }

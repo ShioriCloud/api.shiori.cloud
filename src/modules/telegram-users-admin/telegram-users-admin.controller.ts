@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Post,
   Put,
@@ -31,6 +32,7 @@ export class TelegramUsersAdminController {
   constructor(private readonly adminService: TelegramUsersAdminService) {}
 
   @Get('overview')
+  @Header('Cache-Control', 'private, no-cache, no-store, must-revalidate')
   @ApiOperation({ summary: 'Admin dashboard stats for telegram users' })
   overview() {
     return this.adminService.getOverview();

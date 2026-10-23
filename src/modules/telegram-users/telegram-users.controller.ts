@@ -25,15 +25,22 @@ export class TelegramUsersController {
   @ApiOperation({ summary: 'Register or update Telegram user visit' })
   async register(
     @Headers('x-telegram-init-data') initDataHeader: string,
+    @Headers('x-app-session-token') sessionHeader: string,
     @Body() body: RegisterTelegramUserDto,
   ) {
     const initData = String(
       initDataHeader ?? body.telegram_init_data ?? '',
     ).trim();
+    const sessionToken = String(sessionHeader ?? '').trim();
     const botTokens = getTelegramBotTokens(this.config);
     const verified = verifyTelegramInitData(initData, botTokens);
 
     if (verified.userId == null) {
+      const touched = await this.telegramUsersService.touchVisitFromSession(
+        body.telegram_user_id,
+        sessionToken,
+      );
+      if (touched) return { ok: true, ...touched };
       throw new UnauthorizedException(
         `invalid telegram init data (${verified.reason})`,
       );
@@ -43,7 +50,10 @@ export class TelegramUsersController {
       throw new UnauthorizedException('telegram_user_id mismatch');
     }
 
-    const session = await this.telegramUsersService.registerVisit(body);
+    const session = await this.telegramUsersService.registerVisit(
+      body,
+      sessionToken,
+    );
     return { ok: true, ...session };
   }
 
