@@ -47,15 +47,17 @@ export class AppUserAuthService {
     if (!id) return;
     await this.usersRepo.query(
       `
-      UPDATE telegram_users
-      SET
+      INSERT INTO telegram_users (telegram_user_id, first_name)
+      VALUES ($1, 'کاربر')
+      ON CONFLICT (telegram_user_id) DO UPDATE SET
         last_seen_at = NOW(),
-        visit_count = visit_count + CASE
-          WHEN last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '30 minutes' THEN 1
+        visit_count = telegram_users.visit_count + CASE
+          WHEN telegram_users.last_seen_at IS NULL
+            OR telegram_users.last_seen_at < NOW() - INTERVAL '30 minutes' THEN 1
           ELSE 0
         END
-      WHERE telegram_user_id = $1
-        AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '1 minute')
+      WHERE telegram_users.last_seen_at IS NULL
+        OR telegram_users.last_seen_at < NOW() - INTERVAL '1 minute'
       `,
       [id],
     );

@@ -17,25 +17,79 @@ export class TelegramUsersService {
   ) {}
 
   /**
-   * Bump last_seen_at. visit_count only increases if the previous visit
-   * was more than 30 minutes ago (so heartbeats do not inflate counts).
+   * Bump last_seen_at, creating the row if this Telegram id is new.
+   * visit_count only increases if the previous visit was more than 30 minutes ago.
    */
   async touchLastSeen(telegramUserId: string): Promise<void> {
     const id = String(telegramUserId ?? '').trim();
     if (!id) return;
     await this.usersRepo.query(
       `
-      UPDATE telegram_users
-      SET
+      INSERT INTO telegram_users (telegram_user_id, first_name)
+      VALUES ($1, 'کاربر')
+      ON CONFLICT (telegram_user_id) DO UPDATE SET
         last_seen_at = NOW(),
-        visit_count = visit_count + CASE
-          WHEN last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '30 minutes' THEN 1
+        visit_count = telegram_users.visit_count + CASE
+          WHEN telegram_users.last_seen_at IS NULL
+            OR telegram_users.last_seen_at < NOW() - INTERVAL '30 minutes' THEN 1
           ELSE 0
         END
-      WHERE telegram_user_id = $1
       `,
       [id],
     );
+  }
+
+  /**
+   * File-delivery bot already knows the Telegram user. Record that as a visit
+   * even when the Mini App register ping never ran (public episode pages).
+   */
+  async recordBotVisit(input: {
+    telegram_user_id: number;
+    first_name?: string | null;
+    last_name?: string | null;
+    username?: string | null;
+    language_code?: string | null;
+    is_premium?: boolean;
+  }): Promise<void> {
+    const userId = String(input.telegram_user_id ?? '').trim();
+    if (!userId || !/^\d+$/.test(userId)) return;
+
+    const existing = await this.usersRepo.findOne({
+      where: { telegramUserId: userId },
+    });
+
+    const cleanUsername = (value?: string | null): string | null => {
+      const trimmed = String(value ?? '')
+        .trim()
+        .replace(/^@+/, '');
+      return trimmed || null;
+    };
+
+    const firstName = String(input.first_name ?? '').trim() || 'کاربر';
+
+    if (!existing) {
+      const now = new Date();
+      await this.usersRepo.save({
+        telegramUserId: userId,
+        firstName,
+        lastName: input.last_name?.trim() || null,
+        username: cleanUsername(input.username),
+        languageCode: input.language_code?.trim() || null,
+        isPremium: Boolean(input.is_premium),
+        visitCount: 1,
+        lastSeenAt: now,
+      });
+      return;
+    }
+
+    existing.firstName = firstName || existing.firstName;
+    if (input.last_name?.trim()) existing.lastName = input.last_name.trim();
+    const username = cleanUsername(input.username);
+    if (username) existing.username = username;
+    if (input.language_code?.trim()) existing.languageCode = input.language_code.trim();
+    existing.isPremium = Boolean(input.is_premium);
+    await this.usersRepo.save(existing);
+    await this.touchLastSeen(userId);
   }
 
   /**

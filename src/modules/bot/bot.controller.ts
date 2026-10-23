@@ -15,6 +15,7 @@ import { BotAuthGuard } from './bot-auth.guard';
 import {
   BotArchiveLinkResponseDto,
   BotDeactivateCountResponseDto,
+  BotDownloadVisitorDto,
   BotFileResponseDto,
   BotModifiedCountResponseDto,
   BotOkResponseDto,
@@ -152,9 +153,12 @@ export class BotController {
   }
 
   @Post('files/:key/downloads')
-  @ApiOperation({ summary: 'Increment download counter' })
-  incrementDownloads(@Param('key') key: string): Promise<BotFileResponseDto> {
-    return this.botService.incrementDownloads(key);
+  @ApiOperation({ summary: 'Increment download counter and record the Telegram visitor' })
+  incrementDownloads(
+    @Param('key') key: string,
+    @Body() body?: BotDownloadVisitorDto,
+  ): Promise<BotFileResponseDto> {
+    return this.botService.incrementDownloads(key, body);
   }
 
   @Patch('files/by-message/:messageId')

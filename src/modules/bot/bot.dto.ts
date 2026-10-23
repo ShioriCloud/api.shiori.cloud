@@ -76,6 +76,33 @@ export class BotOkResponseDto {
   ok: true;
 }
 
+export class BotDownloadVisitorDto {
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  telegram_user_id?: number;
+
+  @IsOptional()
+  @IsString()
+  first_name?: string;
+
+  @IsOptional()
+  @IsString()
+  last_name?: string | null;
+
+  @IsOptional()
+  @IsString()
+  username?: string | null;
+
+  @IsOptional()
+  @IsString()
+  language_code?: string | null;
+
+  @IsOptional()
+  @IsBoolean()
+  is_premium?: boolean;
+}
+
 export class CreateBotFileDto {
   @IsString()
   @IsNotEmpty()

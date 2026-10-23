@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { BotFile, BotFileDownloadEvent, BotSetting, FilePack, FilePackItem } from '../../entities';
+import { TelegramUsersService } from '../telegram-users/telegram-users.service';
 import {
   BotArchiveLinkDto,
+  BotDownloadVisitorDto,
   BotFileDto,
   BotPackDto,
   BotPackItemDto,
@@ -14,6 +16,8 @@ import {
 
 @Injectable()
 export class BotService {
+  private readonly logger = new Logger(BotService.name);
+
   constructor(
     @InjectRepository(BotFile)
     private readonly filesRepo: Repository<BotFile>,
@@ -26,6 +30,7 @@ export class BotService {
     @InjectRepository(BotFileDownloadEvent)
     private readonly downloadEventsRepo: Repository<BotFileDownloadEvent>,
     private readonly dataSource: DataSource,
+    private readonly telegramUsers: TelegramUsersService,
   ) {}
 
   health(): { ok: true } {
@@ -144,7 +149,10 @@ export class BotService {
     return { ok: true, data: this.mapFileRow(row as Record<string, unknown>) };
   }
 
-  async incrementDownloads(key: string): Promise<{ ok: true; data: BotFileDto }> {
+  async incrementDownloads(
+    key: string,
+    visitor?: BotDownloadVisitorDto,
+  ): Promise<{ ok: true; data: BotFileDto }> {
     const cleanKey = String(key ?? '').trim();
     if (!cleanKey) {
       throw new NotFoundException();
@@ -167,6 +175,25 @@ export class BotService {
       });
       return updated;
     });
+
+    if (visitor?.telegram_user_id) {
+      try {
+        await this.telegramUsers.recordBotVisit({
+          telegram_user_id: visitor.telegram_user_id,
+          first_name: visitor.first_name,
+          last_name: visitor.last_name,
+          username: visitor.username,
+          language_code: visitor.language_code,
+          is_premium: visitor.is_premium,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `recordBotVisit failed user=${visitor.telegram_user_id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     return { ok: true, data: this.mapFile(saved) };
   }

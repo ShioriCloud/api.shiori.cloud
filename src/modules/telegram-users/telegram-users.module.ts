@@ -8,5 +8,6 @@ import { TelegramUsersService } from './telegram-users.service';
   imports: [TypeOrmModule.forFeature([TelegramUser, UserPortalSession])],
   controllers: [TelegramUsersController],
   providers: [TelegramUsersService],
+  exports: [TelegramUsersService],
 })
 export class TelegramUsersModule {}
