@@ -32,4 +32,9 @@ export class RegisterTelegramUserDto {
   @IsOptional()
   @IsString()
   telegram_init_data?: string;
+
+  /** Fallback when proxy strips x-app-session-token header */
+  @IsOptional()
+  @IsString()
+  app_session_token?: string;
 }

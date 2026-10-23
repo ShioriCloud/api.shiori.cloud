@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { TelegramUser, UserPortalSession } from '../entities';
 import { getTelegramBotTokens } from './telegram-bot-tokens';
 import { verifyTelegramInitData } from './telegram-init-data';
+import { readSessionTokenFromRequest } from './read-session-token';
 
 export type ResolvedAppUserAuth = {
   telegramUserId: number;
@@ -54,7 +55,7 @@ export class AppUserAuthService {
           ELSE 0
         END
       WHERE telegram_user_id = $1
-        AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '5 minutes')
+        AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '1 minute')
       `,
       [id],
     );
@@ -76,6 +77,7 @@ export class AppUserAuthService {
   ): Promise<ResolvedAppUserAuth | AppUserAuthFailure | null> {
     const initData = readInitData(headers, body);
     const botTokens = getTelegramBotTokens(this.config);
+    const sessionToken = readSessionTokenFromRequest(headers, body);
 
     if (initData) {
       const verified = verifyTelegramInitData(initData, botTokens);
@@ -84,13 +86,11 @@ export class AppUserAuthService {
         return { telegramUserId: verified.userId, authMethod: 'telegram' };
       }
 
-      const sessionToken = String(headers['x-app-session-token'] ?? '').trim();
       if (!sessionToken) {
         return { reason: verified.reason };
       }
     }
 
-    const sessionToken = String(headers['x-app-session-token'] ?? '').trim();
     if (!sessionToken) return null;
 
     const session = await this.sessionsRepo.findOne({

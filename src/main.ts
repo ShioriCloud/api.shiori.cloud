@@ -44,6 +44,7 @@ async function bootstrap() {
     allowedHeaders: [
       'Content-Type',
       'Accept',
+      'Authorization',
       'x-telegram-init-data',
       'x-app-session-token',
       'x-portal-token',

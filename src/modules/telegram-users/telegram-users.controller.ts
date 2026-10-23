@@ -10,6 +10,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { verifyTelegramInitData } from '../../telegram/telegram-init-data';
 import { getTelegramBotTokens } from '../../telegram/telegram-bot-tokens';
+import { readSessionTokenFromRequest } from '../../telegram/read-session-token';
 import { RegisterTelegramUserDto } from './telegram-users.dto';
 import { TelegramUsersService } from './telegram-users.service';
 
@@ -24,14 +25,16 @@ export class TelegramUsersController {
   @Post('register')
   @ApiOperation({ summary: 'Register or update Telegram user visit' })
   async register(
-    @Headers('x-telegram-init-data') initDataHeader: string,
-    @Headers('x-app-session-token') sessionHeader: string,
+    @Headers() headers: Record<string, string | string[] | undefined>,
     @Body() body: RegisterTelegramUserDto,
   ) {
+    const initDataHeader = headers['x-telegram-init-data'];
     const initData = String(
-      initDataHeader ?? body.telegram_init_data ?? '',
+      (Array.isArray(initDataHeader) ? initDataHeader[0] : initDataHeader) ??
+        body.telegram_init_data ??
+        '',
     ).trim();
-    const sessionToken = String(sessionHeader ?? '').trim();
+    const sessionToken = readSessionTokenFromRequest(headers, body);
     const botTokens = getTelegramBotTokens(this.config);
     const verified = verifyTelegramInitData(initData, botTokens);
 
