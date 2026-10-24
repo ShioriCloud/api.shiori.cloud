@@ -622,8 +622,6 @@ export class UserSocialProfileService {
     user: TelegramUser,
     linkedTranslator: AnimeTranslator | null,
   ): SocialProfileUserListItem {
-    const hideUsername = user.hideTelegramUsername === true;
-    const rawUsername = user.username?.trim() || null;
     const roleBadges: Array<{ id: string; title: string }> = [];
     if (linkedTranslator) {
       roleBadges.push({ id: 'translator', title: 'مترجم' });
@@ -635,7 +633,7 @@ export class UserSocialProfileService {
         user.username?.trim() ||
         user.email?.trim() ||
         'کاربر',
-      username: hideUsername ? null : rawUsername,
+      username: null,
       photo_url: user.photoUrl?.trim() || null,
       role_badges: roleBadges,
     };
@@ -761,7 +759,6 @@ export class UserSocialProfileService {
       user?.email?.trim() ||
       'کاربر';
 
-    const hideUsername = user?.hideTelegramUsername === true;
     const rawUsername = user?.username?.trim() || null;
 
     const linkedTranslator = await this.resolveLinkedTranslator(
@@ -834,7 +831,7 @@ export class UserSocialProfileService {
     return {
       profile: {
         display_name: displayName,
-        username: hideUsername ? null : rawUsername,
+        username: null,
         photo_url: user?.photoUrl?.trim() || null,
         member_since: (user?.firstSeenAt ?? new Date()).toISOString(),
         followers_count: followersCount,
