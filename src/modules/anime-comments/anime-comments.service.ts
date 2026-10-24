@@ -213,28 +213,40 @@ export class AnimeCommentsService {
 
     if (parentId) {
       const parent = await this.commentsRepo.findOne({ where: { id: parentId } });
-      if (parent && String(parent.telegramUserId) !== viewerId) {
-        const author = await this.usersRepo.findOne({
-          where: { telegramUserId: viewerId },
-        });
-        const name =
-          author?.socialDisplayName?.trim() ||
-          author?.firstName?.trim() ||
-          author?.username?.trim() ||
-          'یک کاربر';
-        await this.notificationsRepo.save(
-          this.notificationsRepo.create({
-            telegramUserId: String(parent.telegramUserId),
-            kind: 'comment_reply',
-            title: 'پاسخ به نظرت',
-            message: `${name} به نظرت پاسخ داد`,
-            href: `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`,
-            animeId: anime.id,
-            episodeNumber: null,
-            campaignId: null,
-            isRead: false,
-          }),
+      const parentAuthorId = parent ? String(parent.telegramUserId) : '';
+      if (parent && parentAuthorId !== viewerId) {
+        const blocked = await this.moderation.arePeersBlocked(
+          parentAuthorId,
+          viewerId,
         );
+        if (!blocked) {
+          const parentUser = await this.usersRepo.findOne({
+            where: { telegramUserId: parentAuthorId },
+          });
+          if (parentUser?.notifyCommentReply !== false) {
+            const author = await this.usersRepo.findOne({
+              where: { telegramUserId: viewerId },
+            });
+            const name =
+              author?.socialDisplayName?.trim() ||
+              author?.firstName?.trim() ||
+              author?.username?.trim() ||
+              'یک کاربر';
+            await this.notificationsRepo.save(
+              this.notificationsRepo.create({
+                telegramUserId: parentAuthorId,
+                kind: 'comment_reply',
+                title: 'پاسخ به نظرت',
+                message: `${name} به نظرت پاسخ داد`,
+                href: `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`,
+                animeId: anime.id,
+                episodeNumber: null,
+                campaignId: null,
+                isRead: false,
+              }),
+            );
+          }
+        }
       }
     }
 
