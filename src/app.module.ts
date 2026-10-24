@@ -27,6 +27,9 @@ import {
   UserAnimeAiringReminder,
   UserAnimeListEntry,
   UserSocialFollow,
+  AnimeComment,
+  AnimeCommentLike,
+  AnimeCommentReport,
   UserCustomList,
   UserCustomListItem,
   UserNotification,
@@ -72,6 +75,7 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { SupportTicketsModule } from './modules/support-tickets/support-tickets.module';
 import { ScoreSyncModule } from './modules/score-sync/score-sync.module';
 import { UserSocialProfileModule } from './modules/user-social-profile/user-social-profile.module';
+import { AnimeCommentsModule } from './modules/anime-comments/anime-comments.module';
 import { TelegramDmModule } from './modules/telegram-dm/telegram-dm.module';
 import { TelegramModule } from './telegram/telegram.module';
 
@@ -103,6 +107,9 @@ import { TelegramModule } from './telegram/telegram.module';
           UserAnimeAiringReminder,
           UserAnimeListEntry,
           UserSocialFollow,
+          AnimeComment,
+          AnimeCommentLike,
+          AnimeCommentReport,
           UserCustomList,
           UserCustomListItem,
           TelegramUser,
@@ -160,6 +167,7 @@ import { TelegramModule } from './telegram/telegram.module';
     SupportTicketsModule,
     ScoreSyncModule,
     UserSocialProfileModule,
+    AnimeCommentsModule,
     AutomationModule,
   ],
 })
