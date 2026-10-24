@@ -62,7 +62,7 @@ MINI_APP_URL=https://shiori.cloud
 
 ### Pull from GHCR (CI)
 
-On push to `main` / tag `v*`, GitHub Actions publishes:
+On push to `master` / tag `v*`, GitHub Actions publishes (`latest` tracks **master**, like the mini-app and dash repos):
 
 ```text
 ghcr.io/<owner>/shiori-api:latest
