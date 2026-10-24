@@ -10,9 +10,12 @@ import {
   UserCustomList,
   UserNotification,
   UserSocialBadge,
+  UserSocialBlock,
   UserSocialFollow,
+  UserSocialMute,
 } from '../../entities';
 import { UserSocialProfileController } from './user-social-profile.controller';
+import { UserSocialModerationService } from './user-social-moderation.service';
 import { UserSocialProfileService } from './user-social-profile.service';
 
 @Module({
@@ -22,6 +25,8 @@ import { UserSocialProfileService } from './user-social-profile.service';
       UserAnimeListEntry,
       UserSocialFollow,
       UserSocialBadge,
+      UserSocialBlock,
+      UserSocialMute,
       AnimeComment,
       UserCustomList,
       UserNotification,
@@ -31,6 +36,7 @@ import { UserSocialProfileService } from './user-social-profile.service';
     ]),
   ],
   controllers: [UserSocialProfileController],
-  providers: [UserSocialProfileService],
+  providers: [UserSocialProfileService, UserSocialModerationService],
+  exports: [UserSocialModerationService],
 })
 export class UserSocialProfileModule {}

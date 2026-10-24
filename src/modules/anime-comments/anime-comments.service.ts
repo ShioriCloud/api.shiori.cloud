@@ -20,6 +20,7 @@ import {
   parseDownloadTokenWalletMode,
   parseIdAllowlist,
 } from '../download-tokens/download-token-wallet.util';
+import { UserSocialModerationService } from '../user-social-profile/user-social-moderation.service';
 
 const MAX_BODY = 1000;
 
@@ -61,6 +62,7 @@ export class AnimeCommentsService {
     @InjectRepository(UserNotification)
     private readonly notificationsRepo: Repository<UserNotification>,
     private readonly config: ConfigService,
+    private readonly moderation: UserSocialModerationService,
   ) {}
 
   access(telegramUserId: string): { enabled: boolean } {
@@ -330,8 +332,14 @@ export class AnimeCommentsService {
   ): Promise<AnimeCommentDto[]> {
     if (rows.length === 0) return [];
 
-    const ids = rows.map((r) => r.id);
-    const authorIds = [...new Set(rows.map((r) => String(r.telegramUserId)))];
+    const blocked = await this.moderation.blockedPeerIds(viewerId);
+    const visibleRows = rows.filter(
+      (row) => !blocked.has(String(row.telegramUserId)),
+    );
+    if (visibleRows.length === 0) return [];
+
+    const ids = visibleRows.map((r) => r.id);
+    const authorIds = [...new Set(visibleRows.map((r) => String(r.telegramUserId)))];
     const users = await this.usersRepo.find({
       where: { telegramUserId: In(authorIds) },
     });
@@ -371,7 +379,7 @@ export class AnimeCommentsService {
       ]),
     );
 
-    return rows.map((row) => {
+    return visibleRows.map((row) => {
       const user = userById.get(String(row.telegramUserId));
       const likes = likeById.get(row.id);
       return {

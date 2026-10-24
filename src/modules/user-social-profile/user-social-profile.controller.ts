@@ -165,4 +165,58 @@ export class UserSocialProfileController {
       targetTelegramUserId,
     );
   }
+
+  @Get('blocks')
+  @ApiOperation({ summary: 'Users blocked by the current viewer' })
+  listBlocks(@Req() req: AppUserAuthedRequest) {
+    return this.socialProfile.listBlockedUsers(String(req.telegramUserId));
+  }
+
+  @Post('block/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Block a user' })
+  block(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.blockUser(
+      String(req.telegramUserId),
+      targetTelegramUserId,
+    );
+  }
+
+  @Delete('block/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Unblock a user' })
+  unblock(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.unblockUser(
+      String(req.telegramUserId),
+      targetTelegramUserId,
+    );
+  }
+
+  @Post('mute/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Mute a user (hide from feed)' })
+  mute(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.muteUser(
+      String(req.telegramUserId),
+      targetTelegramUserId,
+    );
+  }
+
+  @Delete('mute/:targetTelegramUserId')
+  @ApiOperation({ summary: 'Unmute a user' })
+  unmute(
+    @Req() req: AppUserAuthedRequest,
+    @Param('targetTelegramUserId') targetTelegramUserId: string,
+  ) {
+    return this.socialProfile.unmuteUser(
+      String(req.telegramUserId),
+      targetTelegramUserId,
+    );
+  }
 }

@@ -8,11 +8,13 @@ import {
   TelegramUser,
   UserNotification,
 } from '../../entities';
+import { UserSocialProfileModule } from '../user-social-profile/user-social-profile.module';
 import { AnimeCommentsController } from './anime-comments.controller';
 import { AnimeCommentsService } from './anime-comments.service';
 
 @Module({
   imports: [
+    UserSocialProfileModule,
     TypeOrmModule.forFeature([
       AnimeComment,
       AnimeCommentLike,

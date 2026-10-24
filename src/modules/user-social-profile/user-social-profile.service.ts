@@ -32,6 +32,7 @@ import {
   type SocialBadgeMetrics,
   socialBadgeTitle,
 } from './social-profile-badges.util';
+import { UserSocialModerationService } from './user-social-moderation.service';
 import {
   minutesForWatched,
   normalizeProfileFormat,
@@ -98,7 +99,9 @@ export type SocialProfileMeResponse = {
   } | null;
   relationship?: {
     is_following: boolean;
-    follows_you: boolean;
+    follows_you?: boolean;
+    is_muted?: boolean;
+    blocked_by_you?: boolean;
   };
   privacy?: {
     watch_activity_hidden: boolean;
@@ -148,6 +151,7 @@ export type SocialProfileFeedResponse = {
 export class UserSocialProfileService {
   constructor(
     private readonly config: ConfigService,
+    private readonly moderation: UserSocialModerationService,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
     @InjectRepository(UserAnimeListEntry)
@@ -315,6 +319,11 @@ export class UserSocialProfileService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    if (viewerId !== targetId) {
+      if (await this.moderation.arePeersBlocked(viewerId, targetId)) {
+        throw new NotFoundException('User not found');
+      }
+    }
 
     const payload = await this.buildProfilePayload(
       targetId,
@@ -375,6 +384,9 @@ export class UserSocialProfileService {
     });
     if (!target) {
       throw new NotFoundException('User not found');
+    }
+    if (await this.moderation.arePeersBlocked(viewerId, targetId)) {
+      throw new BadRequestException('Cannot follow this user');
     }
     const existing = await this.followRepo.findOne({
       where: {
@@ -446,8 +458,12 @@ export class UserSocialProfileService {
       .take(safeLimit)
       .getMany();
 
+    const blocked = await this.moderation.blockedPeerIds(viewerId);
+    const filtered = rows.filter(
+      (u) => !blocked.has(String(u.telegramUserId)) && String(u.telegramUserId) !== viewerId,
+    );
     const items = await this.loadProfileListUsers(
-      rows.map((u) => String(u.telegramUserId)),
+      filtered.map((u) => String(u.telegramUserId)),
     );
 
     return {
@@ -458,6 +474,63 @@ export class UserSocialProfileService {
       page: 1,
       limit: safeLimit,
     };
+  }
+
+  async blockUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    if (viewerId === targetId) {
+      throw new BadRequestException('Cannot block yourself');
+    }
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) throw new NotFoundException('User not found');
+    await this.moderation.blockUser(viewerId, targetId);
+    return { ok: true as const, is_blocked: true };
+  }
+
+  async unblockUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    await this.moderation.unblockUser(viewerId, targetId);
+    return { ok: true as const, is_blocked: false };
+  }
+
+  async muteUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    if (viewerId === targetId) {
+      throw new BadRequestException('Cannot mute yourself');
+    }
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) throw new NotFoundException('User not found');
+    await this.moderation.muteUser(viewerId, targetId);
+    return { ok: true as const, is_muted: true };
+  }
+
+  async unmuteUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    this.assertSocialEnabled(viewerId);
+    await this.moderation.unmuteUser(viewerId, targetId);
+    return { ok: true as const, is_muted: false };
+  }
+
+  async listBlockedUsers(viewerTelegramUserId: string) {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const mode = this.mode();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, items: [] as SocialProfileUserListItem[] };
+    }
+    const ids = await this.moderation.listBlockedUserIds(viewerId);
+    const items = await this.loadProfileListUsers(ids);
+    return { enabled: true, mode, items };
   }
 
   async unfollow(viewerTelegramUserId: string, targetTelegramUserId: string) {
@@ -531,8 +604,26 @@ export class UserSocialProfileService {
       };
     }
 
+    const [blocked, muted] = await Promise.all([
+      this.moderation.blockedPeerIds(viewerId),
+      this.moderation.mutedUserIds(viewerId),
+    ]);
+    const followingFiltered = followingIds.filter(
+      (id) => !blocked.has(String(id)) && !muted.has(String(id)),
+    );
+    if (followingFiltered.length === 0) {
+      return {
+        enabled: true,
+        mode,
+        items: [],
+        total: 0,
+        page: safePage,
+        limit: safeLimit,
+      };
+    }
+
     const followingUsers = await this.usersRepo.find({
-      where: { telegramUserId: In(followingIds) },
+      where: { telegramUserId: In(followingFiltered) },
       select: { telegramUserId: true, hideWatchActivity: true },
     });
     const visibleIds = followingUsers
@@ -646,13 +737,18 @@ export class UserSocialProfileService {
         ? edges.map((e) => e.followerTelegramUserId)
         : edges.map((e) => e.followingTelegramUserId);
 
-    const items = await this.loadProfileListUsers(userIds);
+    const blocked =
+      viewerId !== targetId
+        ? await this.moderation.blockedPeerIds(viewerId)
+        : new Set<string>();
+    const filteredIds = this.moderation.filterUserIds(userIds, blocked);
+    const items = await this.loadProfileListUsers(filteredIds);
 
     return {
       enabled: true,
       mode,
       items,
-      total,
+      total: items.length < userIds.length ? items.length : total,
       page: safePage,
       limit: safeLimit,
     };
@@ -893,7 +989,7 @@ export class UserSocialProfileService {
     let relationship: SocialProfileMeResponse['relationship'];
     const viewerId = viewerTelegramUserId?.trim();
     if (viewerId && viewerId !== targetId) {
-      const [isFollowing, followsYou] = await Promise.all([
+      const [isFollowing, followsYou, isMuted, blockedByYou] = await Promise.all([
         this.followRepo.exists({
           where: {
             followerTelegramUserId: viewerId,
@@ -906,10 +1002,14 @@ export class UserSocialProfileService {
             followingTelegramUserId: viewerId,
           },
         }),
+        this.moderation.isMutedBy(viewerId, targetId),
+        this.moderation.hasBlocked(viewerId, targetId),
       ]);
       relationship = {
         is_following: isFollowing,
         follows_you: followsYou,
+        is_muted: isMuted,
+        blocked_by_you: blockedByYou,
       };
     }
 
