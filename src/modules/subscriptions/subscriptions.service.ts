@@ -159,9 +159,7 @@ export class SubscriptionsService {
     const amount = Number(input.amountIrr);
     const minAmount = this.monthlyAmountIrr();
     if (!Number.isFinite(amount) || amount < minAmount) {
-      throw new BadRequestException(
-        `amount_irr must be at least ${minAmount}`,
-      );
+      throw new BadRequestException(`amount_irr must be at least ${minAmount}`);
     }
 
     const noteParts = [
@@ -195,15 +193,23 @@ export class SubscriptionsService {
       });
     }
 
-    const episode = await this.episodesRepo.findOne({ where: { id: episodeId } });
+    const episode = await this.episodesRepo.findOne({
+      where: { id: episodeId },
+    });
     if (!episode) throw new NotFoundException('episode not found');
 
-    const type = String(episode.videoFileType ?? 'softsub').trim().toLowerCase();
+    const type = String(episode.videoFileType ?? 'softsub')
+      .trim()
+      .toLowerCase();
     if (type === 'free') {
-      throw new BadRequestException('use free-download claim for free episodes');
+      throw new BadRequestException(
+        'use free-download claim for free episodes',
+      );
     }
     if (type !== 'softsub' && type !== 'hardsub') {
-      throw new BadRequestException('episode type is not downloadable via subscription');
+      throw new BadRequestException(
+        'episode type is not downloadable via subscription',
+      );
     }
 
     const downloadLink =
@@ -216,7 +222,11 @@ export class SubscriptionsService {
   async claimEpisodePack(
     telegramUserId: string,
     animeId: string,
-  ): Promise<{ download_link: string; title: string | null; expires_at: string | null }> {
+  ): Promise<{
+    download_link: string;
+    title: string | null;
+    expires_at: string | null;
+  }> {
     const me = await this.getMe(telegramUserId);
     if (!me.active) {
       throw new ForbiddenException({

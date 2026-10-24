@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -32,10 +31,7 @@ import {
 } from './social-profile-badges.util';
 import { SocialNotificationDeliveryService } from './social-notification-delivery.service';
 import { UserSocialModerationService } from './user-social-moderation.service';
-import {
-  minutesForWatched,
-  normalizeProfileFormat,
-} from './watch-time.util';
+import { minutesForWatched, normalizeProfileFormat } from './watch-time.util';
 
 export type SocialProfileWatchedItem = {
   anime_id: string;
@@ -73,7 +69,11 @@ export type SocialProfileMeResponse = {
     estimated_watch_label: string;
   };
   top_genres?: Array<{ slug: string; label: string; percent: number }>;
-  by_format?: Array<{ format: string; count: number; episodes_watched: number }>;
+  by_format?: Array<{
+    format: string;
+    count: number;
+    episodes_watched: number;
+  }>;
   badges?: Array<{ id: string; title: string; is_new?: boolean }>;
   watched?: {
     items: SocialProfileWatchedItem[];
@@ -305,7 +305,7 @@ export class UserSocialProfileService {
   }
 
   async updateMe(telegramUserId: string, displayName: string) {
-    this.assertSocialEnabled(telegramUserId);
+    this.assertSocialEnabled();
     const user = await this.usersRepo.findOne({
       where: { telegramUserId: String(telegramUserId) },
     });
@@ -349,7 +349,7 @@ export class UserSocialProfileService {
     return isSocialProfileEnabledFor(telegramUserId);
   }
 
-  private assertSocialEnabled(_viewerTelegramUserId: string): void {
+  private assertSocialEnabled(): void {
     /* always enabled */
   }
 
@@ -429,7 +429,7 @@ export class UserSocialProfileService {
   async follow(viewerTelegramUserId: string, targetTelegramUserId: string) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     if (viewerId === targetId) {
       throw new BadRequestException('Cannot follow yourself');
     }
@@ -457,9 +457,7 @@ export class UserSocialProfileService {
       const follower = await this.usersRepo.findOne({
         where: { telegramUserId: viewerId },
       });
-      const followerName = follower
-        ? this.displayNameOf(follower)
-        : 'یک کاربر';
+      const followerName = follower ? this.displayNameOf(follower) : 'یک کاربر';
       await this.socialNotifications.deliver({
         recipientTelegramUserId: targetId,
         kind: 'social_follow',
@@ -508,7 +506,9 @@ export class UserSocialProfileService {
 
     const blocked = await this.moderation.blockedPeerIds(viewerId);
     const filtered = rows.filter(
-      (u) => !blocked.has(String(u.telegramUserId)) && String(u.telegramUserId) !== viewerId,
+      (u) =>
+        !blocked.has(String(u.telegramUserId)) &&
+        String(u.telegramUserId) !== viewerId,
     );
     const items = await this.loadProfileListUsers(
       filtered.map((u) => String(u.telegramUserId)),
@@ -527,7 +527,7 @@ export class UserSocialProfileService {
   async blockUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     if (viewerId === targetId) {
       throw new BadRequestException('Cannot block yourself');
     }
@@ -539,10 +539,13 @@ export class UserSocialProfileService {
     return { ok: true as const, is_blocked: true };
   }
 
-  async unblockUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
+  async unblockUser(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+  ) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     await this.moderation.unblockUser(viewerId, targetId);
     return { ok: true as const, is_blocked: false };
   }
@@ -550,7 +553,7 @@ export class UserSocialProfileService {
   async muteUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     if (viewerId === targetId) {
       throw new BadRequestException('Cannot mute yourself');
     }
@@ -565,7 +568,7 @@ export class UserSocialProfileService {
   async unmuteUser(viewerTelegramUserId: string, targetTelegramUserId: string) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     await this.moderation.unmuteUser(viewerId, targetId);
     return { ok: true as const, is_muted: false };
   }
@@ -584,7 +587,7 @@ export class UserSocialProfileService {
   async unfollow(viewerTelegramUserId: string, targetTelegramUserId: string) {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
-    this.assertSocialEnabled(viewerId);
+    this.assertSocialEnabled();
     await this.followRepo.delete({
       followerTelegramUserId: viewerId,
       followingTelegramUserId: targetId,
@@ -965,7 +968,11 @@ export class UserSocialProfileService {
     const skip = (safePage - 1) * safeLimit;
     const items: SocialProfileFeedItem[] = staged
       .slice(skip, skip + safeLimit)
-      .map(({ sortTs: _sortTs, ...item }) => item);
+      .map((row) => {
+        const { sortTs, ...item } = row;
+        void sortTs;
+        return item;
+      });
 
     return {
       enabled: true,
@@ -1058,10 +1065,7 @@ export class UserSocialProfileService {
       .map((id) => {
         const user = userById.get(id);
         if (!user) return null;
-        return this.toProfileListUser(
-          user,
-          translatorByUserId.get(id) ?? null,
-        );
+        return this.toProfileListUser(user, translatorByUserId.get(id) ?? null);
       })
       .filter((x): x is SocialProfileUserListItem => x != null);
   }
@@ -1094,7 +1098,12 @@ export class UserSocialProfileService {
     page: number,
     limit: number,
     viewerTelegramUserId?: string | null,
-  ): Promise<Omit<SocialProfileMeResponse, 'enabled' | 'mode' | 'is_self' | 'telegram_user_id'>> {
+  ): Promise<
+    Omit<
+      SocialProfileMeResponse,
+      'enabled' | 'mode' | 'is_self' | 'telegram_user_id'
+    >
+  > {
     const rows = await this.listRepo.find({
       where: { telegramUserId: String(telegramUserId) },
       order: { updatedAt: 'DESC' },
@@ -1112,11 +1121,16 @@ export class UserSocialProfileService {
 
     const ratings = rows
       .map((r) =>
-        r.userRating != null && r.userRating !== '' ? Number(r.userRating) : null,
+        r.userRating != null && r.userRating !== ''
+          ? Number(r.userRating)
+          : null,
       )
       .filter((v): v is number => v != null && Number.isFinite(v));
 
-    const episodesWatched = rows.reduce((sum, r) => sum + (r.episodesWatched ?? 0), 0);
+    const episodesWatched = rows.reduce(
+      (sum, r) => sum + (r.episodesWatched ?? 0),
+      0,
+    );
     const activeDayKeys = new Set(
       rows.map((r) => r.updatedAt.toISOString().slice(0, 10)),
     );
@@ -1126,7 +1140,10 @@ export class UserSocialProfileService {
     }, 0);
     const estimatedHours = Math.round(estimatedMinutes / 60);
 
-    const genreCounts = new Map<string, { slug: string; label: string; count: number }>();
+    const genreCounts = new Map<
+      string,
+      { slug: string; label: string; count: number }
+    >();
     for (const row of rows) {
       const anime = animeById.get(row.animeId);
       if (!anime?.genreLinks?.length) continue;
@@ -1146,7 +1163,10 @@ export class UserSocialProfileService {
       }
     }
 
-    const genreTotal = [...genreCounts.values()].reduce((s, g) => s + g.count, 0);
+    const genreTotal = [...genreCounts.values()].reduce(
+      (s, g) => s + g.count,
+      0,
+    );
     const topGenres = [...genreCounts.values()]
       .sort((a, b) => b.count - a.count)
       .slice(0, 3)
@@ -1270,22 +1290,23 @@ export class UserSocialProfileService {
     let relationship: SocialProfileMeResponse['relationship'];
     const viewerId = viewerTelegramUserId?.trim();
     if (viewerId && viewerId !== targetId) {
-      const [isFollowing, followsYou, isMuted, blockedByYou] = await Promise.all([
-        this.followRepo.exists({
-          where: {
-            followerTelegramUserId: viewerId,
-            followingTelegramUserId: targetId,
-          },
-        }),
-        this.followRepo.exists({
-          where: {
-            followerTelegramUserId: targetId,
-            followingTelegramUserId: viewerId,
-          },
-        }),
-        this.moderation.isMutedBy(viewerId, targetId),
-        this.moderation.hasBlocked(viewerId, targetId),
-      ]);
+      const [isFollowing, followsYou, isMuted, blockedByYou] =
+        await Promise.all([
+          this.followRepo.exists({
+            where: {
+              followerTelegramUserId: viewerId,
+              followingTelegramUserId: targetId,
+            },
+          }),
+          this.followRepo.exists({
+            where: {
+              followerTelegramUserId: targetId,
+              followingTelegramUserId: viewerId,
+            },
+          }),
+          this.moderation.isMutedBy(viewerId, targetId),
+          this.moderation.hasBlocked(viewerId, targetId),
+        ]);
       relationship = {
         is_following: isFollowing,
         follows_you: followsYou,
@@ -1295,8 +1316,7 @@ export class UserSocialProfileService {
     }
 
     const isSelf = !viewerId || viewerId === targetId;
-    const watchHidden =
-      !isSelf && user?.hideWatchActivity === true;
+    const watchHidden = !isSelf && user?.hideWatchActivity === true;
 
     return {
       profile: {

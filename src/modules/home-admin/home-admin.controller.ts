@@ -51,13 +51,19 @@ export class HomeAdminController {
 
   @Patch('blocks/:id/toggle')
   @ApiOperation({ summary: 'Enable or disable a home block' })
-  toggleBlock(@Param('id', ParseUUIDPipe) id: string, @Body() body: ToggleHomeBlockDto) {
+  toggleBlock(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: ToggleHomeBlockDto,
+  ) {
     return this.homeAdminService.toggleBlock(id, body.is_active);
   }
 
   @Patch('blocks/:id')
   @ApiOperation({ summary: 'Update a home block' })
-  updateBlock(@Param('id', ParseUUIDPipe) id: string, @Body() body: UpdateHomeBlockDto) {
+  updateBlock(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateHomeBlockDto,
+  ) {
     return this.homeAdminService.updateBlock(id, body);
   }
 

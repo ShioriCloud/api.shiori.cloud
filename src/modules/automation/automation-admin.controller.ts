@@ -56,7 +56,9 @@ export class AutomationAdminController {
   }
 
   private assertCronSecret(cronSecret: string | undefined) {
-    const expected = String(this.config.get<string>('cron.secret') ?? '').trim();
+    const expected = String(
+      this.config.get<string>('cron.secret') ?? '',
+    ).trim();
     const provided = String(cronSecret ?? '').trim();
     const allowDev = Boolean(this.config.get<boolean>('allowDevAuth'));
     if (expected) {

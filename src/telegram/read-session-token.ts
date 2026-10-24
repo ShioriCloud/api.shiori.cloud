@@ -1,6 +1,5 @@
-const firstHeader = (
-  value: string | string[] | undefined,
-): string => String(Array.isArray(value) ? value[0] : value ?? '').trim();
+const firstHeader = (value: string | string[] | undefined): string =>
+  String(Array.isArray(value) ? value[0] : (value ?? '')).trim();
 
 /** Session token from custom header, Authorization Bearer, or JSON body. */
 export const readSessionTokenFromRequest = (

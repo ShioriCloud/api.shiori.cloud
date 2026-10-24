@@ -1,8 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  OnModuleInit,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createReadStream, existsSync } from 'fs';
 import { mkdir, unlink, writeFile } from 'fs/promises';
@@ -50,7 +46,10 @@ export class MediaStorageService implements OnModuleInit {
     this.publicBaseUrl = (
       this.config.get<string>('media.publicBaseUrl') ?? 'http://localhost:3000'
     ).replace(/\/$/, '');
-    this.maxUploadBytes = this.config.get<number>('media.maxUploadBytes', 10 * 1024 * 1024);
+    this.maxUploadBytes = this.config.get<number>(
+      'media.maxUploadBytes',
+      10 * 1024 * 1024,
+    );
   }
 
   async onModuleInit(): Promise<void> {

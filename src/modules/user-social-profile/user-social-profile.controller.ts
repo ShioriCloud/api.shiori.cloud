@@ -58,8 +58,14 @@ export class UserSocialProfileController {
 
   @Patch('me')
   @ApiOperation({ summary: 'Update own public display name' })
-  updateMe(@Req() req: AppUserAuthedRequest, @Body() body: UpdateSocialProfileDto) {
-    return this.socialProfile.updateMe(String(req.telegramUserId), body.display_name);
+  updateMe(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: UpdateSocialProfileDto,
+  ) {
+    return this.socialProfile.updateMe(
+      String(req.telegramUserId),
+      body.display_name,
+    );
   }
 
   @Get('suggestions')
@@ -139,7 +145,9 @@ export class UserSocialProfileController {
   }
 
   @Get('users/:telegramUserId/following')
-  @ApiOperation({ summary: 'Users followed by target (viewer must be in rollout)' })
+  @ApiOperation({
+    summary: 'Users followed by target (viewer must be in rollout)',
+  })
   following(
     @Req() req: AppUserAuthedRequest,
     @Param('telegramUserId') telegramUserId: string,

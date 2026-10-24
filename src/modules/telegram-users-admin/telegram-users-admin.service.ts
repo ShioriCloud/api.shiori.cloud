@@ -165,8 +165,11 @@ const toIso = (value: Date | string | null | undefined): string => {
   return Number.isNaN(d.getTime()) ? '' : d.toISOString();
 };
 
-const animeTitle = (anime?: Pick<Anime, 'title' | 'titleRomaji'> | null): string =>
-  String(anime?.title || anime?.titleRomaji || 'بدون عنوان').trim() || 'بدون عنوان';
+const animeTitle = (
+  anime?: Pick<Anime, 'title' | 'titleRomaji'> | null,
+): string =>
+  String(anime?.title || anime?.titleRomaji || 'بدون عنوان').trim() ||
+  'بدون عنوان';
 
 @Injectable()
 export class TelegramUsersAdminService {
@@ -234,9 +237,7 @@ export class TelegramUsersAdminService {
         return from && to ? `تغییر نقش: ${from} → ${to}` : 'تغییر نقش';
       }
       case 'ban':
-        return meta?.reason
-          ? `بن کاربر (${String(meta.reason)})`
-          : 'بن کاربر';
+        return meta?.reason ? `بن کاربر (${String(meta.reason)})` : 'بن کاربر';
       case 'unban':
         return 'برداشتن بن';
       case 'revoke_sessions':
@@ -450,7 +451,7 @@ export class TelegramUsersAdminService {
         : null,
       subscription_active: Boolean(
         user.subscriptionExpiresAt &&
-          user.subscriptionExpiresAt.getTime() > Date.now(),
+        user.subscriptionExpiresAt.getTime() > Date.now(),
       ),
       is_web_only: Number.isFinite(idNum) && idNum < 0,
     };
@@ -650,7 +651,9 @@ export class TelegramUsersAdminService {
     };
   }
 
-  async getUserDetail(telegramUserId: string): Promise<TelegramUserAdminDetail> {
+  async getUserDetail(
+    telegramUserId: string,
+  ): Promise<TelegramUserAdminDetail> {
     const user = await this.usersRepo.findOne({
       where: { telegramUserId },
     });

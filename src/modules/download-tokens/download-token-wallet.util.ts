@@ -4,7 +4,9 @@ export type DownloadTokenWalletMode = 'off' | 'allowlist' | 'on';
 export const parseDownloadTokenWalletMode = (
   raw: string | undefined,
 ): DownloadTokenWalletMode => {
-  const value = String(raw ?? 'off').trim().toLowerCase();
+  const value = String(raw ?? 'off')
+    .trim()
+    .toLowerCase();
   if (value === 'on' || value === 'all' || value === 'true' || value === '1') {
     return 'on';
   }
@@ -41,7 +43,9 @@ export const parseTelegramUserIdFromDonateMessage = (
   const raw = String(message ?? '').trim();
   if (!raw) return null;
   if (/^\d{5,15}$/.test(raw)) return raw;
-  const tagged = raw.match(/(?:^|[^\d])(?:tg[:\s#]*|telegram[:\s#]*)(\d{5,15})\b/i);
+  const tagged = raw.match(
+    /(?:^|[^\d])(?:tg[:\s#]*|telegram[:\s#]*)(\d{5,15})\b/i,
+  );
   if (tagged?.[1]) return tagged[1];
   // Prefer standalone id token (avoid matching long amounts inside prose).
   const bare = raw.match(/(?:^|\s)(\d{5,15})(?:\s|$)/);
@@ -54,7 +58,9 @@ export const buildDarametWebIntentUrl = (input: {
   amountIrr: number;
   message: string;
 }): string => {
-  const base = String(input.donateBaseUrl || 'https://daramet.com').trim() || 'https://daramet.com';
+  const base =
+    String(input.donateBaseUrl || 'https://daramet.com').trim() ||
+    'https://daramet.com';
   const url = new URL(base.includes('://') ? base : `https://${base}`);
   url.searchParams.set('webintent', '');
   url.searchParams.set('donate', String(Math.floor(input.amountIrr)));

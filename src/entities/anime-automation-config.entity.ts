@@ -27,22 +27,46 @@ export class AnimeAutomationConfig {
   @Column({ type: 'text', name: 'trigger_mode', default: 'subtitle' })
   triggerMode: AutomationTriggerMode;
 
-  @Column({ type: 'boolean', name: 'new_episode_trigger_enabled', default: false })
+  @Column({
+    type: 'boolean',
+    name: 'new_episode_trigger_enabled',
+    default: false,
+  })
   newEpisodeTriggerEnabled: boolean;
 
   /** Inclusive start episode (null = no lower bound beyond exclusions) */
-  @Column({ type: 'numeric', precision: 8, scale: 2, name: 'start_episode', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'start_episode',
+    nullable: true,
+  })
   startEpisode: number | null;
 
-  @Column({ type: 'numeric', precision: 8, scale: 2, name: 'end_episode', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'end_episode',
+    nullable: true,
+  })
   endEpisode: number | null;
 
   /** JSON number[] of excluded episode numbers */
-  @Column({ type: 'jsonb', name: 'excluded_episodes', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'excluded_episodes',
+    default: () => "'[]'::jsonb",
+  })
   excludedEpisodes: number[];
 
   /** JSON number[] of enabled season numbers; empty = all */
-  @Column({ type: 'jsonb', name: 'enabled_seasons', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'enabled_seasons',
+    default: () => "'[]'::jsonb",
+  })
   enabledSeasons: number[];
 
   @Column({ type: 'text', name: 'processing_method', default: 'remux' })
@@ -51,7 +75,13 @@ export class AnimeAutomationConfig {
   @Column({ type: 'text', name: 'last_error', nullable: true })
   lastError: string | null;
 
-  @Column({ type: 'numeric', precision: 8, scale: 2, name: 'last_processed_episode', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'last_processed_episode',
+    nullable: true,
+  })
   lastProcessedEpisode: number | null;
 
   @Column({ type: 'timestamptz', name: 'last_job_at', nullable: true })

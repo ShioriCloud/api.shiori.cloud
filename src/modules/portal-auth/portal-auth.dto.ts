@@ -8,4 +8,3 @@ export class PortalLoginDto {
   @MinLength(1)
   password!: string;
 }
-

@@ -352,10 +352,7 @@ export class AutomationService {
     };
   }
 
-  async upsertConfig(
-    animeId: string,
-    body: Record<string, unknown>,
-  ) {
+  async upsertConfig(animeId: string, body: Record<string, unknown>) {
     await this.requireAnime(animeId);
     const config = await this.ensureConfig(animeId);
 
@@ -403,10 +400,7 @@ export class AutomationService {
         body.enabled_seasons ?? body.enabledSeasons,
       );
     }
-    if (
-      body.processing_method != null ||
-      body.processingMethod != null
-    ) {
+    if (body.processing_method != null || body.processingMethod != null) {
       config.processingMethod = String(
         body.processing_method ?? body.processingMethod,
       );
@@ -458,9 +452,7 @@ export class AutomationService {
     if (str('selection_mode', 'selectionMode') != null) {
       profile.selectionMode = String(str('selection_mode', 'selectionMode'));
     }
-    if (
-      str('custom_encoding_enabled', 'customEncodingEnabled') !== undefined
-    ) {
+    if (str('custom_encoding_enabled', 'customEncodingEnabled') !== undefined) {
       profile.customEncodingEnabled = Boolean(
         str('custom_encoding_enabled', 'customEncodingEnabled'),
       );
@@ -501,9 +493,7 @@ export class AutomationService {
         ? profile.extra
         : {}) as Record<string, unknown>),
     };
-    if (
-      str('episode_search_offset', 'episodeSearchOffset') !== undefined
-    ) {
+    if (str('episode_search_offset', 'episodeSearchOffset') !== undefined) {
       const v = Number(str('episode_search_offset', 'episodeSearchOffset'));
       if (Number.isFinite(v) && v !== 0) extra.episode_search_offset = v;
       else delete extra.episode_search_offset;
@@ -517,7 +507,11 @@ export class AutomationService {
     if (str('subtitle_title', 'subtitleTitle') !== undefined) {
       const raw = str('subtitle_title', 'subtitleTitle');
       const cleaned =
-        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+        raw == null
+          ? ''
+          : String(raw)
+              .trim()
+              .replace(/[\\/:*?"<>|]/g, '');
       if (cleaned) extra.subtitle_title = cleaned;
       else delete extra.subtitle_title;
     }
@@ -525,7 +519,11 @@ export class AutomationService {
     if (str('output_title', 'outputTitle') !== undefined) {
       const raw = str('output_title', 'outputTitle');
       const cleaned =
-        raw == null ? '' : String(raw).trim().replace(/[\\/:*?"<>|]/g, '');
+        raw == null
+          ? ''
+          : String(raw)
+              .trim()
+              .replace(/[\\/:*?"<>|]/g, '');
       if (cleaned) extra.output_title = cleaned;
       else delete extra.output_title;
     }
@@ -539,7 +537,9 @@ export class AutomationService {
     // if a caller only checks alt_titles (and as a safety net for older code).
     const subTitle = String(extra.subtitle_title ?? '').trim();
     if (subTitle) {
-      const alts = Array.isArray(profile.altTitles) ? [...profile.altTitles] : [];
+      const alts = Array.isArray(profile.altTitles)
+        ? [...profile.altTitles]
+        : [];
       const norm = (s: string) => this.normalizeMatchTitle(s);
       if (!alts.some((a) => norm(String(a)) === norm(subTitle))) {
         profile.altTitles = [subTitle, ...alts];
@@ -659,7 +659,9 @@ export class AutomationService {
   }
 
   async cancelJob(id: string) {
-    return this.transitionJob(id, 'CANCELLED', { message: 'cancelled by admin' });
+    return this.transitionJob(id, 'CANCELLED', {
+      message: 'cancelled by admin',
+    });
   }
 
   /** Hard-remove job (+ cascaded events) so it leaves the dash list. */
@@ -773,7 +775,10 @@ export class AutomationService {
     const existing = await this.jobRepo.findOne({
       where: { idempotencyKey: key },
     });
-    if (existing && !['PUBLISHED', 'CANCELLED', 'FAILED'].includes(existing.state)) {
+    if (
+      existing &&
+      !['PUBLISHED', 'CANCELLED', 'FAILED'].includes(existing.state)
+    ) {
       return this.toJobDto(existing);
     }
 
@@ -846,8 +851,7 @@ export class AutomationService {
       return this.retriggerExistingSubmission(existing);
     }
 
-    let animeId =
-      String(body.anime_id ?? body.animeId ?? '').trim() || null;
+    let animeId = String(body.anime_id ?? body.animeId ?? '').trim() || null;
     const filenameTitle = String(
       body.filename_title ?? body.filenameTitle ?? '',
     ).trim();
@@ -870,9 +874,9 @@ export class AutomationService {
         episodeNumber: Number.isFinite(episodeNumber) ? episodeNumber : null,
         filenameTitle: filenameTitle || null,
         originalFileName: fileName,
-        telegramFileId: String(
-          body.telegram_file_id ?? body.telegramFileId ?? '',
-        ).trim() || null,
+        telegramFileId:
+          String(body.telegram_file_id ?? body.telegramFileId ?? '').trim() ||
+          null,
         telegramMessageId: messageId,
         telegramChatId: chatId,
         contentHash:
@@ -882,7 +886,8 @@ export class AutomationService {
         extractedMeta: (body.extracted_meta ??
           body.extractedMeta ??
           {}) as Record<string, unknown>,
-        status: animeId && Number.isFinite(episodeNumber) ? 'matched' : 'ambiguous',
+        status:
+          animeId && Number.isFinite(episodeNumber) ? 'matched' : 'ambiguous',
         matchNote,
         revision: 1,
       }),
@@ -932,7 +937,12 @@ export class AutomationService {
 
   async resolveSubtitleSubmission(
     id: string,
-    body: { anime_id?: string; animeId?: string; episode_number?: number; episodeNumber?: number },
+    body: {
+      anime_id?: string;
+      animeId?: string;
+      episode_number?: number;
+      episodeNumber?: number;
+    },
   ) {
     const submission = await this.subRepo.findOne({ where: { id } });
     if (!submission) throw new NotFoundException('Submission not found');
@@ -1079,7 +1089,7 @@ export class AutomationService {
       .createQueryBuilder('j')
       .leftJoinAndSelect('j.anime', 'a')
       .where('j.state = :st', { st: 'AWAITING_APPROVAL' })
-      .andWhere("j.draft_id IS NOT NULL")
+      .andWhere('j.draft_id IS NOT NULL')
       .andWhere("NULLIF(j.progress->>'publish_requested_at', '') IS NOT NULL")
       .andWhere("NULLIF(j.progress->>'publish_claimed_at', '') IS NULL")
       .orderBy('j.updatedAt', 'ASC')
@@ -1166,7 +1176,10 @@ export class AutomationService {
   }
 
   /** Escalate jobs stuck mid-pipeline with no updates. */
-  async escalateStaleJobs(opts?: { olderThanMinutes?: number; limit?: number }) {
+  async escalateStaleJobs(opts?: {
+    olderThanMinutes?: number;
+    limit?: number;
+  }) {
     const minutes = Math.max(Number(opts?.olderThanMinutes) || 180, 30);
     const limit = Math.min(Math.max(Number(opts?.limit) || 40, 1), 100);
     const staleStates: AutomationJobState[] = [
@@ -1430,7 +1443,8 @@ export class AutomationService {
           msgs as Record<string, number>,
         )) {
           const n = Number(msgId);
-          if (chatId && Number.isFinite(n) && n > 0) inheritedMessages[chatId] = n;
+          if (chatId && Number.isFinite(n) && n > 0)
+            inheritedMessages[chatId] = n;
         }
       }
       j.state = 'CANCELLED';
@@ -1612,7 +1626,8 @@ export class AutomationService {
     }
     if (body.selected_release_name != null)
       patch.selectedReleaseName = body.selected_release_name;
-    if (body.selected_magnet != null) patch.selectedMagnet = body.selected_magnet;
+    if (body.selected_magnet != null)
+      patch.selectedMagnet = body.selected_magnet;
     if (body.torrent_hash != null) patch.torrentHash = body.torrent_hash;
     if (body.download_path != null) patch.downloadPath = body.download_path;
     if (body.output_path != null) patch.outputPath = body.output_path;
@@ -1621,7 +1636,8 @@ export class AutomationService {
     if (body.archive_file_key != null)
       patch.archiveFileKey = body.archive_file_key;
     if (body.download_link != null) patch.downloadLink = body.download_link;
-    if (body.release_candidates) patch.releaseCandidates = body.release_candidates;
+    if (body.release_candidates)
+      patch.releaseCandidates = body.release_candidates;
     if (body.error_message != null) patch.errorMessage = body.error_message;
     if (body.error_code != null) patch.errorCode = body.error_code;
 
@@ -1735,9 +1751,7 @@ export class AutomationService {
         .replace(/\s+s\d+\b/gi, '')
         .trim();
       if (fromSlug) {
-        push(
-          fromSlug.replace(/\b\w/g, (c) => c.toUpperCase()),
-        );
+        push(fromSlug.replace(/\b\w/g, (c) => c.toUpperCase()));
       }
     }
     const title = String(anime.title ?? '').trim();
@@ -1779,9 +1793,7 @@ export class AutomationService {
       dirty = true;
     }
     if (!profile.preferredGroups?.length) {
-      profile.preferredGroups = [
-        ...AutomationService.DEFAULT_PREFERRED_GROUPS,
-      ];
+      profile.preferredGroups = [...AutomationService.DEFAULT_PREFERRED_GROUPS];
       dirty = true;
     }
     if (!profile.fallbackGroups?.length) {
@@ -1831,7 +1843,9 @@ export class AutomationService {
     }
 
     // Prefer in-memory normalize so hyphen/spacing variants still match
-    const profiles = await this.profileRepo.find({ relations: { anime: true } });
+    const profiles = await this.profileRepo.find({
+      relations: { anime: true },
+    });
     const byAlt = profiles.filter((p) => {
       const extra = (p.extra ?? {}) as Record<string, unknown>;
       const candidates = [
@@ -1914,9 +1928,7 @@ export class AutomationService {
     const bar = '▓'.repeat(filled) + '░'.repeat(10 - filled);
     const trigger = TRIGGER_FA[String(job.triggerSource ?? '')] || 'اتوماسیون';
     const hint =
-      STAGE_HINT_FA[state] ||
-      this.persianizeWorkerMessage(opts.message) ||
-      '';
+      STAGE_HINT_FA[state] || this.persianizeWorkerMessage(opts.message) || '';
 
     const epNum = Number(job.episodeNumber);
     const epLabel = Number.isFinite(epNum)
@@ -1940,9 +1952,7 @@ export class AutomationService {
       );
     }
     if (job.outputFileName) {
-      lines.push(
-        `خروجی: <code>${this.escapeHtml(job.outputFileName)}</code>`,
-      );
+      lines.push(`خروجی: <code>${this.escapeHtml(job.outputFileName)}</code>`);
     }
     if (job.errorMessage) {
       lines.push(
@@ -1982,10 +1992,7 @@ export class AutomationService {
    * Tel-bot: atomically claim live-status updates so intake sync + poller
    * cannot both send a fresh Telegram message for the same rev.
    */
-  async claimPendingLiveStatus(opts?: {
-    limit?: number;
-    jobId?: string;
-  }) {
+  async claimPendingLiveStatus(opts?: { limit?: number; jobId?: string }) {
     const limit = Math.min(Math.max(Number(opts?.limit) || 15, 1), 40);
     const onlyJobId = String(opts?.jobId ?? '').trim() || null;
 
@@ -2098,7 +2105,9 @@ export class AutomationService {
       const delivered = Number(live.delivered_rev) || 0;
       // Only unwind if we still own this claimed rev and nothing newer arrived.
       if (delivered === ackRev && currentRev === ackRev) {
-        live.delivered_rev = Number.isFinite(restore) ? Math.max(0, restore) : 0;
+        live.delivered_rev = Number.isFinite(restore)
+          ? Math.max(0, restore)
+          : 0;
         job.progress = { ...(job.progress ?? {}), tg_live: live };
         job.updatedAt = new Date();
         await this.jobRepo.save(job);
@@ -2113,7 +2122,8 @@ export class AutomationService {
     const incoming = body.messages ?? {};
     for (const [chatId, msgId] of Object.entries(incoming)) {
       const n = Number(msgId);
-      if (chatId && Number.isFinite(n) && n > 0) prevMessages[String(chatId)] = n;
+      if (chatId && Number.isFinite(n) && n > 0)
+        prevMessages[String(chatId)] = n;
     }
 
     // Claim already set delivered_rev; merge message ids. If a newer rev

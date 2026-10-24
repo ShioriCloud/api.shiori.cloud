@@ -23,9 +23,10 @@ export class UpsertUserAnimeListDto {
 
   @IsOptional()
   @Transform(({ value }) => {
-    if (value === null || value === undefined || value === '') return value ?? null
-    const n = Number(value)
-    return Number.isFinite(n) ? n : value
+    if (value === null || value === undefined || value === '')
+      return value ?? null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : value;
   })
   @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsNumber()

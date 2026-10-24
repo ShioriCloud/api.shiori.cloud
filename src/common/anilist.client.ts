@@ -27,7 +27,9 @@ const readGraphqlErrors = (json: unknown): string | null => {
   if (!Array.isArray(errors) || errors.length === 0) return null;
   const first = asRecord(errors[0]);
   const message = first?.message;
-  return typeof message === 'string' && message.trim() ? message.trim() : 'AniList query error';
+  return typeof message === 'string' && message.trim()
+    ? message.trim()
+    : 'AniList query error';
 };
 
 const parseGraphql = async <T>(
@@ -48,7 +50,10 @@ const parseGraphql = async <T>(
   const root = asRecord(result.json);
   const data = root?.data;
   if (!data) {
-    throw new AnilistClientError('AniList response missing data', result.status);
+    throw new AnilistClientError(
+      'AniList response missing data',
+      result.status,
+    );
   }
   return data as T;
 };
@@ -92,17 +97,22 @@ export type AnilistScoreRow = {
 };
 
 /** MAL-scale 0–10 from AniList idMal when Jikan is unreachable. */
-export const fetchMalScoreByAnilistMalId = async (malId: number): Promise<number | null> => {
+export const fetchMalScoreByAnilistMalId = async (
+  malId: number,
+): Promise<number | null> => {
   const id = positiveInt(malId);
   if (!id) return null;
 
-  const data = await parseGraphql<{ Media?: { averageScore?: number | null } | null }>(
-    SCORE_BY_MAL_ID_QUERY,
-    { idMal: id },
-  );
+  const data = await parseGraphql<{
+    Media?: { averageScore?: number | null } | null;
+  }>(SCORE_BY_MAL_ID_QUERY, { idMal: id });
 
   const scoreRaw = data.Media?.averageScore;
-  if (typeof scoreRaw !== 'number' || !Number.isFinite(scoreRaw) || scoreRaw <= 0) {
+  if (
+    typeof scoreRaw !== 'number' ||
+    !Number.isFinite(scoreRaw) ||
+    scoreRaw <= 0
+  ) {
     return null;
   }
   const malScale = scoreRaw / 10;
@@ -142,7 +152,9 @@ export const fetchAnilistScoresByIds = async (
       const native = trimOrNull(row?.title?.native);
       const scoreRaw = row?.averageScore;
       const score =
-        typeof scoreRaw === 'number' && Number.isFinite(scoreRaw) && scoreRaw > 0
+        typeof scoreRaw === 'number' &&
+        Number.isFinite(scoreRaw) &&
+        scoreRaw > 0
           ? scoreRaw
           : null;
       return {

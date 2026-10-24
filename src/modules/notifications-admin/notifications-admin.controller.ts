@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   PortalAuthGuard,
@@ -15,7 +23,9 @@ import { NotificationsAdminService } from './notifications-admin.service';
 @Controller('notifications-admin')
 @UseGuards(PortalAuthGuard)
 export class NotificationsAdminController {
-  constructor(private readonly notificationsAdminService: NotificationsAdminService) {}
+  constructor(
+    private readonly notificationsAdminService: NotificationsAdminService,
+  ) {}
 
   @Get('campaigns')
   @ApiOperation({ summary: 'List recent notification campaigns' })

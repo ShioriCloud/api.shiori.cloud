@@ -8,7 +8,10 @@ export function hasActiveSubscription(
   now: Date = new Date(),
 ): boolean {
   if (!expiresAt) return false;
-  const t = expiresAt instanceof Date ? expiresAt.getTime() : Date.parse(String(expiresAt));
+  const t =
+    expiresAt instanceof Date
+      ? expiresAt.getTime()
+      : Date.parse(String(expiresAt));
   return Number.isFinite(t) && t > now.getTime();
 }
 

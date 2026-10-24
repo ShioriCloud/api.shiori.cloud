@@ -81,7 +81,9 @@ export class AnimeNotificationsService {
         created_at: row.createdAt.toISOString(),
       })),
       has_more: hasMore,
-      next_before: hasMore ? rows[rows.length - 1].createdAt.toISOString() : null,
+      next_before: hasMore
+        ? rows[rows.length - 1].createdAt.toISOString()
+        : null,
     };
   }
 

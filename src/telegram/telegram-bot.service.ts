@@ -48,11 +48,14 @@ export class TelegramBotService {
     }
 
     try {
-      const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const res = await fetch(
+        `https://api.telegram.org/bot${token}/${method}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
       return (await res.json()) as TelegramApiResult<T>;
     } catch (e) {
       return {
@@ -67,7 +70,11 @@ export class TelegramBotService {
     text: string;
     webAppUrl?: string | null;
     parseMode?: 'HTML' | 'Markdown';
-  }): Promise<{ sent: number; sentChatIds: number[]; errors: TelegramSendError[] }> {
+  }): Promise<{
+    sent: number;
+    sentChatIds: number[];
+    errors: TelegramSendError[];
+  }> {
     const tokens = this.getNotificationTokens();
     if (tokens.length === 0) {
       this.logger.warn('Skipping Telegram DMs — no bot token configured');
@@ -85,7 +92,12 @@ export class TelegramBotService {
       payload.webAppUrl != null
         ? {
             inline_keyboard: [
-              [{ text: 'مشاهده در مینی‌اپ', web_app: { url: payload.webAppUrl } }],
+              [
+                {
+                  text: 'مشاهده در مینی‌اپ',
+                  web_app: { url: payload.webAppUrl },
+                },
+              ],
             ],
           }
         : undefined;

@@ -10,7 +10,12 @@ import { UserCustomListsService } from './user-custom-lists.service';
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([UserCustomList, UserCustomListItem, Anime, TelegramUser]),
+    TypeOrmModule.forFeature([
+      UserCustomList,
+      UserCustomListItem,
+      Anime,
+      TelegramUser,
+    ]),
   ],
   controllers: [UserCustomListsController],
   providers: [UserCustomListsService],

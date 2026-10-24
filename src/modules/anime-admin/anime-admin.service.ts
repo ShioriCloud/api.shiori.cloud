@@ -59,19 +59,32 @@ export class AnimeAdminService {
 
   constructor(
     @InjectRepository(Anime) private readonly animeRepo: Repository<Anime>,
-    @InjectRepository(AnimeEpisode) private readonly episodeRepo: Repository<AnimeEpisode>,
-    @InjectRepository(AnimeGenre) private readonly genreRepo: Repository<AnimeGenre>,
-    @InjectRepository(AnimeGenreLink) private readonly genreLinkRepo: Repository<AnimeGenreLink>,
-    @InjectRepository(AnimeStudio) private readonly studioRepo: Repository<AnimeStudio>,
-    @InjectRepository(AnimeStudioLink) private readonly studioLinkRepo: Repository<AnimeStudioLink>,
-    @InjectRepository(AnimeSubtitle) private readonly subtitleRepo: Repository<AnimeSubtitle>,
-    @InjectRepository(AnimeSubtitlePack) private readonly subtitlePackRepo: Repository<AnimeSubtitlePack>,
-    @InjectRepository(AnimeSeries) private readonly seriesRepo: Repository<AnimeSeries>,
-    @InjectRepository(AnimeSeriesMember) private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
-    @InjectRepository(AnimeTranslator) private readonly translatorRepo: Repository<AnimeTranslator>,
-    @InjectRepository(AnimeTranslatorLink) private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
-    @InjectRepository(UserAnimeListEntry) private readonly userListRepo: Repository<UserAnimeListEntry>,
-    @InjectRepository(UserNotification) private readonly userNotificationRepo: Repository<UserNotification>,
+    @InjectRepository(AnimeEpisode)
+    private readonly episodeRepo: Repository<AnimeEpisode>,
+    @InjectRepository(AnimeGenre)
+    private readonly genreRepo: Repository<AnimeGenre>,
+    @InjectRepository(AnimeGenreLink)
+    private readonly genreLinkRepo: Repository<AnimeGenreLink>,
+    @InjectRepository(AnimeStudio)
+    private readonly studioRepo: Repository<AnimeStudio>,
+    @InjectRepository(AnimeStudioLink)
+    private readonly studioLinkRepo: Repository<AnimeStudioLink>,
+    @InjectRepository(AnimeSubtitle)
+    private readonly subtitleRepo: Repository<AnimeSubtitle>,
+    @InjectRepository(AnimeSubtitlePack)
+    private readonly subtitlePackRepo: Repository<AnimeSubtitlePack>,
+    @InjectRepository(AnimeSeries)
+    private readonly seriesRepo: Repository<AnimeSeries>,
+    @InjectRepository(AnimeSeriesMember)
+    private readonly seriesMemberRepo: Repository<AnimeSeriesMember>,
+    @InjectRepository(AnimeTranslator)
+    private readonly translatorRepo: Repository<AnimeTranslator>,
+    @InjectRepository(AnimeTranslatorLink)
+    private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
+    @InjectRepository(UserAnimeListEntry)
+    private readonly userListRepo: Repository<UserAnimeListEntry>,
+    @InjectRepository(UserNotification)
+    private readonly userNotificationRepo: Repository<UserNotification>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly notificationsAdminService: NotificationsAdminService,
     private readonly channelDraftsService: ChannelDraftsService,
@@ -108,7 +121,9 @@ export class AnimeAdminService {
     const trimmed = String(value).trim();
     if (!trimmed) return null;
     if (
-      !(AnimeAdminService.AIRING_WEEKDAYS as readonly string[]).includes(trimmed)
+      !(AnimeAdminService.AIRING_WEEKDAYS as readonly string[]).includes(
+        trimmed,
+      )
     ) {
       throw new BadRequestException('invalid airing_weekday');
     }
@@ -123,7 +138,8 @@ export class AnimeAdminService {
     const trimmed = String(value).trim();
     if (!trimmed) return null;
     const match = trimmed.match(/^(\d{1,2}):(\d{2})$/);
-    if (!match) throw new BadRequestException('invalid airing_time (use HH:mm)');
+    if (!match)
+      throw new BadRequestException('invalid airing_time (use HH:mm)');
     const hour = Number(match[1]);
     const minute = Number(match[2]);
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
@@ -140,7 +156,9 @@ export class AnimeAdminService {
     const trimmed = String(value).trim();
     if (!trimmed) return null;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      throw new BadRequestException('invalid next_airing_date (use YYYY-MM-DD)');
+      throw new BadRequestException(
+        'invalid next_airing_date (use YYYY-MM-DD)',
+      );
     }
     return trimmed;
   }
@@ -164,7 +182,9 @@ export class AnimeAdminService {
     };
   }
 
-  private toTranslator(t: AnimeTranslator & { _animeCount?: number; _episodeCount?: number }) {
+  private toTranslator(
+    t: AnimeTranslator & { _animeCount?: number; _episodeCount?: number },
+  ) {
     return {
       id: t.id,
       slug: t.slug,
@@ -248,7 +268,9 @@ export class AnimeAdminService {
       ),
       updated_at: anime.updatedAt?.toISOString?.() ?? null,
       last_edited_at: anime.lastEditedAt?.toISOString?.() ?? null,
-      last_edited_by: anime.lastEditedById ? Number(anime.lastEditedById) : null,
+      last_edited_by: anime.lastEditedById
+        ? Number(anime.lastEditedById)
+        : null,
       last_editor: editor
         ? {
             first_name: editor.firstName ?? null,
@@ -270,12 +292,18 @@ export class AnimeAdminService {
   }
 
   private applyAnimeFields(anime: Anime, body: Payload) {
-    const assign = <K extends keyof Anime>(key: K, val: Anime[K] | undefined) => {
+    const assign = <K extends keyof Anime>(
+      key: K,
+      val: Anime[K] | undefined,
+    ) => {
       if (val !== undefined) anime[key] = val;
     };
 
     assign('title', this.pick<string>(body, 'title', 'title'));
-    assign('titleRomaji', this.pick<string | null>(body, 'title_romaji', 'titleRomaji'));
+    assign(
+      'titleRomaji',
+      this.pick<string | null>(body, 'title_romaji', 'titleRomaji'),
+    );
 
     const slugRaw = this.pick<string | null>(body, 'slug', 'slug');
     if (slugRaw !== undefined) {
@@ -286,11 +314,20 @@ export class AnimeAdminService {
       assign('slug', normalized);
     }
 
-    assign('coverImage', this.pick<string | null>(body, 'cover_image', 'coverImage'));
-    assign('featuredImage', this.pick<string | null>(body, 'featured_image', 'featuredImage'));
+    assign(
+      'coverImage',
+      this.pick<string | null>(body, 'cover_image', 'coverImage'),
+    );
+    assign(
+      'featuredImage',
+      this.pick<string | null>(body, 'featured_image', 'featuredImage'),
+    );
     assign('synopsis', this.pick<string | null>(body, 'synopsis', 'synopsis'));
     assign('format', this.pick<string | null>(body, 'format', 'format'));
-    assign('airingStatus', this.pick<string | null>(body, 'airing_status', 'airingStatus'));
+    assign(
+      'airingStatus',
+      this.pick<string | null>(body, 'airing_status', 'airingStatus'),
+    );
     assign(
       'airingWeekday',
       this.normalizeAiringWeekday(
@@ -299,7 +336,9 @@ export class AnimeAdminService {
     );
     assign(
       'airingTime',
-      this.normalizeAiringTime(this.pick<string | null>(body, 'airing_time', 'airingTime')),
+      this.normalizeAiringTime(
+        this.pick<string | null>(body, 'airing_time', 'airingTime'),
+      ),
     );
     assign(
       'nextAiringDate',
@@ -309,44 +348,96 @@ export class AnimeAdminService {
     );
     assign('season', this.pick<string | null>(body, 'season', 'season'));
     assign('year', this.pick<number | null>(body, 'year', 'year'));
-    assign('episodesCount', this.pick<number | null>(body, 'episodes_count', 'episodesCount'));
+    assign(
+      'episodesCount',
+      this.pick<number | null>(body, 'episodes_count', 'episodesCount'),
+    );
     assign('studio', this.pick<string | null>(body, 'studio', 'studio'));
     assign('isFeatured', this.pick<boolean>(body, 'is_featured', 'isFeatured'));
-    assign('anilistId', this.pick<number | null>(body, 'anilist_id', 'anilistId'));
+    assign(
+      'anilistId',
+      this.pick<number | null>(body, 'anilist_id', 'anilistId'),
+    );
     assign('malId', this.pick<number | null>(body, 'mal_id', 'malId'));
-    assign('startDate', this.pick<string | null>(body, 'start_date', 'startDate'));
+    assign(
+      'startDate',
+      this.pick<string | null>(body, 'start_date', 'startDate'),
+    );
     assign('endDate', this.pick<string | null>(body, 'end_date', 'endDate'));
-    assign('episodePackTitle', this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle'));
-    assign('episodePackLink', this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink'));
-    assign('prevAnimeId', this.pick<string | null>(body, 'prev_anime_id', 'prevAnimeId'));
-    assign('nextAnimeId', this.pick<string | null>(body, 'next_anime_id', 'nextAnimeId'));
+    assign(
+      'episodePackTitle',
+      this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle'),
+    );
+    assign(
+      'episodePackLink',
+      this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink'),
+    );
+    assign(
+      'prevAnimeId',
+      this.pick<string | null>(body, 'prev_anime_id', 'prevAnimeId'),
+    );
+    assign(
+      'nextAnimeId',
+      this.pick<string | null>(body, 'next_anime_id', 'nextAnimeId'),
+    );
 
-    const hardsubLanguage = this.pick<string | null>(body, 'hardsub_language', 'hardsubLanguage');
+    const hardsubLanguage = this.pick<string | null>(
+      body,
+      'hardsub_language',
+      'hardsubLanguage',
+    );
     if (hardsubLanguage !== undefined) {
       anime.hardsubLanguage = normalizeHardsubLanguage(hardsubLanguage);
     }
 
-    const videoFileType = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
+    const videoFileType = this.pick<string | null>(
+      body,
+      'video_file_type',
+      'videoFileType',
+    );
     if (videoFileType !== undefined) {
       anime.videoFileType = normalizeVideoFileType(videoFileType);
     }
 
-    const videoResolution = this.pick<string | null>(body, 'video_resolution', 'videoResolution');
+    const videoResolution = this.pick<string | null>(
+      body,
+      'video_resolution',
+      'videoResolution',
+    );
     if (videoResolution !== undefined) {
       anime.videoResolution = normalizeVideoResolution(videoResolution);
     }
 
-    const videoEncode = this.pick<string | null>(body, 'video_encode', 'videoEncode');
+    const videoEncode = this.pick<string | null>(
+      body,
+      'video_encode',
+      'videoEncode',
+    );
     if (videoEncode !== undefined) {
       anime.videoEncode = normalizeVideoEncode(videoEncode);
     }
 
-    const malScore = this.pick<number | string | null>(body, 'mal_score', 'malScore');
-    if (malScore !== undefined) anime.malScore = malScore == null ? null : String(malScore);
-    const averageScore = this.pick<number | string | null>(body, 'average_score', 'averageScore');
-    if (averageScore !== undefined) anime.averageScore = averageScore == null ? null : String(averageScore);
-    const shioriScore = this.pick<number | string | null>(body, 'shiori_score', 'shioriScore');
-    if (shioriScore !== undefined) anime.shioriScore = shioriScore == null ? null : String(shioriScore);
+    const malScore = this.pick<number | string | null>(
+      body,
+      'mal_score',
+      'malScore',
+    );
+    if (malScore !== undefined)
+      anime.malScore = malScore == null ? null : String(malScore);
+    const averageScore = this.pick<number | string | null>(
+      body,
+      'average_score',
+      'averageScore',
+    );
+    if (averageScore !== undefined)
+      anime.averageScore = averageScore == null ? null : String(averageScore);
+    const shioriScore = this.pick<number | string | null>(
+      body,
+      'shiori_score',
+      'shioriScore',
+    );
+    if (shioriScore !== undefined)
+      anime.shioriScore = shioriScore == null ? null : String(shioriScore);
 
     return anime;
   }
@@ -400,7 +491,9 @@ export class AnimeAdminService {
     };
   }
 
-  private async loadGenresByAnimeIds(animeIds: string[]): Promise<Map<string, AnimeGenre[]>> {
+  private async loadGenresByAnimeIds(
+    animeIds: string[],
+  ): Promise<Map<string, AnimeGenre[]>> {
     const map = new Map<string, AnimeGenre[]>();
     if (animeIds.length === 0) return map;
     const links = await this.genreLinkRepo.find({
@@ -419,7 +512,9 @@ export class AnimeAdminService {
     await this.genreLinkRepo.delete({ animeId });
     if (slugs.length === 0) return;
     const genres = await this.genreRepo.find({ where: { slug: In(slugs) } });
-    const links = genres.map((g) => this.genreLinkRepo.create({ animeId, genreId: g.id }));
+    const links = genres.map((g) =>
+      this.genreLinkRepo.create({ animeId, genreId: g.id }),
+    );
     if (links.length > 0) await this.genreLinkRepo.save(links);
   }
 
@@ -427,7 +522,9 @@ export class AnimeAdminService {
     await this.studioLinkRepo.delete({ animeId });
     if (slugs.length === 0) return;
     const studios = await this.studioRepo.find({ where: { slug: In(slugs) } });
-    const links = studios.map((s) => this.studioLinkRepo.create({ animeId, studioId: s.id }));
+    const links = studios.map((s) =>
+      this.studioLinkRepo.create({ animeId, studioId: s.id }),
+    );
     if (links.length > 0) await this.studioLinkRepo.save(links);
   }
 
@@ -481,7 +578,9 @@ export class AnimeAdminService {
     } else if (filter === 'has-episodes') {
       qb.andWhere('EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
     } else if (filter === 'no-episodes') {
-      qb.andWhere('NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)');
+      qb.andWhere(
+        'NOT EXISTS (SELECT 1 FROM episodes e WHERE e.anime_id = a.id)',
+      );
     } else if (filter === 'no-mal-id') {
       qb.andWhere('a.malId IS NULL');
     } else if (filter === 'no-anilist-id') {
@@ -491,38 +590,52 @@ export class AnimeAdminService {
       qb.andWhere('a.year = :year', { year: Number(params?.year) });
     }
     if (params?.season?.trim() && params.season !== 'all') {
-      qb.andWhere('UPPER(a.season) = :season', { season: params.season.trim().toUpperCase() });
+      qb.andWhere('UPPER(a.season) = :season', {
+        season: params.season.trim().toUpperCase(),
+      });
     }
     switch (params?.sortBy ?? 'updated_at') {
       case 'created_at':
-        qb.orderBy('a.createdAt', 'DESC').addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
+        qb.orderBy('a.createdAt', 'DESC').addOrderBy(
+          'a.lastEditedAt',
+          'DESC',
+          'NULLS LAST',
+        );
         break;
       case 'title':
-        qb.orderBy('LOWER(a.title)', 'ASC').addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
+        qb.orderBy('LOWER(a.title)', 'ASC').addOrderBy(
+          'a.lastEditedAt',
+          'DESC',
+          'NULLS LAST',
+        );
         break;
       case 'year_asc':
-        qb
-          .orderBy('a.year', 'ASC', 'NULLS LAST')
+        qb.orderBy('a.year', 'ASC', 'NULLS LAST')
           .addOrderBy('LOWER(a.title)', 'ASC')
           .addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'year_desc':
-        qb
-          .orderBy('a.year', 'DESC', 'NULLS LAST')
+        qb.orderBy('a.year', 'DESC', 'NULLS LAST')
           .addOrderBy('LOWER(a.title)', 'ASC')
           .addOrderBy('a.lastEditedAt', 'DESC', 'NULLS LAST');
         break;
       case 'updated_at':
       default:
         // Admin "آخرین ویرایش" — ignore mini-app view bumps on updated_at.
-        qb
-          .orderBy('a.lastEditedAt', 'DESC', 'NULLS LAST')
-          .addOrderBy('a.createdAt', 'DESC');
+        qb.orderBy('a.lastEditedAt', 'DESC', 'NULLS LAST').addOrderBy(
+          'a.createdAt',
+          'DESC',
+        );
         break;
     }
-    const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [rows, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     const genreMap = await this.loadGenresByAnimeIds(rows.map((r) => r.id));
-    const hasEpisodeIds = await this.loadAnimeIdsWithEpisodes(rows.map((r) => r.id));
+    const hasEpisodeIds = await this.loadAnimeIdsWithEpisodes(
+      rows.map((r) => r.id),
+    );
     return {
       items: rows.map((row) => ({
         ...this.toAnimeCard(row, genreMap.get(row.id) ?? []),
@@ -537,7 +650,9 @@ export class AnimeAdminService {
 
   async getAnimeListStats() {
     const total = await this.animeRepo.count();
-    const featured = await this.animeRepo.count({ where: { isFeatured: true } });
+    const featured = await this.animeRepo.count({
+      where: { isFeatured: true },
+    });
     const withEpisodesRaw = await this.episodeRepo
       .createQueryBuilder('e')
       .select('COUNT(DISTINCT e.anime_id)', 'count')
@@ -561,7 +676,9 @@ export class AnimeAdminService {
     };
   }
 
-  private async loadAnimeIdsWithEpisodes(animeIds: string[]): Promise<Set<string>> {
+  private async loadAnimeIdsWithEpisodes(
+    animeIds: string[],
+  ): Promise<Set<string>> {
     if (animeIds.length === 0) return new Set();
     const rows = await this.episodeRepo
       .createQueryBuilder('e')
@@ -607,7 +724,10 @@ export class AnimeAdminService {
         const en = this.uniqueNorm(genre.nameEn ?? '');
         const fa = this.uniqueNorm(genre.nameFa ?? '');
         const slug = this.uniqueNorm(genre.slug ?? '');
-        return Boolean(key) && (en === key || fa === key || slug === slugKey || slug === key);
+        return (
+          Boolean(key) &&
+          (en === key || fa === key || slug === slugKey || slug === key)
+        );
       });
       if (match?.slug) slugs.push(match.slug);
     }
@@ -626,7 +746,10 @@ export class AnimeAdminService {
       const match = studios.find((studio) => {
         const studioName = this.uniqueNorm(studio.name ?? '');
         const slug = this.uniqueNorm(studio.slug ?? '');
-        return Boolean(key) && (studioName === key || slug === slugKey || slug === key);
+        return (
+          Boolean(key) &&
+          (studioName === key || slug === slugKey || slug === key)
+        );
       });
       if (match?.slug) {
         slugs.push(match.slug);
@@ -639,7 +762,11 @@ export class AnimeAdminService {
     };
   }
 
-  private async uniqueImportSlug(base: string, externalId: number, prefix: string): Promise<string> {
+  private async uniqueImportSlug(
+    base: string,
+    externalId: number,
+    prefix: string,
+  ): Promise<string> {
     const fallback = `${prefix}-${externalId}`;
     const primary = normalizeSlug(base) || fallback;
     const existing = await this.animeRepo.findOne({
@@ -710,7 +837,9 @@ export class AnimeAdminService {
   }
 
   async importFromMal(body: Payload, editorId?: string) {
-    const malId = normalizeExternalId(this.pick<unknown>(body, 'mal_id', 'malId'));
+    const malId = normalizeExternalId(
+      this.pick<unknown>(body, 'mal_id', 'malId'),
+    );
     if (!malId) {
       throw new BadRequestException('شناسه MyAnimeList نامعتبر است');
     }
@@ -780,7 +909,9 @@ export class AnimeAdminService {
   }
 
   async fillFromMal(body: Payload) {
-    const malId = normalizeExternalId(this.pick<unknown>(body, 'mal_id', 'malId'));
+    const malId = normalizeExternalId(
+      this.pick<unknown>(body, 'mal_id', 'malId'),
+    );
     if (!malId) {
       throw new BadRequestException('شناسه MyAnimeList نامعتبر است');
     }
@@ -832,7 +963,11 @@ export class AnimeAdminService {
     const saved = await this.animeRepo.save(anime);
     const genreSlugs = this.pick<string[]>(body, 'genre_slugs', 'genreSlugs');
     if (genreSlugs) await this.replaceGenreSlugs(saved.id, genreSlugs);
-    const studioSlugs = this.pick<string[]>(body, 'studio_slugs', 'studioSlugs');
+    const studioSlugs = this.pick<string[]>(
+      body,
+      'studio_slugs',
+      'studioSlugs',
+    );
     if (studioSlugs) await this.replaceStudioSlugs(saved.id, studioSlugs);
     return this.getAnimeAdmin(saved.id);
   }
@@ -846,7 +981,11 @@ export class AnimeAdminService {
     await this.animeRepo.save(anime);
     const genreSlugs = this.pick<string[]>(body, 'genre_slugs', 'genreSlugs');
     if (genreSlugs) await this.replaceGenreSlugs(id, genreSlugs);
-    const studioSlugs = this.pick<string[]>(body, 'studio_slugs', 'studioSlugs');
+    const studioSlugs = this.pick<string[]>(
+      body,
+      'studio_slugs',
+      'studioSlugs',
+    );
     if (studioSlugs) await this.replaceStudioSlugs(id, studioSlugs);
     return this.getAnimeAdmin(id);
   }
@@ -928,10 +1067,19 @@ export class AnimeAdminService {
   }
 
   async insertEpisode(body: Payload) {
-    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeIdRaw = String(
+      this.pick<string>(body, 'anime_id', 'animeId') ?? '',
+    );
     const animeId = await this.resolveAnimeRecordId(animeIdRaw);
-    const videoFileTypeRaw = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
-    let videoFileType = videoFileTypeRaw != null ? normalizeEpisodeVideoFileType(videoFileTypeRaw) : null;
+    const videoFileTypeRaw = this.pick<string | null>(
+      body,
+      'video_file_type',
+      'videoFileType',
+    );
+    let videoFileType =
+      videoFileTypeRaw != null
+        ? normalizeEpisodeVideoFileType(videoFileTypeRaw)
+        : null;
     if (!videoFileType) {
       const anime = await this.animeRepo.findOne({
         where: { id: animeId },
@@ -941,9 +1089,12 @@ export class AnimeAdminService {
     }
     const episode = this.episodeRepo.create({
       animeId,
-      episodeNumber: Number(this.pick(body, 'episode_number', 'episodeNumber') ?? 0),
-      title: (this.pick<string | null>(body, 'title', 'title') ?? null),
-      downloadLink: (this.pick<string | null>(body, 'download_link', 'downloadLink') ?? null),
+      episodeNumber: Number(
+        this.pick(body, 'episode_number', 'episodeNumber') ?? 0,
+      ),
+      title: this.pick<string | null>(body, 'title', 'title') ?? null,
+      downloadLink:
+        this.pick<string | null>(body, 'download_link', 'downloadLink') ?? null,
       videoFileType,
     });
     const saved = await this.episodeRepo.save(episode);
@@ -1009,9 +1160,17 @@ export class AnimeAdminService {
     if (epNum !== undefined) episode.episodeNumber = epNum;
     const title = this.pick<string | null>(body, 'title', 'title');
     if (title !== undefined) episode.title = title;
-    const link = this.pick<string | null>(body, 'download_link', 'downloadLink');
+    const link = this.pick<string | null>(
+      body,
+      'download_link',
+      'downloadLink',
+    );
     if (link !== undefined) episode.downloadLink = link;
-    const videoFileType = this.pick<string | null>(body, 'video_file_type', 'videoFileType');
+    const videoFileType = this.pick<string | null>(
+      body,
+      'video_file_type',
+      'videoFileType',
+    );
     if (videoFileType !== undefined) {
       episode.videoFileType = normalizeEpisodeVideoFileType(videoFileType);
     }
@@ -1057,14 +1216,27 @@ export class AnimeAdminService {
     const maxAt = row?.max ? new Date(row.max) : null;
     await this.animeRepo.update(
       { id: animeId },
-      { lastEpisodeAt: maxAt && Number.isFinite(maxAt.getTime()) ? maxAt : null },
+      {
+        lastEpisodeAt: maxAt && Number.isFinite(maxAt.getTime()) ? maxAt : null,
+      },
     );
   }
 
-  async updateEpisodePack(animeIdOrSlug: string, body: Payload, editorId?: string) {
+  async updateEpisodePack(
+    animeIdOrSlug: string,
+    body: Payload,
+    editorId?: string,
+  ) {
     const anime = await this.requireAnime(animeIdOrSlug);
-    anime.episodePackTitle = this.pick<string | null>(body, 'episode_pack_title', 'episodePackTitle') ?? null;
-    anime.episodePackLink = this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink') ?? null;
+    anime.episodePackTitle =
+      this.pick<string | null>(
+        body,
+        'episode_pack_title',
+        'episodePackTitle',
+      ) ?? null;
+    anime.episodePackLink =
+      this.pick<string | null>(body, 'episode_pack_link', 'episodePackLink') ??
+      null;
     this.markAdminEdited(anime, editorId);
     await this.animeRepo.save(anime);
   }
@@ -1073,12 +1245,14 @@ export class AnimeAdminService {
     const paginate = params?.page != null || params?.limit != null;
     const pageRaw = Number(params?.page);
     const limitRaw = Number(params?.limit);
-    const page = Number.isFinite(pageRaw) && pageRaw > 0 ? Math.trunc(pageRaw) : 1;
+    const page =
+      Number.isFinite(pageRaw) && pageRaw > 0 ? Math.trunc(pageRaw) : 1;
     const limit =
       Number.isFinite(limitRaw) && limitRaw > 0
         ? Math.min(10_000, Math.trunc(limitRaw))
         : 50;
-    const sortOrder: 'ASC' | 'DESC' = params?.sortOrder === 'DESC' ? 'DESC' : 'ASC';
+    const sortOrder: 'ASC' | 'DESC' =
+      params?.sortOrder === 'DESC' ? 'DESC' : 'ASC';
     return { paginate, page, limit, sortOrder };
   }
 
@@ -1220,11 +1394,17 @@ export class AnimeAdminService {
 
     const sortBy = query?.sortBy;
     if (sortBy === 'name_en') {
-      qb.orderBy('g.nameEn', sortOrder, 'NULLS LAST').addOrderBy('g.slug', 'ASC');
+      qb.orderBy('g.nameEn', sortOrder, 'NULLS LAST').addOrderBy(
+        'g.slug',
+        'ASC',
+      );
     } else if (sortBy === 'slug') {
       qb.orderBy('g.slug', sortOrder);
     } else if (sortBy === 'name_fa' || paginate) {
-      qb.orderBy('g.nameFa', sortOrder, 'NULLS LAST').addOrderBy('g.slug', 'ASC');
+      qb.orderBy('g.nameFa', sortOrder, 'NULLS LAST').addOrderBy(
+        'g.slug',
+        'ASC',
+      );
     } else {
       qb.orderBy('g.slug', 'ASC');
     }
@@ -1233,7 +1413,10 @@ export class AnimeAdminService {
       return (await qb.getMany()).map((g) => this.toGenre(g));
     }
 
-    const [rows, total] = await qb.skip((page - 1) * limit).take(limit).getManyAndCount();
+    const [rows, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
     return this.catalogListResult(
       rows.map((g) => this.toGenre(g)),
       total,
@@ -1248,18 +1431,23 @@ export class AnimeAdminService {
     if (id) {
       const genre = await this.genreRepo.findOne({ where: { id } });
       if (!genre) throw new NotFoundException('Genre not found');
-      const slug = body.slug !== undefined ? String(body.slug).trim() : genre.slug;
+      const slug =
+        body.slug !== undefined ? String(body.slug).trim() : genre.slug;
       if (!slug) throw new BadRequestException('slug is required');
       genre.slug = slug;
       if (body.name_en !== undefined || body.nameEn !== undefined) {
-        genre.nameEn = (body.name_en as string) ?? (body.nameEn as string) ?? null;
+        genre.nameEn =
+          (body.name_en as string) ?? (body.nameEn as string) ?? null;
       }
       if (body.name_fa !== undefined || body.nameFa !== undefined) {
-        genre.nameFa = (body.name_fa as string) ?? (body.nameFa as string) ?? null;
+        genre.nameFa =
+          (body.name_fa as string) ?? (body.nameFa as string) ?? null;
       }
       if (body.image_url !== undefined || body.imageUrl !== undefined) {
-        const raw = (body.image_url as string) ?? (body.imageUrl as string) ?? null;
-        genre.imageUrl = raw != null && String(raw).trim() ? String(raw).trim() : null;
+        const raw =
+          (body.image_url as string) ?? (body.imageUrl as string) ?? null;
+        genre.imageUrl =
+          raw != null && String(raw).trim() ? String(raw).trim() : null;
       }
       return this.toGenre(await this.genreRepo.save(genre));
     }
@@ -1280,7 +1468,8 @@ export class AnimeAdminService {
   }
 
   async deleteGenre(payload: { id?: string; slug?: string }) {
-    if (!payload.id && !payload.slug) throw new BadRequestException('id or slug required');
+    if (!payload.id && !payload.slug)
+      throw new BadRequestException('id or slug required');
     const genre = payload.id
       ? await this.genreRepo.findOne({ where: { id: payload.id } })
       : await this.genreRepo.findOne({ where: { slug: String(payload.slug) } });
@@ -1294,7 +1483,9 @@ export class AnimeAdminService {
     const qb = this.studioRepo.createQueryBuilder('s');
     if (query?.search?.trim()) {
       const term = `%${query.search.trim().toLowerCase()}%`;
-      qb.where('LOWER(s.slug) LIKE :term OR LOWER(s.name) LIKE :term', { term });
+      qb.where('LOWER(s.slug) LIKE :term OR LOWER(s.name) LIKE :term', {
+        term,
+      });
     }
 
     const sortBy = query?.sortBy;
@@ -1312,7 +1503,10 @@ export class AnimeAdminService {
     }
 
     const [rows, total] = paginate
-      ? await qb.skip((page - 1) * limit).take(limit).getManyAndCount()
+      ? await qb
+          .skip((page - 1) * limit)
+          .take(limit)
+          .getManyAndCount()
       : [await qb.getMany(), 0];
     const countByStudio = await this.studioAnimeCounts(rows.map((s) => s.id));
     const items = rows.map((s) =>
@@ -1322,7 +1516,13 @@ export class AnimeAdminService {
       }),
     );
     if (!paginate) return items;
-    return this.catalogListResult(items, total, page, limit, await this.studioListSummary());
+    return this.catalogListResult(
+      items,
+      total,
+      page,
+      limit,
+      await this.studioListSummary(),
+    );
   }
 
   async upsertStudio(body: Payload) {
@@ -1336,8 +1536,11 @@ export class AnimeAdminService {
     }
     const slug = String(body.slug ?? '').trim();
     const name = String(body.name ?? '').trim();
-    if (!slug || !name) throw new BadRequestException('slug and name are required');
-    return this.toStudio(await this.studioRepo.save(this.studioRepo.create({ slug, name })));
+    if (!slug || !name)
+      throw new BadRequestException('slug and name are required');
+    return this.toStudio(
+      await this.studioRepo.save(this.studioRepo.create({ slug, name })),
+    );
   }
 
   async deleteStudio(id: string) {
@@ -1357,7 +1560,9 @@ export class AnimeAdminService {
     const qb = this.translatorRepo.createQueryBuilder('t');
     if (query?.search?.trim()) {
       const term = `%${query.search.trim().toLowerCase()}%`;
-      qb.where('LOWER(t.slug) LIKE :term OR LOWER(t.name) LIKE :term', { term });
+      qb.where('LOWER(t.slug) LIKE :term OR LOWER(t.name) LIKE :term', {
+        term,
+      });
     }
 
     const sortBy = query?.sortBy;
@@ -1380,7 +1585,10 @@ export class AnimeAdminService {
     }
 
     const [rows, total] = paginate
-      ? await qb.skip((page - 1) * limit).take(limit).getManyAndCount()
+      ? await qb
+          .skip((page - 1) * limit)
+          .take(limit)
+          .getManyAndCount()
       : [await qb.getMany(), 0];
     const { animeCountByTranslator, episodeCountByTranslator } =
       await this.translatorLinkCounts(rows.map((t) => t.id));
@@ -1392,7 +1600,13 @@ export class AnimeAdminService {
       }),
     );
     if (!paginate) return items;
-    return this.catalogListResult(items, total, page, limit, await this.translatorListSummary());
+    return this.catalogListResult(
+      items,
+      total,
+      page,
+      limit,
+      await this.translatorListSummary(),
+    );
   }
 
   async upsertTranslator(body: Payload) {
@@ -1403,16 +1617,22 @@ export class AnimeAdminService {
       if (body.slug !== undefined) t.slug = String(body.slug).trim();
       if (body.name !== undefined) t.name = String(body.name).trim();
       if (body.avatar_url !== undefined || body.avatarUrl !== undefined) {
-        t.avatarUrl = (body.avatar_url as string) ?? (body.avatarUrl as string) ?? null;
+        t.avatarUrl =
+          (body.avatar_url as string) ?? (body.avatarUrl as string) ?? null;
       }
       if (body.cover_url !== undefined || body.coverUrl !== undefined) {
-        t.coverUrl = (body.cover_url as string) ?? (body.coverUrl as string) ?? null;
+        t.coverUrl =
+          (body.cover_url as string) ?? (body.coverUrl as string) ?? null;
       }
       if (body.bio !== undefined) t.bio = (body.bio as string) ?? null;
-      if (body.experience !== undefined) t.experience = (body.experience as string) ?? null;
+      if (body.experience !== undefined)
+        t.experience = (body.experience as string) ?? null;
       if (body.is_active !== undefined) t.isActive = Boolean(body.is_active);
       if (body.isActive !== undefined) t.isActive = Boolean(body.isActive);
-      if (body.telegram_user_id !== undefined || body.telegramUserId !== undefined) {
+      if (
+        body.telegram_user_id !== undefined ||
+        body.telegramUserId !== undefined
+      ) {
         t.telegramUserId = this.parseOptionalTelegramUserId(
           body.telegram_user_id ?? body.telegramUserId,
         );
@@ -1421,7 +1641,8 @@ export class AnimeAdminService {
     }
     const slug = String(body.slug ?? '').trim();
     const name = String(body.name ?? '').trim();
-    if (!slug || !name) throw new BadRequestException('slug and name are required');
+    if (!slug || !name)
+      throw new BadRequestException('slug and name are required');
     const t = this.translatorRepo.create({
       slug,
       name,
@@ -1441,7 +1662,9 @@ export class AnimeAdminService {
     if (raw == null || raw === '') return null;
     const id = String(raw).trim();
     if (!/^\d{5,15}$/.test(id)) {
-      throw new BadRequestException('telegram_user_id must be a numeric Telegram id');
+      throw new BadRequestException(
+        'telegram_user_id must be a numeric Telegram id',
+      );
     }
     return id;
   }
@@ -1467,14 +1690,20 @@ export class AnimeAdminService {
   }
 
   async insertSubtitle(body: Payload) {
-    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeIdRaw = String(
+      this.pick<string>(body, 'anime_id', 'animeId') ?? '',
+    );
     const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.subtitleRepo.save(
       this.subtitleRepo.create({
         animeId,
-        episodeNumber: Number(this.pick(body, 'episode_number', 'episodeNumber') ?? 0),
-        title: (this.pick<string | null>(body, 'title', 'title') ?? null),
-        subtitleLink: (this.pick<string | null>(body, 'subtitle_link', 'subtitleLink') ?? null),
+        episodeNumber: Number(
+          this.pick(body, 'episode_number', 'episodeNumber') ?? 0,
+        ),
+        title: this.pick<string | null>(body, 'title', 'title') ?? null,
+        subtitleLink:
+          this.pick<string | null>(body, 'subtitle_link', 'subtitleLink') ??
+          null,
       }),
     );
     return {
@@ -1501,7 +1730,11 @@ export class AnimeAdminService {
     if (epNum !== undefined) sub.episodeNumber = epNum;
     const title = this.pick<string | null>(body, 'title', 'title');
     if (title !== undefined) sub.title = title;
-    const link = this.pick<string | null>(body, 'subtitle_link', 'subtitleLink');
+    const link = this.pick<string | null>(
+      body,
+      'subtitle_link',
+      'subtitleLink',
+    );
     if (link !== undefined) sub.subtitleLink = link;
     const saved = await this.subtitleRepo.save(sub);
     return {
@@ -1532,13 +1765,17 @@ export class AnimeAdminService {
   }
 
   async insertSubtitlePack(body: Payload) {
-    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
+    const animeIdRaw = String(
+      this.pick<string>(body, 'anime_id', 'animeId') ?? '',
+    );
     const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.subtitlePackRepo.save(
       this.subtitlePackRepo.create({
         animeId,
-        title: (this.pick<string | null>(body, 'title', 'title') ?? null),
-        subtitleLink: (this.pick<string | null>(body, 'subtitle_link', 'subtitleLink') ?? null),
+        title: this.pick<string | null>(body, 'title', 'title') ?? null,
+        subtitleLink:
+          this.pick<string | null>(body, 'subtitle_link', 'subtitleLink') ??
+          null,
       }),
     );
     return {
@@ -1553,7 +1790,11 @@ export class AnimeAdminService {
     if (!pack) throw new NotFoundException('Subtitle pack not found');
     const title = this.pick<string | null>(body, 'title', 'title');
     if (title !== undefined) pack.title = title;
-    const link = this.pick<string | null>(body, 'subtitle_link', 'subtitleLink');
+    const link = this.pick<string | null>(
+      body,
+      'subtitle_link',
+      'subtitleLink',
+    );
     if (link !== undefined) pack.subtitleLink = link;
     const saved = await this.subtitlePackRepo.save(pack);
     return {
@@ -1585,14 +1826,18 @@ export class AnimeAdminService {
   }
 
   async insertTranslatorLink(body: Payload) {
-    const animeIdRaw = String(this.pick<string>(body, 'anime_id', 'animeId') ?? '');
-    const translatorId = String(this.pick<string>(body, 'translator_id', 'translatorId') ?? '');
+    const animeIdRaw = String(
+      this.pick<string>(body, 'anime_id', 'animeId') ?? '',
+    );
+    const translatorId = String(
+      this.pick<string>(body, 'translator_id', 'translatorId') ?? '',
+    );
     const animeId = await this.resolveAnimeRecordId(animeIdRaw);
     const saved = await this.translatorLinkRepo.save(
       this.translatorLinkRepo.create({
         animeId,
         translatorId,
-        role: (this.pick<string | null>(body, 'role', 'role') ?? null),
+        role: this.pick<string | null>(body, 'role', 'role') ?? null,
       }),
     );
     return { id: saved.id };
@@ -1603,7 +1848,11 @@ export class AnimeAdminService {
     if (!link) throw new NotFoundException('Translator link not found');
     const role = this.pick<string | null>(body, 'role', 'role');
     if (role !== undefined) link.role = role;
-    const translatorId = this.pick<string>(body, 'translator_id', 'translatorId');
+    const translatorId = this.pick<string>(
+      body,
+      'translator_id',
+      'translatorId',
+    );
     if (translatorId !== undefined) {
       const trimmed = String(translatorId).trim();
       if (!trimmed) throw new BadRequestException('translator_id is required');
@@ -1650,14 +1899,19 @@ export class AnimeAdminService {
     const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
     const seriesId = this.pick<string | null>(body, 'series_id', 'seriesId');
     const title = String(this.pick(body, 'title', 'title') ?? '');
-    const members = (this.pick<Payload[]>(body, 'members', 'members') ?? []) as Payload[];
+    const members = (this.pick<Payload[]>(body, 'members', 'members') ??
+      []) as Payload[];
 
     if (!seriesId && members.length === 0) {
-      const existing = await this.seriesMemberRepo.findOne({ where: { animeId } });
+      const existing = await this.seriesMemberRepo.findOne({
+        where: { animeId },
+      });
       if (existing) {
         const sid = existing.seriesId;
         await this.seriesMemberRepo.delete({ seriesId: sid });
-        const remaining = await this.seriesMemberRepo.count({ where: { seriesId: sid } });
+        const remaining = await this.seriesMemberRepo.count({
+          where: { seriesId: sid },
+        });
         if (remaining === 0) await this.seriesRepo.delete({ id: sid });
       }
       return this.getSeriesDraft(animeId);

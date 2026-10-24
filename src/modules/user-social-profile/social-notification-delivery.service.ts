@@ -51,10 +51,9 @@ export class SocialNotificationDeliveryService {
   }
 
   private resolveWebAppUrl(href: string): string | null {
-    const base = (this.config.get<string>('miniApp.baseUrl') ?? '').trim().replace(
-      /\/$/,
-      '',
-    );
+    const base = (this.config.get<string>('miniApp.baseUrl') ?? '')
+      .trim()
+      .replace(/\/$/, '');
     if (!base) return null;
     const path = href.startsWith('/') ? href : `/${href}`;
     return `${base}${path}`;

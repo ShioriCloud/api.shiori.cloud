@@ -56,13 +56,17 @@ export class FilesAdminController {
 
   @Get('anime-download-stats/export')
   @ApiOperation({ summary: 'Export filtered anime download stats as CSV' })
-  async exportAnimeDownloadStats(@Query() query: ListAnimeDownloadStatsQueryDto) {
+  async exportAnimeDownloadStats(
+    @Query() query: ListAnimeDownloadStatsQueryDto,
+  ) {
     const csv = await this.filesAdminService.exportAnimeDownloadStatsCsv(query);
     return { csv };
   }
 
   @Get('anime-download-stats')
-  @ApiOperation({ summary: 'Paginated anime download stats (episode video files)' })
+  @ApiOperation({
+    summary: 'Paginated anime download stats (episode video files)',
+  })
   animeDownloadStats(@Query() query: ListAnimeDownloadStatsQueryDto) {
     return this.filesAdminService.listAnimeDownloadStats(query);
   }
@@ -109,7 +113,10 @@ export class FilesAdminController {
     @Param('key') key: string,
     @Body() body: PatchBotFileMetadataDto,
   ) {
-    return this.filesAdminService.patchBotFileMetadata(decodeURIComponent(key), body);
+    return this.filesAdminService.patchBotFileMetadata(
+      decodeURIComponent(key),
+      body,
+    );
   }
 
   @Get('picker/search')
@@ -118,7 +125,9 @@ export class FilesAdminController {
   }
 
   @Post('picker/search')
-  @ApiOperation({ summary: 'Search files for picker (POST — use when matchAnyTerms is large)' })
+  @ApiOperation({
+    summary: 'Search files for picker (POST — use when matchAnyTerms is large)',
+  })
   pickerSearchPost(@Body() body: FilePickerSearchBodyDto) {
     return this.filesAdminService.searchPicker(body);
   }
@@ -167,7 +176,10 @@ export class FilesAdminController {
 
   @Post('packs/:id/items/bulk')
   @ApiOperation({ summary: 'Add multiple files to a pack (skips duplicates)' })
-  async addPackItemsBulk(@Param('id') id: string, @Body() body: AddFilePackItemsBulkDto) {
+  async addPackItemsBulk(
+    @Param('id') id: string,
+    @Body() body: AddFilePackItemsBulkDto,
+  ) {
     return this.filesAdminService.addPackItemsBulk(id, body.file_keys ?? []);
   }
 

@@ -1,7 +1,13 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { BotFile, BotFileDownloadEvent, BotSetting, FilePack, FilePackItem } from '../../entities';
+import {
+  BotFile,
+  BotFileDownloadEvent,
+  BotSetting,
+  FilePack,
+  FilePackItem,
+} from '../../entities';
 import { TelegramUsersService } from '../telegram-users/telegram-users.service';
 import {
   BotArchiveLinkDto,
@@ -37,7 +43,9 @@ export class BotService {
     return { ok: true };
   }
 
-  async getArchiveLinkByCode(code: string): Promise<{ ok: true; data: BotArchiveLinkDto }> {
+  async getArchiveLinkByCode(
+    code: string,
+  ): Promise<{ ok: true; data: BotArchiveLinkDto }> {
     const file = await this.findActiveFileByKey(code);
     return { ok: true, data: this.mapArchiveLink(file) };
   }
@@ -89,7 +97,9 @@ export class BotService {
     return { ok: true, data: this.mapFile(file) };
   }
 
-  async createFile(dto: CreateBotFileDto): Promise<{ ok: true; data: BotFileDto }> {
+  async createFile(
+    dto: CreateBotFileDto,
+  ): Promise<{ ok: true; data: BotFileDto }> {
     const key = String(dto.key ?? '').trim();
     if (!key) {
       throw new NotFoundException();
@@ -247,7 +257,9 @@ export class BotService {
   }
 
   async getPackBySlug(slug: string): Promise<{ ok: true; data: BotPackDto }> {
-    const cleanSlug = String(slug ?? '').trim().toLowerCase();
+    const cleanSlug = String(slug ?? '')
+      .trim()
+      .toLowerCase();
     if (!cleanSlug) {
       throw new NotFoundException();
     }
@@ -270,7 +282,9 @@ export class BotService {
     };
   }
 
-  async getPackItems(packId: string): Promise<{ ok: true; data: BotPackItemDto[] }> {
+  async getPackItems(
+    packId: string,
+  ): Promise<{ ok: true; data: BotPackItemDto[] }> {
     const cleanId = String(packId ?? '').trim();
     if (!cleanId) {
       return { ok: true, data: [] };
@@ -291,7 +305,9 @@ export class BotService {
     };
   }
 
-  async getSetting(key: string): Promise<{ ok: true; data: { value: string } }> {
+  async getSetting(
+    key: string,
+  ): Promise<{ ok: true; data: { value: string } }> {
     const cleanKey = String(key ?? '').trim();
     if (!cleanKey) {
       throw new NotFoundException();
@@ -320,7 +336,9 @@ export class BotService {
     return { ok: true };
   }
 
-  async deleteSetting(key: string): Promise<{ ok: true; data: { deleted: boolean } }> {
+  async deleteSetting(
+    key: string,
+  ): Promise<{ ok: true; data: { deleted: boolean } }> {
     const cleanKey = String(key ?? '').trim();
     if (!cleanKey) {
       return { ok: true, data: { deleted: false } };
@@ -390,15 +408,18 @@ export class BotService {
 
     const dto: BotFileDto = { key: String(row.key) };
 
-    if (messageId != null && !Number.isNaN(messageId)) dto.messageId = messageId;
+    if (messageId != null && !Number.isNaN(messageId))
+      dto.messageId = messageId;
     if (row.type) dto.type = String(row.type);
     if (row.file_id) dto.fileId = String(row.file_id);
     if (row.file_name) dto.fileName = String(row.file_name);
     if (row.file_size != null) dto.fileSize = Number(row.file_size);
     if (row.caption) dto.caption = String(row.caption);
     if (row.downloads != null) dto.downloads = Number(row.downloads);
-    if (row.last_accessed) dto.lastAccessed = new Date(String(row.last_accessed)).toISOString();
-    if (row.created_at) dto.createdAt = new Date(String(row.created_at)).toISOString();
+    if (row.last_accessed)
+      dto.lastAccessed = new Date(String(row.last_accessed)).toISOString();
+    if (row.created_at)
+      dto.createdAt = new Date(String(row.created_at)).toISOString();
     if (row.is_active != null) dto.isActive = Boolean(row.is_active);
 
     return dto;

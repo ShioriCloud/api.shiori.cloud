@@ -21,7 +21,8 @@ export const normalizeProfileFormat = (
   if (!key) return 'OTHER';
   if (key === 'TV' || key === 'TV_SHORT' || key === 'TV SHORT') return 'TV';
   if (key === 'MOVIE' || key === 'FILM') return 'MOVIE';
-  if (key === 'OVA' || key === 'SPECIAL' || key === 'ONA SPECIAL') return 'SPECIAL';
+  if (key === 'OVA' || key === 'SPECIAL' || key === 'ONA SPECIAL')
+    return 'SPECIAL';
   if (
     key === 'ONA' ||
     key === 'ONA (CHINESE)' ||

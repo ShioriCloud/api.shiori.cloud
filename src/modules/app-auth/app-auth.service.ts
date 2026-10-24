@@ -32,7 +32,11 @@ import {
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const LINK_TOKEN_TTL_MS = 15 * 60 * 1000;
 
-export type LinkTelegramStatus = 'pending' | 'completed' | 'expired' | 'invalid';
+export type LinkTelegramStatus =
+  | 'pending'
+  | 'completed'
+  | 'expired'
+  | 'invalid';
 
 @Injectable()
 export class AppAuthService {
@@ -56,11 +60,11 @@ export class AppAuthService {
     return Number(userId) > 0;
   }
 
-  private resolveTelegramUserId(
-    initDataHeader?: string | string[],
-  ): number {
+  private resolveTelegramUserId(initDataHeader?: string | string[]): number {
     const initData = String(
-      Array.isArray(initDataHeader) ? initDataHeader[0] : initDataHeader ?? '',
+      Array.isArray(initDataHeader)
+        ? initDataHeader[0]
+        : (initDataHeader ?? ''),
     ).trim();
     const botTokens = getTelegramBotTokens(this.config);
     const verified = verifyTelegramInitData(initData, botTokens);
@@ -83,7 +87,11 @@ export class AppAuthService {
     return String(minId <= 0 ? minId - 1 : -1_000_001);
   }
 
-  private buildSessionResponse(user: TelegramUser, token: string, expiresAt: Date) {
+  private buildSessionResponse(
+    user: TelegramUser,
+    token: string,
+    expiresAt: Date,
+  ) {
     return {
       ok: true,
       token,
@@ -158,7 +166,9 @@ export class AppAuthService {
       throw new NotFoundException('حساب وب یافت نشد');
     }
     if (!tgUser) {
-      throw new NotFoundException('کاربر Telegram یافت نشد — یک‌بار مینی‌اپ را باز کنید');
+      throw new NotFoundException(
+        'کاربر Telegram یافت نشد — یک‌بار مینی‌اپ را باز کنید',
+      );
     }
 
     if (tgUser.email?.trim() && webUser.email?.trim()) {
@@ -397,10 +407,7 @@ export class AppAuthService {
     };
   }
 
-  async startTelegramLink(
-    sessionToken: string,
-    dto: LinkTelegramStartDto,
-  ) {
+  async startTelegramLink(sessionToken: string, dto: LinkTelegramStartDto) {
     const session = await this.verifySession(sessionToken);
     if (!session) {
       throw new UnauthorizedException('نشست وب یافت نشد');
@@ -468,7 +475,9 @@ export class AppAuthService {
       };
     }
     if (linkToken.expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException('لینک اتصال منقضی شده — دوباره از پروفایل وب درخواست دهید');
+      throw new BadRequestException(
+        'لینک اتصال منقضی شده — دوباره از پروفایل وب درخواست دهید',
+      );
     }
 
     await this.mergeWebUserIntoTelegram(linkToken.webUserId, telegramUserId);

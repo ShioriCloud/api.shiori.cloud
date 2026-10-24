@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UserSocialBlock, UserSocialFollow, UserSocialMute } from '../../entities';
+import {
+  UserSocialBlock,
+  UserSocialFollow,
+  UserSocialMute,
+} from '../../entities';
 
 @Injectable()
 export class UserSocialModerationService {
@@ -112,7 +116,10 @@ export class UserSocialModerationService {
       where: { muterTelegramUserId: a, mutedTelegramUserId: b },
     });
     if (!exists) {
-      await this.muteRepo.save({ muterTelegramUserId: a, mutedTelegramUserId: b });
+      await this.muteRepo.save({
+        muterTelegramUserId: a,
+        mutedTelegramUserId: b,
+      });
     }
   }
 

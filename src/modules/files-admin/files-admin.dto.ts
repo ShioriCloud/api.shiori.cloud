@@ -119,7 +119,9 @@ export class ListAnimeDownloadStatsQueryDto {
 
   @IsOptional()
   @Transform(({ value }) => {
-    const raw = String(value ?? '').trim().toUpperCase();
+    const raw = String(value ?? '')
+      .trim()
+      .toUpperCase();
     if (!raw || raw === 'ALL') return undefined;
     return raw;
   })

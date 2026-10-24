@@ -54,11 +54,14 @@ export class BotController {
 
   @Get('telegram-dm/pending')
   @ApiOperation({
-    summary: 'Claim pending Telegram DMs for tel-bot delivery (API cannot reach Telegram)',
+    summary:
+      'Claim pending Telegram DMs for tel-bot delivery (API cannot reach Telegram)',
   })
   @ApiQuery({ name: 'limit', required: false })
   listPendingTelegramDms(@Query('limit') limit?: string) {
-    return this.telegramDmOutbox.claimPending(limit ? Number(limit) : undefined);
+    return this.telegramDmOutbox.claimPending(
+      limit ? Number(limit) : undefined,
+    );
   }
 
   @Post('telegram-dm/ack')
@@ -81,13 +84,19 @@ export class BotController {
 
   @Get('archive-links/:code')
   @ApiOperation({ summary: 'Resolve an archive file link by code (tel-bot)' })
-  getArchiveLink(@Param('code') code: string): Promise<BotArchiveLinkResponseDto> {
+  getArchiveLink(
+    @Param('code') code: string,
+  ): Promise<BotArchiveLinkResponseDto> {
     return this.botService.getArchiveLinkByCode(code);
   }
 
   @Get('files/by-message/:messageId')
-  @ApiOperation({ summary: 'Get file by Telegram message id (active or inactive)' })
-  getFileByMessageId(@Param('messageId') messageId: string): Promise<BotFileResponseDto> {
+  @ApiOperation({
+    summary: 'Get file by Telegram message id (active or inactive)',
+  })
+  getFileByMessageId(
+    @Param('messageId') messageId: string,
+  ): Promise<BotFileResponseDto> {
     return this.botService.getFileByMessageId(messageId);
   }
 
@@ -153,7 +162,9 @@ export class BotController {
   }
 
   @Post('files/:key/downloads')
-  @ApiOperation({ summary: 'Increment download counter and record the Telegram visitor' })
+  @ApiOperation({
+    summary: 'Increment download counter and record the Telegram visitor',
+  })
   incrementDownloads(
     @Param('key') key: string,
     @Body() body?: BotDownloadVisitorDto,
@@ -180,7 +191,9 @@ export class BotController {
 
   @Get('packs/:packId/items')
   @ApiOperation({ summary: 'List items in a file pack' })
-  getPackItems(@Param('packId') packId: string): Promise<BotPackItemsResponseDto> {
+  getPackItems(
+    @Param('packId') packId: string,
+  ): Promise<BotPackItemsResponseDto> {
     return this.botService.getPackItems(packId);
   }
 
@@ -207,12 +220,16 @@ export class BotController {
 
   @Delete('settings/:key')
   @ApiOperation({ summary: 'Delete bot setting' })
-  deleteSetting(@Param('key') key: string): Promise<BotSettingDeletedResponseDto> {
+  deleteSetting(
+    @Param('key') key: string,
+  ): Promise<BotSettingDeletedResponseDto> {
     return this.botService.deleteSetting(key);
   }
 
   @Get('sponsor-campaigns/active')
-  @ApiOperation({ summary: 'List active sponsor campaigns for membership gate' })
+  @ApiOperation({
+    summary: 'List active sponsor campaigns for membership gate',
+  })
   listActiveSponsorCampaigns() {
     return this.sponsorCampaigns.listActiveCampaigns();
   }
@@ -306,23 +323,36 @@ export class BotController {
   @Post('channel-drafts/from-episode')
   @ApiOperation({ summary: 'Create channel post draft from a catalog episode' })
   createDraftFromEpisode(
-    @Body() body: { anime_id?: string; animeId?: string; episode_number?: number; episodeNumber?: number },
+    @Body()
+    body: {
+      anime_id?: string;
+      animeId?: string;
+      episode_number?: number;
+      episodeNumber?: number;
+    },
   ) {
     const animeId = String(body.anime_id ?? body.animeId ?? '').trim();
-    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    const episodeNumber = Number(
+      body.episode_number ?? body.episodeNumber ?? 0,
+    );
     return this.channelDrafts.createFromEpisode(animeId, episodeNumber);
   }
 
   @Get('channel-drafts/pending-preview')
-  @ApiOperation({ summary: 'List channel drafts waiting for bot to send admin preview DM' })
+  @ApiOperation({
+    summary: 'List channel drafts waiting for bot to send admin preview DM',
+  })
   @ApiQuery({ name: 'limit', required: false })
   listPendingPreviews(@Query('limit') limit?: string) {
-    return this.channelDrafts.listPendingPreviews(limit ? Number(limit) : undefined);
+    return this.channelDrafts.listPendingPreviews(
+      limit ? Number(limit) : undefined,
+    );
   }
 
   @Post('channel-drafts/clear-pending')
   @ApiOperation({
-    summary: 'Reject all pending drafts still waiting for preview DM (clear bot queue)',
+    summary:
+      'Reject all pending drafts still waiting for preview DM (clear bot queue)',
   })
   clearPendingPreviews() {
     return this.channelDrafts.clearPendingPreviews();
@@ -350,7 +380,9 @@ export class BotController {
   }
 
   @Post('channel-drafts/:id/mark-published')
-  @ApiOperation({ summary: 'Mark draft published after tel-bot sent the channel post' })
+  @ApiOperation({
+    summary: 'Mark draft published after tel-bot sent the channel post',
+  })
   markChannelDraftPublished(
     @Param('id') id: string,
     @Body()
@@ -366,7 +398,8 @@ export class BotController {
 
   @Post('channel-drafts/:id/publish')
   @ApiOperation({
-    summary: 'Prepare channel draft publish payload for tel-bot (does not call Telegram)',
+    summary:
+      'Prepare channel draft publish payload for tel-bot (does not call Telegram)',
   })
   publishChannelDraft(
     @Param('id') id: string,

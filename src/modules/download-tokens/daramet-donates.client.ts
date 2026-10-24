@@ -42,7 +42,9 @@ export class DarametDonatesClient {
 
     const text = await res.text();
     if (!res.ok) {
-      this.logger.warn(`Daramet All page=${page} failed: ${res.status} ${text.slice(0, 200)}`);
+      this.logger.warn(
+        `Daramet All page=${page} failed: ${res.status} ${text.slice(0, 200)}`,
+      );
       return [];
     }
 

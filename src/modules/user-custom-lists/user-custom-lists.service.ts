@@ -56,8 +56,12 @@ export type PublicUserCustomListDetail = PublicUserCustomListSummary & {
 
 const normalizeName = (name: string) => name.trim().replace(/\s+/g, ' ');
 
-const isListIcon = (value: string | null | undefined): value is UserCustomListIcon =>
-  Boolean(value && (USER_CUSTOM_LIST_ICONS as readonly string[]).includes(value));
+const isListIcon = (
+  value: string | null | undefined,
+): value is UserCustomListIcon =>
+  Boolean(
+    value && (USER_CUSTOM_LIST_ICONS as readonly string[]).includes(value),
+  );
 
 @Injectable()
 export class UserCustomListsService {

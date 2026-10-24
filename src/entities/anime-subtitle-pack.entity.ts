@@ -1,4 +1,10 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Anime } from './anime.entity';
 
 @Entity('subtitle_packs')
@@ -15,7 +21,9 @@ export class AnimeSubtitlePack {
   @Column({ type: 'text', name: 'subtitle_link', nullable: true })
   subtitleLink: string | null;
 
-  @ManyToOne(() => Anime, (anime) => anime.subtitlePacks, { onDelete: 'CASCADE' })
+  @ManyToOne(() => Anime, (anime) => anime.subtitlePacks, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'anime_id' })
   anime: Anime;
 }

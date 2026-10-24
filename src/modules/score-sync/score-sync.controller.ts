@@ -12,14 +12,12 @@ export class ScoreSyncController {
 
   @Get()
   @ApiOperation({
-    summary: 'Score sync overview (eligibility, last runs, active job, year/season filters)',
+    summary:
+      'Score sync overview (eligibility, last runs, active job, year/season filters)',
   })
   @ApiQuery({ name: 'year', required: false })
   @ApiQuery({ name: 'season', required: false })
-  getOverview(
-    @Query('year') year?: string,
-    @Query('season') season?: string,
-  ) {
+  getOverview(@Query('year') year?: string, @Query('season') season?: string) {
     return this.scoreSyncService.getOverview({ year, season });
   }
 
@@ -38,7 +36,9 @@ export class ScoreSyncController {
   }
 
   @Post('cancel')
-  @ApiOperation({ summary: 'Request soft cancel of the running score sync job' })
+  @ApiOperation({
+    summary: 'Request soft cancel of the running score sync job',
+  })
   cancel() {
     return this.scoreSyncService.cancel();
   }

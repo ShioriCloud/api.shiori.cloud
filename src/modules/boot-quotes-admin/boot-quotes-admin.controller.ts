@@ -23,7 +23,9 @@ import { BootQuotesAdminService } from './boot-quotes-admin.service';
 @Controller('boot-quotes-admin')
 @UseGuards(PortalAuthGuard)
 export class BootQuotesAdminController {
-  constructor(private readonly bootQuotesAdminService: BootQuotesAdminService) {}
+  constructor(
+    private readonly bootQuotesAdminService: BootQuotesAdminService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List all boot splash quotes' })

@@ -6,7 +6,8 @@
 const PREMIUM_EMOJI_IDS: Record<string, string> = {
   success: process.env.CUSTOM_EMOJI_SUCCESS?.trim() || '5206607081334906820',
   check: process.env.CUSTOM_EMOJI_CHECK?.trim() || '5206607081334906820',
-  arrowDown: process.env.CUSTOM_EMOJI_ARROWDOWN?.trim() || '5406745015365943482',
+  arrowDown:
+    process.env.CUSTOM_EMOJI_ARROWDOWN?.trim() || '5406745015365943482',
   comet: process.env.CUSTOM_EMOJI_COMET?.trim() || '5224607267797606837',
   pencil: process.env.CUSTOM_EMOJI_PENCIL?.trim() || '5395444784611480792',
   package: process.env.CUSTOM_EMOJI_PACKAGE?.trim() || '5256094480498436162',
@@ -264,7 +265,10 @@ function tokenizeSimpleHtml(html: string): HtmlToken[] {
     }
     const raw = m[0];
     const isClose = raw.startsWith('</');
-    const tag = raw.replace(/^<\/?/, '').replace(/[\s>/].*$/, '').toLowerCase();
+    const tag = raw
+      .replace(/^<\/?/, '')
+      .replace(/[\s>/].*$/, '')
+      .toLowerCase();
     tokens.push(
       isClose
         ? { kind: 'close', tag, raw: `</${tag}>` }
@@ -347,7 +351,9 @@ export const repairHtmlCaption = (htmlCaption: string): string => {
  * bound before custom_emoji was preserved, or captions without entities).
  * Same glyph must only wrap once (heart + donation both use ❤️).
  */
-export const upgradeKnownEmojisToPremiumHtml = (htmlCaption: string): string => {
+export const upgradeKnownEmojisToPremiumHtml = (
+  htmlCaption: string,
+): string => {
   const src = repairTgEmojiHtml(htmlCaption);
   if (!src) return src;
 
@@ -434,7 +440,7 @@ export const upgradeSeasonEpisodePackEmoji = (htmlCaption: string): string => {
 };
 
 /** Always Softsub in channel post template (panel media type is ignored). */
-const videoLabel = (_videoFileType?: string | null) => '[1080p][Softsub]';
+const videoLabel = () => '[1080p][Softsub]';
 
 /**
  * New / updated episode line:

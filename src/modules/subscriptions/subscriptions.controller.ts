@@ -71,7 +71,8 @@ export class SubscriptionsController {
   @Post('episode-download/claim')
   @UseGuards(AppUserAuthGuard)
   @ApiOperation({
-    summary: 'Claim softsub/hardsub download link (requires active subscription)',
+    summary:
+      'Claim softsub/hardsub download link (requires active subscription)',
   })
   claimEpisode(
     @Req() req: AppUserAuthedRequest,
@@ -135,9 +136,7 @@ export class SubscriptionsController {
         throw new UnauthorizedException('invalid daramet webhook secret');
       }
     } else if (!allowDev) {
-      throw new UnauthorizedException(
-        'daramet webhook secret not configured',
-      );
+      throw new UnauthorizedException('daramet webhook secret not configured');
     }
 
     const telegramUserId = String(body.telegram_user_id ?? '').trim();

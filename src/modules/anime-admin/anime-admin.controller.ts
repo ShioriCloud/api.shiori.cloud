@@ -11,7 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
+import {
+  PortalAuthGuard,
+  type PortalAuthedRequest,
+} from '../portal-auth/portal-auth.guard';
 import { PortalFullAdminGuard } from '../portal-auth/portal-full-admin.guard';
 import { AnimeAdminService } from './anime-admin.service';
 
@@ -22,19 +25,28 @@ export class AnimeAdminController {
   constructor(private readonly animeAdminService: AnimeAdminService) {}
 
   @Get('mal/search')
-  @ApiOperation({ summary: 'Search MyAnimeList anime by title via Jikan (admin)' })
+  @ApiOperation({
+    summary: 'Search MyAnimeList anime by title via Jikan (admin)',
+  })
   searchMal(@Query('q') q?: string, @Query('search') search?: string) {
     return this.animeAdminService.searchMal(q ?? search);
   }
 
   @Post('mal/import')
-  @ApiOperation({ summary: 'Import MyAnimeList anime into local catalog (admin)' })
-  importMal(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
+  @ApiOperation({
+    summary: 'Import MyAnimeList anime into local catalog (admin)',
+  })
+  importMal(
+    @Body() body: Record<string, unknown>,
+    @Req() req: PortalAuthedRequest,
+  ) {
     return this.animeAdminService.importFromMal(body, req.portalTelegramUserId);
   }
 
   @Post('mal/fill')
-  @ApiOperation({ summary: 'Preview MAL fields to fill empty local values (admin)' })
+  @ApiOperation({
+    summary: 'Preview MAL fields to fill empty local values (admin)',
+  })
   fillMal(@Body() body: Record<string, unknown>) {
     return this.animeAdminService.fillFromMal(body);
   }
@@ -103,7 +115,10 @@ export class AnimeAdminController {
     @Param('slug') slug: string,
     @Query('excludeAnimeId') excludeAnimeId?: string,
   ) {
-    return this.animeAdminService.checkAnimeSlugAvailability(slug, excludeAnimeId);
+    return this.animeAdminService.checkAnimeSlugAvailability(
+      slug,
+      excludeAnimeId,
+    );
   }
 
   @Get('anime/:id')
@@ -112,7 +127,10 @@ export class AnimeAdminController {
   }
 
   @Post('anime')
-  createAnime(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
+  createAnime(
+    @Body() body: Record<string, unknown>,
+    @Req() req: PortalAuthedRequest,
+  ) {
     return this.animeAdminService.createAnime(body, req.portalTelegramUserId);
   }
 
@@ -122,7 +140,11 @@ export class AnimeAdminController {
     @Body() body: Record<string, unknown>,
     @Req() req: PortalAuthedRequest,
   ) {
-    return this.animeAdminService.updateAnime(id, body, req.portalTelegramUserId);
+    return this.animeAdminService.updateAnime(
+      id,
+      body,
+      req.portalTelegramUserId,
+    );
   }
 
   @Delete('anime/:id')
@@ -134,7 +156,10 @@ export class AnimeAdminController {
   }
 
   @Post('anime/upsert')
-  upsertAnime(@Body() body: Record<string, unknown>, @Req() req: PortalAuthedRequest) {
+  upsertAnime(
+    @Body() body: Record<string, unknown>,
+    @Req() req: PortalAuthedRequest,
+  ) {
     return this.animeAdminService.upsertAnime(body, req.portalTelegramUserId);
   }
 
@@ -150,14 +175,17 @@ export class AnimeAdminController {
 
   @Post('anime/:animeId/channel-draft')
   @ApiOperation({
-    summary: 'Queue channel post draft preview for an episode (delivered by tel-bot)',
+    summary:
+      'Queue channel post draft preview for an episode (delivered by tel-bot)',
   })
   queueChannelDraft(
     @Param('animeId') animeId: string,
     @Body() body: { episode_number?: number; episodeNumber?: number },
     @Req() req: PortalAuthedRequest,
   ) {
-    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    const episodeNumber = Number(
+      body.episode_number ?? body.episodeNumber ?? 0,
+    );
     return this.animeAdminService.queueChannelDraftPreview(
       animeId,
       episodeNumber,
@@ -170,11 +198,17 @@ export class AnimeAdminController {
     @Param('animeId') animeId: string,
     @Body() body: { episodes?: Array<Record<string, unknown>> },
   ) {
-    return this.animeAdminService.insertEpisodesBatch(animeId, body.episodes ?? []);
+    return this.animeAdminService.insertEpisodesBatch(
+      animeId,
+      body.episodes ?? [],
+    );
   }
 
   @Put('episodes/:id')
-  updateEpisode(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  updateEpisode(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.animeAdminService.updateEpisode(id, body);
   }
 
@@ -190,7 +224,11 @@ export class AnimeAdminController {
     @Body() body: Record<string, unknown>,
     @Req() req: PortalAuthedRequest,
   ) {
-    await this.animeAdminService.updateEpisodePack(animeId, body, req.portalTelegramUserId);
+    await this.animeAdminService.updateEpisodePack(
+      animeId,
+      body,
+      req.portalTelegramUserId,
+    );
     return { ok: true };
   }
 
@@ -267,7 +305,10 @@ export class AnimeAdminController {
     @Param('animeId') animeId: string,
     @Body() body: { studio_slugs?: string[] },
   ) {
-    await this.animeAdminService.replaceAnimeStudios(animeId, body.studio_slugs ?? []);
+    await this.animeAdminService.replaceAnimeStudios(
+      animeId,
+      body.studio_slugs ?? [],
+    );
     return { ok: true };
   }
 
@@ -294,7 +335,10 @@ export class AnimeAdminController {
   }
 
   @Put('translators/:id')
-  updateTranslator(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  updateTranslator(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.animeAdminService.upsertTranslator({ ...body, id });
   }
 
@@ -320,11 +364,17 @@ export class AnimeAdminController {
     @Param('animeId') animeId: string,
     @Body() body: { subtitles?: Array<Record<string, unknown>> },
   ) {
-    return this.animeAdminService.insertSubtitlesBatch(animeId, body.subtitles ?? []);
+    return this.animeAdminService.insertSubtitlesBatch(
+      animeId,
+      body.subtitles ?? [],
+    );
   }
 
   @Put('subtitles/:id')
-  updateSubtitle(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  updateSubtitle(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.animeAdminService.updateSubtitle(id, body);
   }
 
@@ -345,7 +395,10 @@ export class AnimeAdminController {
   }
 
   @Put('subtitle-packs/:id')
-  updateSubtitlePack(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  updateSubtitlePack(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.animeAdminService.updateSubtitlePack(id, body);
   }
 
@@ -366,7 +419,10 @@ export class AnimeAdminController {
   }
 
   @Put('translator-links/:id')
-  async updateTranslatorLink(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+  async updateTranslatorLink(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     await this.animeAdminService.updateTranslatorLink(id, body);
     return { ok: true };
   }
@@ -383,7 +439,10 @@ export class AnimeAdminController {
   }
 
   @Put('anime/:animeId/series')
-  saveSeries(@Param('animeId') animeId: string, @Body() body: Record<string, unknown>) {
+  saveSeries(
+    @Param('animeId') animeId: string,
+    @Body() body: Record<string, unknown>,
+  ) {
     return this.animeAdminService.saveSeries(animeId, body);
   }
 }

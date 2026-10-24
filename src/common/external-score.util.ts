@@ -54,7 +54,10 @@ const parsePublicDnsServers = (): string[] => {
     process.env.ANILIST_DNS_SERVERS ?? process.env.EXTERNAL_SCORES_DNS_SERVERS
   )?.trim();
   if (raw) {
-    const servers = raw.split(',').map((entry) => entry.trim()).filter(Boolean);
+    const servers = raw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
     if (servers.length > 0) return servers;
   }
   return ['8.8.8.8', '1.1.1.1'];
@@ -63,9 +66,15 @@ const parsePublicDnsServers = (): string[] => {
 const publicDnsResolver = new dns.Resolver();
 publicDnsResolver.setServers(parsePublicDnsServers());
 
-const resolveFamilyViaPublicDns = (hostname: string, family: 4 | 6): Promise<string> =>
+const resolveFamilyViaPublicDns = (
+  hostname: string,
+  family: 4 | 6,
+): Promise<string> =>
   new Promise((resolve, reject) => {
-    const onResolved = (error: NodeJS.ErrnoException | null, addresses?: string[]) => {
+    const onResolved = (
+      error: NodeJS.ErrnoException | null,
+      addresses?: string[],
+    ) => {
       if (error) {
         reject(error);
         return;
@@ -87,7 +96,10 @@ const resolveFamilyViaPublicDns = (hostname: string, family: 4 | 6): Promise<str
     }
   });
 
-const tryResolveFamily = async (hostname: string, family: 4 | 6): Promise<string | null> => {
+const tryResolveFamily = async (
+  hostname: string,
+  family: 4 | 6,
+): Promise<string | null> => {
   try {
     const { address } = await dns.promises.lookup(hostname, { family });
     if (!isPrivateExternalIp(address)) return address;
@@ -108,7 +120,9 @@ const tryResolveFamily = async (hostname: string, family: 4 | 6): Promise<string
  * graphql.anilist.co is AAAA-only (or IPv4 is filtered). Node Happy Eyeballs
  * can try both when lookup is called with `all: true`.
  */
-const resolveExternalHostAddresses = async (hostname: string): Promise<ResolvedHost[]> => {
+const resolveExternalHostAddresses = async (
+  hostname: string,
+): Promise<ResolvedHost[]> => {
   const [ipv4, ipv6] = await Promise.all([
     tryResolveFamily(hostname, 4),
     tryResolveFamily(hostname, 6),
@@ -122,14 +136,19 @@ const resolveExternalHostAddresses = async (hostname: string): Promise<ResolvedH
   return addresses;
 };
 
-const externalHostLookup: https.AgentOptions['lookup'] = (hostname, options, callback) => {
+const externalHostLookup: https.AgentOptions['lookup'] = (
+  hostname,
+  options,
+  callback,
+) => {
   resolveExternalHostAddresses(hostname)
     .then((addresses) => {
       if (options?.all) {
         callback(null, addresses);
         return;
       }
-      const preferred = addresses.find((entry) => entry.family === 4) ?? addresses[0];
+      const preferred =
+        addresses.find((entry) => entry.family === 4) ?? addresses[0];
       callback(null, preferred.address, preferred.family);
     })
     .catch((error) => {
@@ -180,10 +199,18 @@ export const explainExternalConnectivityFailure = (
   const t = technical.toLowerCase();
   const host = hostname || 'external API';
 
-  if (t.includes('request timed out') || t.includes('etimedout') || t.includes('timeout')) {
+  if (
+    t.includes('request timed out') ||
+    t.includes('etimedout') ||
+    t.includes('timeout')
+  ) {
     return `${technical} — اتصال به ${host} تمام شد (تایم‌اوت). احتمالاً از IP سرور به Jikan/AniList دسترسی نیست یا فایروال مسدود است.`;
   }
-  if (t.includes('enotfound') || t.includes('no public ipv') || t.includes('getaddrinfo')) {
+  if (
+    t.includes('enotfound') ||
+    t.includes('no public ipv') ||
+    t.includes('getaddrinfo')
+  ) {
     return `${technical} — نام ${host} resolve نشد یا DNS خصوصی/فیلترشده برگردانده. ANILIST_DNS_SERVERS را روی 8.8.8.8,1.1.1.1 بگذارید.`;
   }
   if (t.includes('econnrefused') || t.includes('connection refused')) {
@@ -199,7 +226,10 @@ export const explainExternalConnectivityFailure = (
   return `${technical} — خطای شبکه/API هنگام تماس با ${host}.`;
 };
 
-export const formatExternalRequestError = (url: string, error?: string): string => {
+export const formatExternalRequestError = (
+  url: string,
+  error?: string,
+): string => {
   const fallback = error?.trim() || 'Request failed';
   let hostname = '';
   try {
@@ -211,7 +241,10 @@ export const formatExternalRequestError = (url: string, error?: string): string 
   return explainExternalConnectivityFailure(hostname, technical);
 };
 
-export const isExternalTransportFailure = (message: string, status = 0): boolean => {
+export const isExternalTransportFailure = (
+  message: string,
+  status = 0,
+): boolean => {
   if (status === 0) return true;
   const t = message.toLowerCase();
   return /timed out|etimedout|econnrefused|enotfound|econnreset|socket|no public ipv|getaddrinfo|unreachable|network/i.test(
@@ -346,12 +379,15 @@ const requestJsonWithRetry = async (
   const result = await requestJson(url, init);
 
   if (result.ok) return result;
-  if (init?.signal?.aborted || result.error === 'Request aborted') return result;
+  if (init?.signal?.aborted || result.error === 'Request aborted')
+    return result;
   if (attempt >= 2) return result;
   if (result.status > 0 && !shouldRetryStatus(result.status)) return result;
   if (result.status === 0 && attempt >= 1) return result;
 
-  await sleep(result.status === 429 ? 1_000 * (attempt + 1) : 750 * (attempt + 1));
+  await sleep(
+    result.status === 429 ? 1_000 * (attempt + 1) : 750 * (attempt + 1),
+  );
   return requestJsonWithRetry(url, init, attempt + 1);
 };
 

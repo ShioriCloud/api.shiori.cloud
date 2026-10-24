@@ -93,7 +93,11 @@ export class UserCustomListsController {
     @Param('id') id: string,
     @Body() body: AddUserCustomListItemDto,
   ) {
-    return this.customListsService.addItem(String(req.telegramUserId), id, body);
+    return this.customListsService.addItem(
+      String(req.telegramUserId),
+      id,
+      body,
+    );
   }
 
   @Put(':id/items/order')

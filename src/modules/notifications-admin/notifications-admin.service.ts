@@ -65,16 +65,14 @@ const escapeHtml = (value: string) =>
 
 /** Same channel-address marker as TheShioriSub captions (override via CUSTOM_EMOJI_CHAT). */
 const channelAddressEmoji = (): string => {
-  const id =
-    process.env.CUSTOM_EMOJI_CHAT?.trim() || '5215334566549540768';
+  const id = process.env.CUSTOM_EMOJI_CHAT?.trim() || '5215334566549540768';
   return `<tg-emoji emoji-id="${id}">💬</tg-emoji>`;
 };
 
 const buildEpisodeReleaseInboxMessage = (
   episodeNumber: number,
   animeTitle: string,
-): string =>
-  `قسمت ${episodeNumber} انیمه ${animeTitle} آماده‌ی دانلوده.`;
+): string => `قسمت ${episodeNumber} انیمه ${animeTitle} آماده‌ی دانلوده.`;
 
 const buildEpisodeReleaseTelegramMessage = (
   episodeNumber: number,
@@ -107,9 +105,7 @@ export class NotificationsAdminService {
     private readonly config: ConfigService,
   ) {}
 
-  async listCampaigns(
-    query: ListNotificationCampaignsQueryDto,
-  ): Promise<{
+  async listCampaigns(query: ListNotificationCampaignsQueryDto): Promise<{
     items: NotificationCampaignRow[];
     has_more: boolean;
     next_before: string | null;
@@ -147,7 +143,7 @@ export class NotificationsAdminService {
       items,
       has_more: hasMore,
       next_before: hasMore
-        ? campaigns[campaigns.length - 1].createdAt?.toISOString?.() ?? null
+        ? (campaigns[campaigns.length - 1].createdAt?.toISOString?.() ?? null)
         : null,
     };
   }
@@ -210,11 +206,7 @@ export class NotificationsAdminService {
     // Reminder holders ∩ channel prefs. Skip users with both channels off.
     const reminderRows = await this.remindersRepo
       .createQueryBuilder('r')
-      .innerJoin(
-        TelegramUser,
-        'u',
-        'u.telegram_user_id = r.telegram_user_id',
-      )
+      .innerJoin(TelegramUser, 'u', 'u.telegram_user_id = r.telegram_user_id')
       .where('r.anime_id = :animeId', { animeId: dto.animeId })
       .select('r.telegram_user_id', 'telegram_user_id')
       .addSelect('u.notify_new_episode', 'notify_new_episode')
@@ -285,9 +277,7 @@ export class NotificationsAdminService {
     if (dto.sendTelegram !== false && telegramUserIds.length > 0) {
       const miniAppBaseUrl = this.resolveMiniAppBaseUrl(dto.miniAppBaseUrl);
       const webAppUrl =
-        miniAppBaseUrl.length > 0
-          ? `${miniAppBaseUrl}${href}`
-          : null;
+        miniAppBaseUrl.length > 0 ? `${miniAppBaseUrl}${href}` : null;
 
       const delivered = await this.deliverTelegramDms({
         campaignId: campaign.id,
@@ -337,7 +327,7 @@ export class NotificationsAdminService {
       parseMode: opts.parseMode,
     });
 
-    let sent = result.sent;
+    const sent = result.sent;
     const errors = [...result.errors];
 
     if (sent > 0) {
@@ -370,8 +360,7 @@ export class NotificationsAdminService {
       );
       // Queue all remaining failures when network is broken; otherwise only
       // queue when nothing was sent directly (full outage / missing token).
-      const shouldQueue =
-        looksLikeNetwork || sent === 0;
+      const shouldQueue = looksLikeNetwork || sent === 0;
 
       if (shouldQueue) {
         queued = await this.telegramDmOutbox.enqueueMany(
@@ -435,7 +424,9 @@ export class NotificationsAdminService {
 
     if (audience === 'airing_reminder') {
       if (!dto.animeId) {
-        throw new BadRequestException('animeId required for airing_reminder audience');
+        throw new BadRequestException(
+          'animeId required for airing_reminder audience',
+        );
       }
       const rows = await this.remindersRepo.find({
         where: { animeId: dto.animeId },
@@ -448,7 +439,10 @@ export class NotificationsAdminService {
       }
       const rows = await this.dataSource
         .getRepository(UserAnimeListEntry)
-        .find({ where: { animeId: dto.animeId }, select: { telegramUserId: true } });
+        .find({
+          where: { animeId: dto.animeId },
+          select: { telegramUserId: true },
+        });
       recipientIds = [...new Set(rows.map((r) => r.telegramUserId))];
     } else {
       // all users
@@ -517,9 +511,7 @@ export class NotificationsAdminService {
         });
         telegramSent = delivered.sent;
         telegramQueued = delivered.queued;
-        telegramErrors = delivered.errors.length
-          ? delivered.errors
-          : undefined;
+        telegramErrors = delivered.errors.length ? delivered.errors : undefined;
 
         return {
           ok: true,

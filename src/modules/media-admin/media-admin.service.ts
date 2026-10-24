@@ -1,8 +1,5 @@
 import { randomUUID } from 'crypto';
-import {
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MediaAsset } from '../../entities';
@@ -82,7 +79,9 @@ export class MediaAdminService {
         mimetype: query.mimetype.trim(),
       });
     } else {
-      qb.andWhere('asset.mimetype ILIKE :imagePrefix', { imagePrefix: 'image/%' });
+      qb.andWhere('asset.mimetype ILIKE :imagePrefix', {
+        imagePrefix: 'image/%',
+      });
     }
 
     qb.orderBy(sortColumnMap[sortBy] ?? 'asset.createdAt', sortOrder);
@@ -173,7 +172,9 @@ export class MediaAdminService {
     const asset = this.mediaRepo.create({
       id,
       fileName: saved.fileName,
-      originalName: trimmedName ? saved.fileName : file.originalname?.trim() || null,
+      originalName: trimmedName
+        ? saved.fileName
+        : file.originalname?.trim() || null,
       mimetype: saved.mimetype,
       url: this.storage.getPublicUrl(id),
       storagePath: saved.storagePath,

@@ -12,7 +12,10 @@ import { SponsorCampaign } from './sponsor-campaign.entity';
 
 @Entity('sponsor_join_events')
 @Unique(['campaignId', 'telegramUserId'])
-@Index('idx_sponsor_join_events_campaign_verified', ['campaignId', 'verifiedAt'])
+@Index('idx_sponsor_join_events_campaign_verified', [
+  'campaignId',
+  'verifiedAt',
+])
 export class SponsorJoinEvent {
   @PrimaryGeneratedColumn('uuid')
   id: string;

@@ -24,7 +24,9 @@ export class PortalAuthGuard implements CanActivate {
     >();
 
     const rawToken = req.headers['x-portal-token'];
-    const token = String(Array.isArray(rawToken) ? rawToken[0] : rawToken ?? '').trim();
+    const token = String(
+      Array.isArray(rawToken) ? rawToken[0] : (rawToken ?? ''),
+    ).trim();
 
     const session = await this.portalAuthService.verifySession(token);
     if (!session) {

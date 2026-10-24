@@ -72,7 +72,8 @@ export class BootQuotesAdminService {
     if (!row) throw new NotFoundException('Boot quote not found');
 
     if (body.text !== undefined) row.text = body.text.trim();
-    if (body.attribution !== undefined) row.attribution = body.attribution.trim();
+    if (body.attribution !== undefined)
+      row.attribution = body.attribution.trim();
     if (body.is_active !== undefined) row.isActive = body.is_active;
     row.imageUrl = null;
 
@@ -80,7 +81,9 @@ export class BootQuotesAdminService {
     return this.toAdminItem(saved);
   }
 
-  async reorderQuotes(body: ReorderBootQuotesDto): Promise<BootQuoteAdminItem[]> {
+  async reorderQuotes(
+    body: ReorderBootQuotesDto,
+  ): Promise<BootQuoteAdminItem[]> {
     const ids = body.ordered_ids;
     const rows = await this.quoteRepo.find();
 
@@ -109,7 +112,10 @@ export class BootQuotesAdminService {
     return this.listQuotes();
   }
 
-  async toggleQuote(id: string, isActive: boolean): Promise<BootQuoteAdminItem> {
+  async toggleQuote(
+    id: string,
+    isActive: boolean,
+  ): Promise<BootQuoteAdminItem> {
     const row = await this.quoteRepo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Boot quote not found');
     row.isActive = isActive;

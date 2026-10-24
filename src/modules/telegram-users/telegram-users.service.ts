@@ -86,7 +86,8 @@ export class TelegramUsersService {
     if (input.last_name?.trim()) existing.lastName = input.last_name.trim();
     const username = cleanUsername(input.username);
     if (username) existing.username = username;
-    if (input.language_code?.trim()) existing.languageCode = input.language_code.trim();
+    if (input.language_code?.trim())
+      existing.languageCode = input.language_code.trim();
     existing.isPremium = Boolean(input.is_premium);
     await this.usersRepo.save(existing);
     await this.touchLastSeen(userId);
@@ -167,7 +168,8 @@ export class TelegramUsersService {
       if (dto.last_name?.trim()) existing.lastName = dto.last_name.trim();
       const username = cleanUsername(dto.username);
       if (username) existing.username = username;
-      if (dto.language_code?.trim()) existing.languageCode = dto.language_code.trim();
+      if (dto.language_code?.trim())
+        existing.languageCode = dto.language_code.trim();
       if (dto.photo_url?.trim()) existing.photoUrl = dto.photo_url.trim();
       existing.isPremium = Boolean(dto.is_premium);
       await this.usersRepo.save(existing);

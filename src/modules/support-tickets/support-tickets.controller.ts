@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   AppUserAuthGuard,
@@ -30,8 +38,14 @@ export class SupportTicketsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a support ticket' })
-  create(@Req() req: AppUserAuthedRequest, @Body() body: CreateSupportTicketDto) {
-    return this.supportTicketsService.createMine(String(req.telegramUserId), body);
+  create(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: CreateSupportTicketDto,
+  ) {
+    return this.supportTicketsService.createMine(
+      String(req.telegramUserId),
+      body,
+    );
   }
 
   @Post(':id/messages')

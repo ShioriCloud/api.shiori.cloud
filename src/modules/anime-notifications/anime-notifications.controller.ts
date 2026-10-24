@@ -26,7 +26,9 @@ import { AnimeNotificationsService } from './anime-notifications.service';
 @Controller('anime-notifications')
 @UseGuards(AppUserAuthGuard)
 export class AnimeNotificationsController {
-  constructor(private readonly notificationsService: AnimeNotificationsService) {}
+  constructor(
+    private readonly notificationsService: AnimeNotificationsService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Inbox notifications for current user' })
@@ -83,7 +85,8 @@ export class AnimeNotificationsController {
 
   @Post('airing-reminders/sync')
   @ApiOperation({
-    summary: 'Merge local airing-reminder anime ids into server (one-shot migrate)',
+    summary:
+      'Merge local airing-reminder anime ids into server (one-shot migrate)',
   })
   syncAiringReminders(
     @Req() req: AppUserAuthedRequest,

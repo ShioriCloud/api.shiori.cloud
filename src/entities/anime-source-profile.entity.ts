@@ -27,10 +27,18 @@ export class AnimeSourceProfile {
   @Column({ type: 'text', name: 'streaming_platform', nullable: true })
   streamingPlatform: string | null;
 
-  @Column({ type: 'jsonb', name: 'preferred_groups', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'preferred_groups',
+    default: () => "'[]'::jsonb",
+  })
   preferredGroups: string[];
 
-  @Column({ type: 'jsonb', name: 'fallback_groups', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'fallback_groups',
+    default: () => "'[]'::jsonb",
+  })
   fallbackGroups: string[];
 
   @Column({ type: 'text', name: 'preferred_resolution', default: '1080p' })
@@ -45,13 +53,25 @@ export class AnimeSourceProfile {
   @Column({ type: 'bigint', name: 'max_file_size_bytes', nullable: true })
   maxFileSizeBytes: string | null;
 
-  @Column({ type: 'jsonb', name: 'allowed_providers', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'allowed_providers',
+    default: () => "'[]'::jsonb",
+  })
   allowedProviders: string[];
 
-  @Column({ type: 'jsonb', name: 'search_patterns', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'search_patterns',
+    default: () => "'[]'::jsonb",
+  })
   searchPatterns: string[];
 
-  @Column({ type: 'jsonb', name: 'excluded_keywords', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'excluded_keywords',
+    default: () => "'[]'::jsonb",
+  })
   excludedKeywords: string[];
 
   /** auto | prefer_group | always_manual */

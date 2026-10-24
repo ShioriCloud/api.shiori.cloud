@@ -110,16 +110,12 @@ export const normalizeConfig = (
   }
 
   return {
-    anime_id:
-      typeof config.anime_id === 'string' ? config.anime_id.trim() : '',
+    anime_id: typeof config.anime_id === 'string' ? config.anime_id.trim() : '',
     image_url:
       typeof config.image_url === 'string' ? config.image_url.trim() : '',
-    link_url:
-      typeof config.link_url === 'string' ? config.link_url.trim() : '',
+    link_url: typeof config.link_url === 'string' ? config.link_url.trim() : '',
     button_label:
-      typeof config.button_label === 'string'
-        ? config.button_label.trim()
-        : '',
+      typeof config.button_label === 'string' ? config.button_label.trim() : '',
     open_in_new_tab: config.open_in_new_tab === true,
   } satisfies CtaCardConfig;
 };

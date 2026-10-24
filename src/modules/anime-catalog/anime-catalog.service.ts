@@ -285,10 +285,9 @@ export class AnimeCatalogService {
 
   /** Lightweight cards for a set of anime ids or slugs (My List / resolve). Max 100. */
   async listByIds(ids: string[]): Promise<AnimeCardDto[]> {
-    const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))].slice(
-      0,
-      100,
-    );
+    const unique = [
+      ...new Set(ids.map((id) => String(id).trim()).filter(Boolean)),
+    ].slice(0, 100);
     if (unique.length === 0) return [];
 
     const uuidIds = unique.filter((id) => isUuid(id));
@@ -374,7 +373,9 @@ export class AnimeCatalogService {
    */
   async listNewEpisodes(limit = 20): Promise<AnimeCardDto[]> {
     const take =
-      Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 50) : 20;
+      Number.isFinite(limit) && limit > 0
+        ? Math.min(Math.floor(limit), 50)
+        : 20;
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     const rows = await this.animeRepo
@@ -429,10 +430,10 @@ export class AnimeCatalogService {
     const genreSlugs = [
       ...new Set(
         [
-          ...(params.genreSlugs ?? []).map((s) => String(s).trim().toLowerCase()),
-          params.genreSlug
-            ? String(params.genreSlug).trim().toLowerCase()
-            : '',
+          ...(params.genreSlugs ?? []).map((s) =>
+            String(s).trim().toLowerCase(),
+          ),
+          params.genreSlug ? String(params.genreSlug).trim().toLowerCase() : '',
         ].filter(Boolean),
       ),
     ];
@@ -451,8 +452,16 @@ export class AnimeCatalogService {
 
     genreSlugs.forEach((slug, index) => {
       qb = qb
-        .innerJoin('anime_genres', `ag_f_${index}`, `ag_f_${index}.anime_id = anime.id`)
-        .innerJoin('genres', `g_f_${index}`, `g_f_${index}.id = ag_f_${index}.genre_id`)
+        .innerJoin(
+          'anime_genres',
+          `ag_f_${index}`,
+          `ag_f_${index}.anime_id = anime.id`,
+        )
+        .innerJoin(
+          'genres',
+          `g_f_${index}`,
+          `g_f_${index}.id = ag_f_${index}.genre_id`,
+        )
         .andWhere(`g_f_${index}.slug = :genreSlug_${index}`, {
           [`genreSlug_${index}`]: slug,
         });
@@ -725,8 +734,9 @@ export class AnimeCatalogService {
       })),
       translators: await Promise.all(
         translatorLinks.map(async (l) => {
-          const linkedTelegramUserId =
-            await this.resolveLinkedTelegramUserId(l.translator);
+          const linkedTelegramUserId = await this.resolveLinkedTelegramUserId(
+            l.translator,
+          );
           return {
             id: l.id,
             anime_id: l.animeId,
@@ -955,7 +965,9 @@ export class AnimeCatalogService {
   }
 
   private formatAiringTimeFa(hhmm: string): string {
-    const match = String(hhmm).trim().match(/^(\d{1,2}):(\d{2})$/);
+    const match = String(hhmm)
+      .trim()
+      .match(/^(\d{1,2}):(\d{2})$/);
     if (!match) return hhmm;
     const hour = Number(match[1]);
     const minute = Number(match[2]);
@@ -1042,7 +1054,9 @@ export class AnimeCatalogService {
           episode: String(ep.episode ?? ''),
           image: coverImage?.large ?? '',
           genres: genresRaw
-            .filter((g): g is string => typeof g === 'string' && g.trim().length > 0)
+            .filter(
+              (g): g is string => typeof g === 'string' && g.trim().length > 0,
+            )
             .map((g) => ({ slug: g.trim().toLowerCase(), name_en: g })),
           localId: null,
           airing_at: ep.airingAt,
@@ -1050,7 +1064,9 @@ export class AnimeCatalogService {
       }
 
       for (const day of Object.keys(schedule)) {
-        schedule[day].sort((a, b) => String(a.time).localeCompare(String(b.time)));
+        schedule[day].sort((a, b) =>
+          String(a.time).localeCompare(String(b.time)),
+        );
       }
 
       const anilistIds = Object.values(schedule)
@@ -1094,10 +1110,17 @@ export class AnimeCatalogService {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Airing schedule upstream failed: ${message}`);
       if (staleCache) {
-        this.logger.warn('Serving stale airing schedule cache after upstream failure');
+        this.logger.warn(
+          'Serving stale airing schedule cache after upstream failure',
+        );
         return this.prunePastAiringEntries(staleCache.payload, now);
       }
-      return { schedule: emptySchedule, currentSeason, currentYear, degraded: true };
+      return {
+        schedule: emptySchedule,
+        currentSeason,
+        currentYear,
+        degraded: true,
+      };
     }
   }
 
@@ -1207,7 +1230,9 @@ export class AnimeCatalogService {
       jalaliParts.find((p) => p.type === 'month')?.value,
     );
     const gYear = Number(gregorianParts.find((p) => p.type === 'year')?.value);
-    const gMonth = Number(gregorianParts.find((p) => p.type === 'month')?.value);
+    const gMonth = Number(
+      gregorianParts.find((p) => p.type === 'month')?.value,
+    );
 
     const jm = Number.isFinite(jalaliMonth) ? jalaliMonth : 1;
     const gy = Number.isFinite(gYear) ? gYear : new Date().getFullYear();

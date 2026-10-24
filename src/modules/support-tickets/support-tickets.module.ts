@@ -11,7 +11,11 @@ import { SupportTicketsService } from './support-tickets.service';
 @Module({
   imports: [
     PortalAuthModule,
-    TypeOrmModule.forFeature([SupportTicket, SupportTicketMessage, TelegramUser]),
+    TypeOrmModule.forFeature([
+      SupportTicket,
+      SupportTicketMessage,
+      TelegramUser,
+    ]),
   ],
   controllers: [SupportTicketsController, SupportTicketsAdminController],
   providers: [SupportTicketsService],

@@ -42,7 +42,11 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'portal_login_enabled', default: true })
   portalLoginEnabled: boolean;
 
-  @Column({ type: 'timestamptz', name: 'first_seen_at', default: () => 'now()' })
+  @Column({
+    type: 'timestamptz',
+    name: 'first_seen_at',
+    default: () => 'now()',
+  })
   firstSeenAt: Date;
 
   @Column({ type: 'timestamptz', name: 'last_seen_at', default: () => 'now()' })
@@ -86,7 +90,11 @@ export class TelegramUser {
   downloadTokenBalance: number;
 
   /** Monthly subscription end; active while expires_at > now(). */
-  @Column({ type: 'timestamptz', name: 'subscription_expires_at', nullable: true })
+  @Column({
+    type: 'timestamptz',
+    name: 'subscription_expires_at',
+    nullable: true,
+  })
   subscriptionExpiresAt: Date | null;
 
   /** When true, mini-app + session auth are rejected. */

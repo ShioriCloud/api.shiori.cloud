@@ -5,7 +5,16 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
-import { BotFile, BotFileDownloadEvent, FilePack, FilePackItem, Anime, AnimeEpisode, AnimeSubtitle, AnimeSubtitlePack } from '../../entities';
+import {
+  BotFile,
+  BotFileDownloadEvent,
+  FilePack,
+  FilePackItem,
+  Anime,
+  AnimeEpisode,
+  AnimeSubtitle,
+  AnimeSubtitlePack,
+} from '../../entities';
 import { isUuid } from '../../common/uuid.util';
 import {
   AddFilePackItemDto,
@@ -230,7 +239,9 @@ export type BotFileReferences = {
   total: number;
 };
 
-const parseTelegramFileKeyFromLink = (link: string | null | undefined): string | null => {
+const parseTelegramFileKeyFromLink = (
+  link: string | null | undefined,
+): string | null => {
   const raw = String(link ?? '').trim();
   if (!raw) return null;
 
@@ -252,7 +263,9 @@ const parseTelegramFileKeyFromLink = (link: string | null | undefined): string |
   }
 };
 
-const parseTelegramPackSlugFromLink = (link: string | null | undefined): string | null => {
+const parseTelegramPackSlugFromLink = (
+  link: string | null | undefined,
+): string | null => {
   const raw = String(link ?? '').trim();
   if (!raw) return null;
 
@@ -284,7 +297,9 @@ const splitFileSearchTokens = (query?: string): string[] =>
 const KNOWN_ANIME_SEASONS = new Set(['WINTER', 'SPRING', 'SUMMER', 'FALL']);
 
 const normalizeAnimeSeason = (raw: unknown): string | null => {
-  const key = String(raw ?? '').trim().toUpperCase();
+  const key = String(raw ?? '')
+    .trim()
+    .toUpperCase();
   return KNOWN_ANIME_SEASONS.has(key) ? key : null;
 };
 
@@ -348,17 +363,26 @@ export class FilesAdminService {
     private readonly animeRepo: Repository<Anime>,
   ) {}
 
-  private referencedFileKeysCache: { keys: Set<string>; expiresAt: number } | null = null;
+  private referencedFileKeysCache: {
+    keys: Set<string>;
+    expiresAt: number;
+  } | null = null;
 
   private animeDownloadIndexCache: {
-    baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[];
+    baseRows: Omit<
+      AnimeDownloadStatRow,
+      'downloads_last_7d' | 'downloads_last_30d'
+    >[];
     keysByAnimeId: Map<string, string[]>;
     searchBlobByAnimeId: Map<string, string>;
     expiresAt: number;
   } | null = null;
 
   private async hydrateAnimeDownloadPeriodStats(
-    baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[],
+    baseRows: Omit<
+      AnimeDownloadStatRow,
+      'downloads_last_7d' | 'downloads_last_30d'
+    >[],
     keysByAnimeId: Map<string, string[]>,
   ): Promise<AnimeDownloadStatRow[]> {
     const eventByKey = await this.loadFileKeyEventPeriodCounts();
@@ -382,7 +406,10 @@ export class FilesAdminService {
 
   private async getReferencedFileKeysSet(): Promise<Set<string>> {
     const now = Date.now();
-    if (this.referencedFileKeysCache && this.referencedFileKeysCache.expiresAt > now) {
+    if (
+      this.referencedFileKeysCache &&
+      this.referencedFileKeysCache.expiresAt > now
+    ) {
       return this.referencedFileKeysCache.keys;
     }
 
@@ -392,39 +419,44 @@ export class FilesAdminService {
       if (parsed) keys.add(parsed);
     };
 
-    const [episodeRows, subtitleRows, subtitlePackRows, animeRows, packItemRows] =
-      await Promise.all([
-        this.episodeRepo
-          .createQueryBuilder('e')
-          .select('e.downloadLink', 'downloadLink')
-          .where('e.downloadLink IS NOT NULL')
-          .andWhere("e.downloadLink <> ''")
-          .getRawMany<{ downloadLink: string }>(),
-        this.subtitleRepo
-          .createQueryBuilder('s')
-          .select('s.subtitleLink', 'subtitleLink')
-          .where('s.subtitleLink IS NOT NULL')
-          .andWhere("s.subtitleLink <> ''")
-          .getRawMany<{ subtitleLink: string }>(),
-        this.subtitlePackRepo
-          .createQueryBuilder('sp')
-          .select('sp.subtitleLink', 'subtitleLink')
-          .where('sp.subtitleLink IS NOT NULL')
-          .andWhere("sp.subtitleLink <> ''")
-          .getRawMany<{ subtitleLink: string }>(),
-        this.animeRepo
-          .createQueryBuilder('a')
-          .select('a.episodePackLink', 'episodePackLink')
-          .where('a.episodePackLink IS NOT NULL')
-          .andWhere("a.episodePackLink <> ''")
-          .getRawMany<{ episodePackLink: string }>(),
-        this.packItemsRepo
-          .createQueryBuilder('fpi')
-          .select('fpi.fileKey', 'fileKey')
-          .where('fpi.fileKey IS NOT NULL')
-          .andWhere("fpi.fileKey <> ''")
-          .getRawMany<{ fileKey: string }>(),
-      ]);
+    const [
+      episodeRows,
+      subtitleRows,
+      subtitlePackRows,
+      animeRows,
+      packItemRows,
+    ] = await Promise.all([
+      this.episodeRepo
+        .createQueryBuilder('e')
+        .select('e.downloadLink', 'downloadLink')
+        .where('e.downloadLink IS NOT NULL')
+        .andWhere("e.downloadLink <> ''")
+        .getRawMany<{ downloadLink: string }>(),
+      this.subtitleRepo
+        .createQueryBuilder('s')
+        .select('s.subtitleLink', 'subtitleLink')
+        .where('s.subtitleLink IS NOT NULL')
+        .andWhere("s.subtitleLink <> ''")
+        .getRawMany<{ subtitleLink: string }>(),
+      this.subtitlePackRepo
+        .createQueryBuilder('sp')
+        .select('sp.subtitleLink', 'subtitleLink')
+        .where('sp.subtitleLink IS NOT NULL')
+        .andWhere("sp.subtitleLink <> ''")
+        .getRawMany<{ subtitleLink: string }>(),
+      this.animeRepo
+        .createQueryBuilder('a')
+        .select('a.episodePackLink', 'episodePackLink')
+        .where('a.episodePackLink IS NOT NULL')
+        .andWhere("a.episodePackLink <> ''")
+        .getRawMany<{ episodePackLink: string }>(),
+      this.packItemsRepo
+        .createQueryBuilder('fpi')
+        .select('fpi.fileKey', 'fileKey')
+        .where('fpi.fileKey IS NOT NULL')
+        .andWhere("fpi.fileKey <> ''")
+        .getRawMany<{ fileKey: string }>(),
+    ]);
 
     for (const row of episodeRows) absorbLink(row.downloadLink);
     for (const row of subtitleRows) absorbLink(row.subtitleLink);
@@ -466,7 +498,9 @@ export class FilesAdminService {
       if (keys.size === 0) {
         qb.andWhere('1 = 0');
       } else {
-        qb.andWhere('f.key IN (:...referencedKeys)', { referencedKeys: [...keys] });
+        qb.andWhere('f.key IN (:...referencedKeys)', {
+          referencedKeys: [...keys],
+        });
       }
     }
     if (query.referencedZeroDownloads) {
@@ -475,22 +509,28 @@ export class FilesAdminService {
       if (keys.size === 0) {
         qb.andWhere('1 = 0');
       } else {
-        qb.andWhere('f.key IN (:...referencedKeys)', { referencedKeys: [...keys] });
+        qb.andWhere('f.key IN (:...referencedKeys)', {
+          referencedKeys: [...keys],
+        });
       }
     }
     this.applyFileSearch(qb, query.search);
   }
 
-  private needsReferencedKeysForDownloadFilters(query: ListFilesStatsQueryDto): boolean {
+  private needsReferencedKeysForDownloadFilters(
+    query: ListFilesStatsQueryDto,
+  ): boolean {
     return Boolean(
       query.orphanOnly ||
-        query.orphanWithDownloads ||
-        query.inactiveReferenced ||
-        query.referencedZeroDownloads,
+      query.orphanWithDownloads ||
+      query.inactiveReferenced ||
+      query.referencedZeroDownloads,
     );
   }
 
-  private async loadFileKeyEventPeriodCounts(): Promise<Map<string, FileKeyEventPeriodCounts>> {
+  private async loadFileKeyEventPeriodCounts(): Promise<
+    Map<string, FileKeyEventPeriodCounts>
+  > {
     const rows = await this.downloadEventsRepo
       .createQueryBuilder('e')
       .select('e.fileKey', 'file_key')
@@ -557,41 +597,48 @@ export class FilesAdminService {
     keys: string[],
   ): Promise<Map<string, FileDownloadCatalogRef[]>> {
     const result = new Map<string, FileDownloadCatalogRef[]>();
-    const uniqueKeys = [...new Set(keys.map((k) => String(k ?? '').trim()).filter(Boolean))];
+    const uniqueKeys = [
+      ...new Set(keys.map((k) => String(k ?? '').trim()).filter(Boolean)),
+    ];
     uniqueKeys.forEach((k) => result.set(k, []));
     if (uniqueKeys.length === 0) return result;
 
     const keySet = new Set(uniqueKeys);
     const patterns = uniqueKeys.map((key) => this.fileLinkPattern(key));
 
-    const [episodes, subtitles, subtitlePacks, packItems, animesWithEpisodePack] =
-      await Promise.all([
-        this.episodeRepo
-          .createQueryBuilder('e')
-          .innerJoinAndSelect('e.anime', 'a')
-          .where('e.downloadLink ILIKE ANY(:patterns)', { patterns })
-          .getMany(),
-        this.subtitleRepo
-          .createQueryBuilder('s')
-          .innerJoinAndSelect('s.anime', 'a')
-          .where('s.subtitleLink ILIKE ANY(:patterns)', { patterns })
-          .getMany(),
-        this.subtitlePackRepo
-          .createQueryBuilder('sp')
-          .innerJoinAndSelect('sp.anime', 'a')
-          .where('sp.subtitleLink ILIKE ANY(:patterns)', { patterns })
-          .getMany(),
-        this.packItemsRepo
-          .createQueryBuilder('i')
-          .innerJoinAndSelect('i.pack', 'p')
-          .where('i.fileKey IN (:...keys)', { keys: uniqueKeys })
-          .getMany(),
-        this.animeRepo
-          .createQueryBuilder('a')
-          .where('a.episodePackLink IS NOT NULL')
-          .andWhere("a.episodePackLink <> ''")
-          .getMany(),
-      ]);
+    const [
+      episodes,
+      subtitles,
+      subtitlePacks,
+      packItems,
+      animesWithEpisodePack,
+    ] = await Promise.all([
+      this.episodeRepo
+        .createQueryBuilder('e')
+        .innerJoinAndSelect('e.anime', 'a')
+        .where('e.downloadLink ILIKE ANY(:patterns)', { patterns })
+        .getMany(),
+      this.subtitleRepo
+        .createQueryBuilder('s')
+        .innerJoinAndSelect('s.anime', 'a')
+        .where('s.subtitleLink ILIKE ANY(:patterns)', { patterns })
+        .getMany(),
+      this.subtitlePackRepo
+        .createQueryBuilder('sp')
+        .innerJoinAndSelect('sp.anime', 'a')
+        .where('sp.subtitleLink ILIKE ANY(:patterns)', { patterns })
+        .getMany(),
+      this.packItemsRepo
+        .createQueryBuilder('i')
+        .innerJoinAndSelect('i.pack', 'p')
+        .where('i.fileKey IN (:...keys)', { keys: uniqueKeys })
+        .getMany(),
+      this.animeRepo
+        .createQueryBuilder('a')
+        .where('a.episodePackLink IS NOT NULL')
+        .andWhere("a.episodePackLink <> ''")
+        .getMany(),
+    ]);
 
     const packSlugToAnimes = new Map<string, Anime[]>();
     for (const anime of animesWithEpisodePack) {
@@ -696,7 +743,9 @@ export class FilesAdminService {
 
     for (let offset = days - 1; offset >= 0; offset--) {
       const anchor = new Date(Date.now() - offset * 86_400_000);
-      const key = anchor.toLocaleDateString('en-CA', { timeZone: 'Asia/Tehran' });
+      const key = anchor.toLocaleDateString('en-CA', {
+        timeZone: 'Asia/Tehran',
+      });
       result.push({ date: key, count: counts.get(key) ?? 0 });
     }
 
@@ -790,7 +839,10 @@ export class FilesAdminService {
     return `%get_${key.replace(/([%_\\])/g, '\\$1')}%`;
   }
 
-  private mapFileListItem(file: BotFile, referenceCount = 0): BotFileListItemRow {
+  private mapFileListItem(
+    file: BotFile,
+    referenceCount = 0,
+  ): BotFileListItemRow {
     return {
       ...this.mapFileStat(file),
       type: file.type,
@@ -810,9 +862,7 @@ export class FilesAdminService {
     qb: ReturnType<Repository<BotFile>['createQueryBuilder']>,
     query: { activeOnly?: boolean; status?: 'all' | 'active' | 'inactive' },
   ) {
-    const status =
-      query.status ??
-      (query.activeOnly ? 'active' : 'all');
+    const status = query.status ?? (query.activeOnly ? 'active' : 'all');
 
     if (status === 'active') {
       qb.andWhere('f.isActive = true');
@@ -838,7 +888,8 @@ export class FilesAdminService {
       new Brackets((sub) => {
         exts.forEach((ext, index) => {
           const key = `fileExt${index}`;
-          if (index === 0) sub.where(`f.fileName ILIKE :${key}`, { [key]: `%.${ext}` });
+          if (index === 0)
+            sub.where(`f.fileName ILIKE :${key}`, { [key]: `%.${ext}` });
           else sub.orWhere(`f.fileName ILIKE :${key}`, { [key]: `%.${ext}` });
         });
       }),
@@ -895,8 +946,10 @@ export class FilesAdminService {
         this.packItemsRepo.find({ where: { fileKey: In(keys) } }),
       ]);
 
-    for (const row of episodes) bump(parseTelegramFileKeyFromLink(row.downloadLink));
-    for (const row of subtitles) bump(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const row of episodes)
+      bump(parseTelegramFileKeyFromLink(row.downloadLink));
+    for (const row of subtitles)
+      bump(parseTelegramFileKeyFromLink(row.subtitleLink));
     for (const row of subtitlePacks) {
       bump(parseTelegramFileKeyFromLink(row.subtitleLink));
     }
@@ -932,10 +985,14 @@ export class FilesAdminService {
       .take(limit)
       .getMany();
 
-    const refCounts = await this.countReferencesByKeysBatch(files.map((f) => f.key));
+    const refCounts = await this.countReferencesByKeysBatch(
+      files.map((f) => f.key),
+    );
 
     return {
-      items: files.map((f) => this.mapFileListItem(f, refCounts.get(f.key) ?? 0)),
+      items: files.map((f) =>
+        this.mapFileListItem(f, refCounts.get(f.key) ?? 0),
+      ),
       total,
     };
   }
@@ -992,7 +1049,9 @@ export class FilesAdminService {
       ]);
 
     const episodeRows = episodes
-      .filter((row) => parseTelegramFileKeyFromLink(row.downloadLink) === fileKey)
+      .filter(
+        (row) => parseTelegramFileKeyFromLink(row.downloadLink) === fileKey,
+      )
       .map((row) => ({
         episode_id: row.id,
         episode_number: row.episodeNumber,
@@ -1002,7 +1061,9 @@ export class FilesAdminService {
       }));
 
     const subtitleRows = subtitles
-      .filter((row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey)
+      .filter(
+        (row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey,
+      )
       .map((row) => ({
         subtitle_id: row.id,
         episode_number: row.episodeNumber,
@@ -1012,7 +1073,9 @@ export class FilesAdminService {
       }));
 
     const subtitlePackRows = subtitlePacks
-      .filter((row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey)
+      .filter(
+        (row) => parseTelegramFileKeyFromLink(row.subtitleLink) === fileKey,
+      )
       .map((row) => ({
         pack_id: row.id,
         title: row.title,
@@ -1022,7 +1085,9 @@ export class FilesAdminService {
       }));
 
     const animeEpisodePackRows = animeEpisodePacks
-      .filter((row) => parseTelegramFileKeyFromLink(row.episodePackLink) === fileKey)
+      .filter(
+        (row) => parseTelegramFileKeyFromLink(row.episodePackLink) === fileKey,
+      )
       .map((row) => ({
         anime_id: row.id,
         anime_title: row.title ?? '—',
@@ -1181,9 +1246,15 @@ export class FilesAdminService {
     });
   }
 
-  private createAnimeDownloadAgg(anime: AnimeMetaForDownloadAgg): AnimeDownloadAggInternal {
+  private createAnimeDownloadAgg(
+    anime: AnimeMetaForDownloadAgg,
+  ): AnimeDownloadAggInternal {
     const searchBlob = [anime.title, anime.slug, anime.titleRomaji]
-      .map((v) => String(v ?? '').trim().toLowerCase())
+      .map((v) =>
+        String(v ?? '')
+          .trim()
+          .toLowerCase(),
+      )
       .filter(Boolean)
       .join(' ');
     return {
@@ -1239,7 +1310,9 @@ export class FilesAdminService {
     }
   }
 
-  private mapAnimeDownloadAggToRow(agg: AnimeDownloadAggInternal): AnimeDownloadStatRow {
+  private mapAnimeDownloadAggToRow(
+    agg: AnimeDownloadAggInternal,
+  ): AnimeDownloadStatRow {
     return {
       anime_id: agg.anime_id,
       anime_title: agg.anime_title,
@@ -1262,11 +1335,15 @@ export class FilesAdminService {
   private async loadEpisodePackItemsBySlug(
     packSlugs: string[],
   ): Promise<Map<string, { pack: FilePack; items: FilePackItem[] }>> {
-    const uniqueSlugs = [...new Set(packSlugs.map((s) => s.trim()).filter(Boolean))];
+    const uniqueSlugs = [
+      ...new Set(packSlugs.map((s) => s.trim()).filter(Boolean)),
+    ];
     const result = new Map<string, { pack: FilePack; items: FilePackItem[] }>();
     if (uniqueSlugs.length === 0) return result;
 
-    const packs = await this.packsRepo.find({ where: { slug: In(uniqueSlugs) } });
+    const packs = await this.packsRepo.find({
+      where: { slug: In(uniqueSlugs) },
+    });
     if (packs.length === 0) return result;
 
     const packById = new Map(packs.map((p) => [p.id, p]));
@@ -1293,22 +1370,39 @@ export class FilesAdminService {
     searchBlobByAnimeId: Map<string, string>;
   }> {
     const now = Date.now();
-    if (this.animeDownloadIndexCache && this.animeDownloadIndexCache.expiresAt > now) {
-      const { baseRows, keysByAnimeId, searchBlobByAnimeId } = this.animeDownloadIndexCache;
-      const listRows = await this.hydrateAnimeDownloadPeriodStats(baseRows, keysByAnimeId);
+    if (
+      this.animeDownloadIndexCache &&
+      this.animeDownloadIndexCache.expiresAt > now
+    ) {
+      const { baseRows, keysByAnimeId, searchBlobByAnimeId } =
+        this.animeDownloadIndexCache;
+      const listRows = await this.hydrateAnimeDownloadPeriodStats(
+        baseRows,
+        keysByAnimeId,
+      );
       return { listRows, searchBlobByAnimeId };
     }
 
-    const [episodes, subtitles, subtitlePacks, animesWithEpisodePack] = await Promise.all([
-      this.episodeRepo.createQueryBuilder('e').innerJoinAndSelect('e.anime', 'a').getMany(),
-      this.subtitleRepo.createQueryBuilder('s').innerJoinAndSelect('s.anime', 'a').getMany(),
-      this.subtitlePackRepo.createQueryBuilder('sp').innerJoinAndSelect('sp.anime', 'a').getMany(),
-      this.animeRepo
-        .createQueryBuilder('a')
-        .where('a.episodePackLink IS NOT NULL')
-        .andWhere("a.episodePackLink <> ''")
-        .getMany(),
-    ]);
+    const [episodes, subtitles, subtitlePacks, animesWithEpisodePack] =
+      await Promise.all([
+        this.episodeRepo
+          .createQueryBuilder('e')
+          .innerJoinAndSelect('e.anime', 'a')
+          .getMany(),
+        this.subtitleRepo
+          .createQueryBuilder('s')
+          .innerJoinAndSelect('s.anime', 'a')
+          .getMany(),
+        this.subtitlePackRepo
+          .createQueryBuilder('sp')
+          .innerJoinAndSelect('sp.anime', 'a')
+          .getMany(),
+        this.animeRepo
+          .createQueryBuilder('a')
+          .where('a.episodePackLink IS NOT NULL')
+          .andWhere("a.episodePackLink <> ''")
+          .getMany(),
+      ]);
 
     const packSlugByAnimeId = new Map<string, string>();
     for (const anime of animesWithEpisodePack) {
@@ -1326,8 +1420,10 @@ export class FilesAdminService {
       if (clean) allKeys.add(clean);
     };
 
-    for (const ep of episodes) absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
-    for (const row of subtitles) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const ep of episodes)
+      absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
+    for (const row of subtitles)
+      absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
     for (const row of subtitlePacks) {
       absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
     }
@@ -1389,12 +1485,16 @@ export class FilesAdminService {
       }
     }
 
-    const baseRows: Omit<AnimeDownloadStatRow, 'downloads_last_7d' | 'downloads_last_30d'>[] =
-      [...byAnime.values()].map((agg) => {
-        const full = this.mapAnimeDownloadAggToRow(agg);
-        const { downloads_last_7d: _d7, downloads_last_30d: _d30, ...base } = full;
-        return base;
-      });
+    const baseRows: Omit<
+      AnimeDownloadStatRow,
+      'downloads_last_7d' | 'downloads_last_30d'
+    >[] = [...byAnime.values()].map((agg) => {
+      const full = this.mapAnimeDownloadAggToRow(agg);
+      const { downloads_last_7d, downloads_last_30d, ...base } = full;
+      void downloads_last_7d;
+      void downloads_last_30d;
+      return base;
+    });
 
     const keysByAnimeId = new Map(
       [...byAnime.values()].map((agg) => [agg.anime_id, [...agg.countedKeys]]),
@@ -1411,7 +1511,10 @@ export class FilesAdminService {
       expiresAt: now + 60_000,
     };
 
-    const listRows = await this.hydrateAnimeDownloadPeriodStats(baseRows, keysByAnimeId);
+    const listRows = await this.hydrateAnimeDownloadPeriodStats(
+      baseRows,
+      keysByAnimeId,
+    );
     return { listRows, searchBlobByAnimeId };
   }
 
@@ -1422,7 +1525,9 @@ export class FilesAdminService {
   ): AnimeDownloadStatRow[] {
     const sortDir = query.sortDir === 'asc' ? 1 : -1;
     const sortBy = query.sortBy ?? 'downloads';
-    const search = String(query.search ?? '').trim().toLowerCase();
+    const search = String(query.search ?? '')
+      .trim()
+      .toLowerCase();
 
     let filtered = listRows;
 
@@ -1489,13 +1594,13 @@ export class FilesAdminService {
     }
     return {
       years: [...years].sort((a, b) => b - a),
-      seasons: ['WINTER', 'SPRING', 'SUMMER', 'FALL'].filter((s) => seasons.has(s)),
+      seasons: ['WINTER', 'SPRING', 'SUMMER', 'FALL'].filter((s) =>
+        seasons.has(s),
+      ),
     };
   }
 
-  async listAnimeDownloadStats(
-    query: ListAnimeDownloadStatsQueryDto,
-  ): Promise<{
+  async listAnimeDownloadStats(query: ListAnimeDownloadStatsQueryDto): Promise<{
     items: AnimeDownloadStatRow[];
     total: number;
     filter_options: { years: number[]; seasons: string[] };
@@ -1503,18 +1608,30 @@ export class FilesAdminService {
     const page = query.page && query.page > 0 ? query.page : 1;
     const limit = query.limit && query.limit > 0 ? query.limit : 20;
 
-    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
+    const { listRows, searchBlobByAnimeId } =
+      await this.buildAnimeDownloadIndex();
     const filter_options = this.animeDownloadFilterOptions(listRows);
-    const filtered = this.filterSortAnimeDownloadRows(listRows, searchBlobByAnimeId, query);
+    const filtered = this.filterSortAnimeDownloadRows(
+      listRows,
+      searchBlobByAnimeId,
+      query,
+    );
 
     const total = filtered.length;
     const items = filtered.slice((page - 1) * limit, page * limit);
     return { items, total, filter_options };
   }
 
-  async exportAnimeDownloadStatsCsv(query: ListAnimeDownloadStatsQueryDto): Promise<string> {
-    const { listRows, searchBlobByAnimeId } = await this.buildAnimeDownloadIndex();
-    const items = this.filterSortAnimeDownloadRows(listRows, searchBlobByAnimeId, query);
+  async exportAnimeDownloadStatsCsv(
+    query: ListAnimeDownloadStatsQueryDto,
+  ): Promise<string> {
+    const { listRows, searchBlobByAnimeId } =
+      await this.buildAnimeDownloadIndex();
+    const items = this.filterSortAnimeDownloadRows(
+      listRows,
+      searchBlobByAnimeId,
+      query,
+    );
 
     const header = [
       'anime_id',
@@ -1559,7 +1676,9 @@ export class FilesAdminService {
     return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
   }
 
-  async getAnimeDownloadStatDetail(animeId: string): Promise<AnimeDownloadStatDetail> {
+  async getAnimeDownloadStatDetail(
+    animeId: string,
+  ): Promise<AnimeDownloadStatDetail> {
     const id = String(animeId ?? '').trim();
     if (!isUuid(id)) throw new BadRequestException('invalid anime id');
 
@@ -1581,7 +1700,9 @@ export class FilesAdminService {
       }),
     ]);
 
-    const episodePackSlug = parseTelegramPackSlugFromLink(anime.episodePackLink);
+    const episodePackSlug = parseTelegramPackSlugFromLink(
+      anime.episodePackLink,
+    );
     const episodePackBySlug =
       episodePackSlug != null
         ? await this.loadEpisodePackItemsBySlug([episodePackSlug])
@@ -1596,9 +1717,12 @@ export class FilesAdminService {
       if (clean) allKeys.add(clean);
     };
 
-    for (const ep of episodes) absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
-    for (const row of subtitles) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
-    for (const row of subtitlePacks) absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const ep of episodes)
+      absorbKey(parseTelegramFileKeyFromLink(ep.downloadLink));
+    for (const row of subtitles)
+      absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
+    for (const row of subtitlePacks)
+      absorbKey(parseTelegramFileKeyFromLink(row.subtitleLink));
     if (episodePackBucket) {
       for (const item of episodePackBucket.items) absorbKey(item.fileKey);
     }
@@ -1729,10 +1853,14 @@ export class FilesAdminService {
       .take(limit)
       .getMany();
 
-    const catalogRefsByKey = await this.getCatalogRefsForKeys(files.map((f) => f.key));
+    const catalogRefsByKey = await this.getCatalogRefsForKeys(
+      files.map((f) => f.key),
+    );
 
     return {
-      items: files.map((f) => this.mapFileStat(f, catalogRefsByKey.get(f.key) ?? [])),
+      items: files.map((f) =>
+        this.mapFileStat(f, catalogRefsByKey.get(f.key) ?? []),
+      ),
       total,
     };
   }
@@ -1773,9 +1901,10 @@ export class FilesAdminService {
     return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
   }
 
-  private async getTopFileKeysByEventDays(days: number, limit = 10): Promise<
-    { file_key: string; count: number }[]
-  > {
+  private async getTopFileKeysByEventDays(
+    days: number,
+    limit = 10,
+  ): Promise<{ file_key: string; count: number }[]> {
     const rows = await this.downloadEventsRepo
       .createQueryBuilder('e')
       .select('e.fileKey', 'file_key')
@@ -1817,19 +1946,22 @@ export class FilesAdminService {
   private async buildDownloadLeaderboards(): Promise<
     Record<DownloadLeaderboardKey, DownloadLeaderboardEntry[]>
   > {
-    const [topFilesLifetime, topFiles7dRaw, topFiles30dRaw, animeRows] = await Promise.all([
-      this.filesRepo.find({ order: { downloads: 'DESC' }, take: 10 }),
-      this.getTopFileKeysByEventDays(7),
-      this.getTopFileKeysByEventDays(30),
-      this.buildAnimeDownloadIndex().then((r) => r.listRows),
-    ]);
+    const [topFilesLifetime, topFiles7dRaw, topFiles30dRaw, animeRows] =
+      await Promise.all([
+        this.filesRepo.find({ order: { downloads: 'DESC' }, take: 10 }),
+        this.getTopFileKeysByEventDays(7),
+        this.getTopFileKeysByEventDays(30),
+        this.buildAnimeDownloadIndex().then((r) => r.listRows),
+      ]);
 
-    const filesLifetime: DownloadLeaderboardEntry[] = topFilesLifetime.map((file) => ({
-      id: file.key,
-      label: file.fileName?.trim() || file.key,
-      value: file.downloads ?? 0,
-      file_key: file.key,
-    }));
+    const filesLifetime: DownloadLeaderboardEntry[] = topFilesLifetime.map(
+      (file) => ({
+        id: file.key,
+        label: file.fileName?.trim() || file.key,
+        value: file.downloads ?? 0,
+        file_key: file.key,
+      }),
+    );
 
     const [files7d, files30d] = await Promise.all([
       this.buildFileLeaderboardEntries(topFiles7dRaw),
@@ -1955,7 +2087,11 @@ export class FilesAdminService {
     const limit = query.limit && query.limit > 0 ? query.limit : 20;
     const searchText = String(query.query ?? '').trim();
     const extraTerms = [
-      ...new Set((query.matchAnyTerms ?? []).map((t) => String(t).trim()).filter(Boolean)),
+      ...new Set(
+        (query.matchAnyTerms ?? [])
+          .map((t) => String(t).trim())
+          .filter(Boolean),
+      ),
     ];
     if (!searchText && extraTerms.length === 0) return [];
 
@@ -2007,7 +2143,9 @@ export class FilesAdminService {
     return files.map((f) => this.mapPicker(f));
   }
 
-  async getRecentPicker(query: FilePickerRecentQueryDto): Promise<FilePickerItemRow[]> {
+  async getRecentPicker(
+    query: FilePickerRecentQueryDto,
+  ): Promise<FilePickerItemRow[]> {
     const limit = query.limit && query.limit > 0 ? query.limit : 30;
     const exts = String(query.fileExtension ?? '')
       .split(',')
@@ -2134,7 +2272,9 @@ export class FilesAdminService {
     const pack = await this.packsRepo.findOne({ where: { id: packId } });
     if (!pack) throw new NotFoundException('pack not found');
 
-    const unique = [...new Set(fileKeys.map((k) => String(k ?? '').trim()).filter(Boolean))];
+    const unique = [
+      ...new Set(fileKeys.map((k) => String(k ?? '').trim()).filter(Boolean)),
+    ];
     if (unique.length === 0) return { added: 0, skipped: 0 };
 
     const existing = await this.packItemsRepo.find({
@@ -2146,7 +2286,10 @@ export class FilesAdminService {
     const skipped = unique.length - toAdd.length;
     if (toAdd.length === 0) return { added: 0, skipped };
 
-    const maxOrder = existing.reduce((max, row) => Math.max(max, row.sortOrder ?? 0), 0);
+    const maxOrder = existing.reduce(
+      (max, row) => Math.max(max, row.sortOrder ?? 0),
+      0,
+    );
     await this.packItemsRepo.save(
       toAdd.map((fileKey, index) => ({
         packId,

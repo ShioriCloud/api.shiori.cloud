@@ -22,10 +22,19 @@ export const TERMINAL_STATES: AutomationJobState[] = [
   'FAILED',
 ];
 
-export const ALLOWED_TRANSITIONS: Record<AutomationJobState, AutomationJobState[]> = {
+export const ALLOWED_TRANSITIONS: Record<
+  AutomationJobState,
+  AutomationJobState[]
+> = {
   SUBTITLE_RECEIVED: ['MATCHED', 'NEEDS_REVIEW', 'FAILED', 'CANCELLED'],
   MATCHED: ['ELIGIBLE', 'NEEDS_REVIEW', 'FAILED', 'CANCELLED'],
-  ELIGIBLE: ['SEARCHING', 'AWAITING_SELECTION', 'NEEDS_REVIEW', 'FAILED', 'CANCELLED'],
+  ELIGIBLE: [
+    'SEARCHING',
+    'AWAITING_SELECTION',
+    'NEEDS_REVIEW',
+    'FAILED',
+    'CANCELLED',
+  ],
   SEARCHING: [
     'ELIGIBLE',
     'AWAITING_SELECTION',

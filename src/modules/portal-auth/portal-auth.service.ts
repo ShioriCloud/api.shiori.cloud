@@ -1,7 +1,4 @@
-import {
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
@@ -32,7 +29,9 @@ export class PortalAuthService {
     private readonly sessionsRepo: Repository<UserPortalSession>,
   ) {}
 
-  private isStaffRole(role: string | null | undefined): role is 'admin' | 'moderator' {
+  private isStaffRole(
+    role: string | null | undefined,
+  ): role is 'admin' | 'moderator' {
     return role != null && STAFF_ROLES.has(role);
   }
 

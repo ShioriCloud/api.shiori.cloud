@@ -88,10 +88,7 @@ const buildCheckString = (
     .map((p) => `${p.key}=${p.value}`)
     .join('\n');
 
-const computeBotTokenHash = (
-  botToken: string,
-  checkString: string,
-): string => {
+const computeBotTokenHash = (botToken: string, checkString: string): string => {
   const secretKey = createHmac('sha256', 'WebAppData')
     .update(botToken.trim())
     .digest();
@@ -138,10 +135,14 @@ export const verifyTelegramInitDataWithToken = (
     const calcHash = computeBotTokenHash(token, candidate.checkString);
     if (safeEqualHex(calcHash, parsed.hash)) {
       if (parsed.authDate != null) {
-        const ageSec = Math.abs(Math.floor(Date.now() / 1000) - parsed.authDate);
-        if (ageSec > 604800) return { userId: null, reason: 'auth_date_expired' };
+        const ageSec = Math.abs(
+          Math.floor(Date.now() / 1000) - parsed.authDate,
+        );
+        if (ageSec > 604800)
+          return { userId: null, reason: 'auth_date_expired' };
       }
-      if (parsed.userId == null) return { userId: null, reason: 'invalid_user_id' };
+      if (parsed.userId == null)
+        return { userId: null, reason: 'invalid_user_id' };
       return { userId: parsed.userId, reason: 'ok', method: candidate.mode };
     }
   }

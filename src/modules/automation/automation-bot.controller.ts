@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { BotAuthGuard } from '../bot/bot-auth.guard';
 import { AutomationService } from './automation.service';
@@ -57,7 +65,8 @@ export class AutomationBotController {
 
   @Post('jobs/claim-status')
   @ApiOperation({
-    summary: 'Tel-bot: claim live status cards (preferred over GET pending-status)',
+    summary:
+      'Tel-bot: claim live status cards (preferred over GET pending-status)',
   })
   claimStatus(
     @Body()

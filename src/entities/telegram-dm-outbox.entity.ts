@@ -8,11 +8,7 @@ import {
 } from 'typeorm';
 import { NotificationCampaign } from './notification-campaign.entity';
 
-export type TelegramDmOutboxStatus =
-  | 'pending'
-  | 'claimed'
-  | 'sent'
-  | 'failed';
+export type TelegramDmOutboxStatus = 'pending' | 'claimed' | 'sent' | 'failed';
 
 @Entity('telegram_dm_outbox')
 @Index('idx_telegram_dm_outbox_pending', ['status', 'createdAt'])
@@ -50,7 +46,10 @@ export class TelegramDmOutbox {
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
-  @ManyToOne(() => NotificationCampaign, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => NotificationCampaign, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'campaign_id' })
   campaign: NotificationCampaign | null;
 }

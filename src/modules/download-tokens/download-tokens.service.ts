@@ -17,7 +17,11 @@ import {
   TelegramUser,
 } from '../../entities';
 import { DarametDonatesClient } from './daramet-donates.client';
-import { DONATION_TOKEN_TIERS, tokensForDonationAmount, darametApiAmountToToman } from './donation-token-tiers';
+import {
+  DONATION_TOKEN_TIERS,
+  tokensForDonationAmount,
+  darametApiAmountToToman,
+} from './donation-token-tiers';
 import {
   buildDarametWebIntentUrl,
   isDownloadTokenWalletEnabledFor,
@@ -37,7 +41,11 @@ export type DownloadTokenWalletStatus = {
   wallet_enabled: boolean;
   mode: DownloadTokenWalletMode;
   balance: number;
-  tiers: Array<{ amount_irr: number; tokens: number; recharge_url: string | null }>;
+  tiers: Array<{
+    amount_irr: number;
+    tokens: number;
+    recharge_url: string | null;
+  }>;
   daramet_configured: boolean;
 };
 
@@ -147,7 +155,9 @@ export class DownloadTokensService {
     return { balance: user.downloadTokenBalance ?? 0 };
   }
 
-  async getWalletStatus(telegramUserId: string): Promise<DownloadTokenWalletStatus> {
+  async getWalletStatus(
+    telegramUserId: string,
+  ): Promise<DownloadTokenWalletStatus> {
     const mode = this.walletMode();
     const walletEnabled = this.isWalletEnabledFor(telegramUserId);
     const balance = walletEnabled
@@ -188,7 +198,11 @@ export class DownloadTokensService {
     if (!episode) {
       throw new NotFoundException('episode not found');
     }
-    if (String(episode.videoFileType ?? '').trim().toLowerCase() !== 'free') {
+    if (
+      String(episode.videoFileType ?? '')
+        .trim()
+        .toLowerCase() !== 'free'
+    ) {
       throw new BadRequestException('episode is not a free download');
     }
 
@@ -286,83 +300,83 @@ export class DownloadTokensService {
 
     const reason = input.reason ?? 'admin_grant';
 
-    return this.dataSource.transaction(async (manager) => {
-      const users = manager.getRepository(TelegramUser);
-      const ledger = manager.getRepository(DownloadTokenLedger);
+    return this.dataSource
+      .transaction(async (manager) => {
+        const users = manager.getRepository(TelegramUser);
+        const ledger = manager.getRepository(DownloadTokenLedger);
 
-      if (input.refType && input.refId) {
-        const existing = await ledger.findOne({
-          where: {
-            refType: input.refType,
-            refId: String(input.refId),
-          },
-        });
-        if (existing) {
-          const user = await users.findOne({ where: { telegramUserId } });
-          return {
-            balance: user?.downloadTokenBalance ?? 0,
-            credited: 0,
-          };
+        if (input.refType && input.refId) {
+          const existing = await ledger.findOne({
+            where: {
+              refType: input.refType,
+              refId: String(input.refId),
+            },
+          });
+          if (existing) {
+            const user = await users.findOne({ where: { telegramUserId } });
+            return {
+              balance: user?.downloadTokenBalance ?? 0,
+              credited: 0,
+            };
+          }
         }
-      }
 
-      let user = await users.findOne({
-        where: { telegramUserId },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!user) {
-        await users.save(
-          users.create({
-            telegramUserId,
-            firstName: 'کاربر',
-            downloadTokenBalance: 10,
-          }),
-        );
-        user = await users.findOne({
+        let user = await users.findOne({
           where: { telegramUserId },
           lock: { mode: 'pessimistic_write' },
         });
-      }
-      if (!user) {
-        throw new NotFoundException('user not found');
-      }
+        if (!user) {
+          await users.save(
+            users.create({
+              telegramUserId,
+              firstName: 'کاربر',
+              downloadTokenBalance: 10,
+            }),
+          );
+          user = await users.findOne({
+            where: { telegramUserId },
+            lock: { mode: 'pessimistic_write' },
+          });
+        }
+        if (!user) {
+          throw new NotFoundException('user not found');
+        }
 
-      const next = (user.downloadTokenBalance ?? 0) + credited;
-      user.downloadTokenBalance = next;
-      await users.save(user);
+        const next = (user.downloadTokenBalance ?? 0) + credited;
+        user.downloadTokenBalance = next;
+        await users.save(user);
 
-      await ledger.save(
-        ledger.create({
-          telegramUserId,
-          delta: credited,
-          balanceAfter: next,
-          reason,
-          refType: input.refType ?? null,
-          refId: input.refId ?? null,
-          note: input.note?.trim() || null,
-        }),
-      );
+        await ledger.save(
+          ledger.create({
+            telegramUserId,
+            delta: credited,
+            balanceAfter: next,
+            reason,
+            refType: input.refType ?? null,
+            refId: input.refId ?? null,
+            note: input.note?.trim() || null,
+          }),
+        );
 
-      return { balance: next, credited };
-    }).then(async (result) => {
-      if (reason === 'admin_grant' && result.credited > 0) {
-        await this.recordAdminGrantAudit({
-          actorTelegramUserId: input.actorTelegramUserId,
-          targetTelegramUserId: telegramUserId,
-          tokens: result.credited,
-          note: input.note,
-        });
-      }
-      return result;
-    });
+        return { balance: next, credited };
+      })
+      .then(async (result) => {
+        if (reason === 'admin_grant' && result.credited > 0) {
+          await this.recordAdminGrantAudit({
+            actorTelegramUserId: input.actorTelegramUserId,
+            targetTelegramUserId: telegramUserId,
+            tokens: result.credited,
+            note: input.note,
+          });
+        }
+        return result;
+      });
   }
 
   /**
    * Poll Daramet donations and credit token wallets (idempotent by donate id).
    */
-  async syncDarametDonations(input?: {
-    pages?: number;
-  }): Promise<{
+  async syncDarametDonations(input?: { pages?: number }): Promise<{
     scanned: number;
     credited: number;
     skipped: number;
@@ -398,7 +412,9 @@ export class DownloadTokensService {
           continue;
         }
 
-        const telegramUserId = parseTelegramUserIdFromDonateMessage(data?.message);
+        const telegramUserId = parseTelegramUserIdFromDonateMessage(
+          data?.message,
+        );
         if (!telegramUserId) {
           unmatched += 1;
           continue;

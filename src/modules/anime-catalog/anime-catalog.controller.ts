@@ -39,13 +39,10 @@ export class AnimeCatalogController {
 
   @Get('new-episodes')
   @ApiOperation({
-    summary:
-      'Anime with a new episode in the last 7 days (by last_episode_at)',
+    summary: 'Anime with a new episode in the last 7 days (by last_episode_at)',
   })
   listNewEpisodes(@Query('limit') limit?: number) {
-    return this.animeCatalogService.listNewEpisodes(
-      limit ? Number(limit) : 20,
-    );
+    return this.animeCatalogService.listNewEpisodes(limit ? Number(limit) : 20);
   }
 
   @Get('schedule')
@@ -127,7 +124,10 @@ export class AnimeCatalogController {
       'title',
       'score',
     ] as const;
-    if (sortBy && allowedSort.includes(sortBy as (typeof allowedSort)[number])) {
+    if (
+      sortBy &&
+      allowedSort.includes(sortBy as (typeof allowedSort)[number])
+    ) {
       params.sortBy = sortBy as AnimeSearchParams['sortBy'];
     }
 

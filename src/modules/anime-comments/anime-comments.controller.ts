@@ -14,7 +14,10 @@ import {
   AppUserAuthGuard,
   AppUserAuthedRequest,
 } from '../../telegram/app-user-auth.guard';
-import { CreateAnimeCommentDto, ReportAnimeCommentDto } from './anime-comments.dto';
+import {
+  CreateAnimeCommentDto,
+  ReportAnimeCommentDto,
+} from './anime-comments.dto';
 import { AnimeCommentsService } from './anime-comments.service';
 
 const parsePage = (page?: string, limit?: string, fallbackLimit = 20) => {
@@ -87,7 +90,10 @@ export class AnimeCommentsController {
 
   @Post()
   @ApiOperation({ summary: 'Create a comment or reply' })
-  create(@Req() req: AppUserAuthedRequest, @Body() body: CreateAnimeCommentDto) {
+  create(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: CreateAnimeCommentDto,
+  ) {
     return this.comments.create(String(req.telegramUserId), body);
   }
 

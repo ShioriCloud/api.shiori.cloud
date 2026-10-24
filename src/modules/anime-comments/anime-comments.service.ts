@@ -82,12 +82,14 @@ export class AnimeCommentsService {
     return { enabled: isSocialProfileEnabledFor(telegramUserId) };
   }
 
-  private assertEnabled(_telegramUserId: string): void {
+  private assertEnabled(): void {
     /* social / comments always enabled for authenticated users */
   }
 
   private cleanBody(raw: string): string {
-    const body = String(raw ?? '').replace(/\r\n/g, '\n').trim();
+    const body = String(raw ?? '')
+      .replace(/\r\n/g, '\n')
+      .trim();
     if (!body) throw new BadRequestException('comment body required');
     if (body.length > MAX_BODY) {
       throw new BadRequestException(`comment body too long (max ${MAX_BODY})`);
@@ -118,7 +120,7 @@ export class AnimeCommentsService {
     page = 1,
     limit = 20,
   ) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     const anime = await this.resolveAnimeId(animeKey);
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(50, Math.max(1, limit));
@@ -149,7 +151,7 @@ export class AnimeCommentsService {
     page = 1,
     limit = 20,
   ) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     const targetId = String(targetTelegramUserId).trim();
     if (!targetId) {
       throw new BadRequestException('user id required');
@@ -231,7 +233,9 @@ export class AnimeCommentsService {
       if (!rootId) {
         rootId = targetRoot;
       } else if (targetRoot !== rootId) {
-        throw new BadRequestException('reply target must be in the same thread');
+        throw new BadRequestException(
+          'reply target must be in the same thread',
+        );
       }
       replyToId = target.id;
     }
@@ -284,10 +288,13 @@ export class AnimeCommentsService {
       reply_to_comment_id?: string;
     },
   ) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     const anime = await this.resolveAnimeId(input.anime_id);
     const body = this.cleanBody(input.body);
-    const { rootId, replyToId } = await this.resolveReplyThread(anime.id, input);
+    const { rootId, replyToId } = await this.resolveReplyThread(
+      anime.id,
+      input,
+    );
 
     const saved = await this.commentsRepo.save({
       animeId: anime.id,
@@ -325,7 +332,9 @@ export class AnimeCommentsService {
       }
 
       if (replyToId && replyToId !== rootId) {
-        const target = await this.commentsRepo.findOne({ where: { id: replyToId } });
+        const target = await this.commentsRepo.findOne({
+          where: { id: replyToId },
+        });
         const targetAuthorId = target ? String(target.telegramUserId) : '';
         if (
           target &&
@@ -365,8 +374,10 @@ export class AnimeCommentsService {
   }
 
   async remove(viewerId: string, commentId: string) {
-    this.assertEnabled(viewerId);
-    const comment = await this.commentsRepo.findOne({ where: { id: commentId } });
+    this.assertEnabled();
+    const comment = await this.commentsRepo.findOne({
+      where: { id: commentId },
+    });
     if (!comment) throw new NotFoundException('Comment not found');
     if (String(comment.telegramUserId) !== viewerId) {
       throw new ForbiddenException('not your comment');
@@ -377,7 +388,7 @@ export class AnimeCommentsService {
   }
 
   async like(viewerId: string, commentId: string) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     const comment = await this.requireActiveComment(commentId);
     const already = await this.likesRepo.findOne({
       where: { commentId: comment.id, telegramUserId: viewerId },
@@ -390,7 +401,10 @@ export class AnimeCommentsService {
 
       const authorId = String(comment.telegramUserId);
       if (authorId !== viewerId) {
-        const blocked = await this.moderation.arePeersBlocked(authorId, viewerId);
+        const blocked = await this.moderation.arePeersBlocked(
+          authorId,
+          viewerId,
+        );
         if (!blocked) {
           const likeCount = await this.likesRepo.count({
             where: { commentId: comment.id },
@@ -420,13 +434,13 @@ export class AnimeCommentsService {
   }
 
   async unlike(viewerId: string, commentId: string) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     await this.likesRepo.delete({ commentId, telegramUserId: viewerId });
     return this.likeState(commentId, viewerId);
   }
 
   async report(viewerId: string, commentId: string, reason?: string) {
-    this.assertEnabled(viewerId);
+    this.assertEnabled();
     const comment = await this.requireActiveComment(commentId);
     if (String(comment.telegramUserId) === viewerId) {
       throw new BadRequestException('cannot report your own comment');
@@ -445,7 +459,9 @@ export class AnimeCommentsService {
   }
 
   private async requireActiveComment(commentId: string): Promise<AnimeComment> {
-    const comment = await this.commentsRepo.findOne({ where: { id: commentId } });
+    const comment = await this.commentsRepo.findOne({
+      where: { id: commentId },
+    });
     if (!comment || comment.isDeleted) {
       throw new NotFoundException('Comment not found');
     }
@@ -527,14 +543,15 @@ export class AnimeCommentsService {
       .createQueryBuilder('l')
       .select('l.comment_id', 'comment_id')
       .addSelect('COUNT(*)', 'count')
-      .addSelect(
-        `BOOL_OR(l.telegram_user_id = :viewer)`,
-        'liked',
-      )
+      .addSelect(`BOOL_OR(l.telegram_user_id = :viewer)`, 'liked')
       .where('l.comment_id IN (:...ids)', { ids })
       .setParameter('viewer', viewerId)
       .groupBy('l.comment_id')
-      .getRawMany<{ comment_id: string; count: string; liked: boolean | string }>();
+      .getRawMany<{
+        comment_id: string;
+        count: string;
+        liked: boolean | string;
+      }>();
     const likeById = new Map(
       likeRows.map((r) => [
         String(r.comment_id),

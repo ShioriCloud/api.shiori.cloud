@@ -32,7 +32,9 @@ async function bootstrap() {
       }
 
       const isDev = process.env.NODE_ENV !== 'production';
-      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+      const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(
+        origin,
+      );
       if (isDev && isLocalhost) {
         callback(null, true);
         return;

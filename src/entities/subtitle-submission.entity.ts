@@ -19,7 +19,13 @@ export class SubtitleSubmission {
   @Column({ type: 'uuid', name: 'anime_id', nullable: true })
   animeId: string | null;
 
-  @Column({ type: 'numeric', precision: 8, scale: 2, name: 'episode_number', nullable: true })
+  @Column({
+    type: 'numeric',
+    precision: 8,
+    scale: 2,
+    name: 'episode_number',
+    nullable: true,
+  })
   episodeNumber: number | null;
 
   @Column({ type: 'text', name: 'filename_title', nullable: true })
@@ -46,7 +52,11 @@ export class SubtitleSubmission {
   @Column({ type: 'text', name: 'stored_path', nullable: true })
   storedPath: string | null;
 
-  @Column({ type: 'jsonb', name: 'extracted_meta', default: () => "'{}'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'extracted_meta',
+    default: () => "'{}'::jsonb",
+  })
   extractedMeta: Record<string, unknown>;
 
   @Column({ type: 'text', default: 'received' })

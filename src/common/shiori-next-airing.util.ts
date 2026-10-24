@@ -118,7 +118,13 @@ export function parseIsoDateYmd(
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  if (!Number.isFinite(year) || month < 1 || month > 12 || day < 1 || day > 31) {
+  if (
+    !Number.isFinite(year) ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
     return null;
   }
   return { year, month, day };
@@ -168,7 +174,11 @@ export function resolveEpisode1UnixSec(
     const noonUtc = tehranWallTimeToUtcMs(d.year, d.month, d.day, 12, 0);
     if (noonUtc == null) continue;
     if (persianWeekdayInTehran(noonUtc) !== weekday) continue;
-    return tehranDateHhmmToUnixSec(formatYmd(d.year, d.month, d.day), hour, minute);
+    return tehranDateHhmmToUnixSec(
+      formatYmd(d.year, d.month, d.day),
+      hour,
+      minute,
+    );
   }
   return null;
 }

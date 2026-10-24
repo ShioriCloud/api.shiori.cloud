@@ -4,7 +4,7 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Anime, BotSetting } from '../../entities';
 import {
   AnilistClientError,
@@ -16,7 +16,11 @@ import {
   isAbortError,
   isExternalTransportFailure,
 } from '../../common/external-score.util';
-import { fetchMalScoreById, jikanEndpointHost, JikanClientError } from '../../common/jikan.client';
+import {
+  fetchMalScoreById,
+  jikanEndpointHost,
+  JikanClientError,
+} from '../../common/jikan.client';
 
 export type ScoreSyncSource = 'mal' | 'anilist';
 
@@ -212,7 +216,11 @@ export class ScoreSyncService {
   async start(body: Record<string, unknown> = {}) {
     const source = this.parseSource(body.source ?? body.provider);
     const filters = this.parseFilters(body);
-    if (this.currentJob && (this.currentJob.status === 'running' || this.currentJob.status === 'cancelling')) {
+    if (
+      this.currentJob &&
+      (this.currentJob.status === 'running' ||
+        this.currentJob.status === 'cancelling')
+    ) {
       throw new ConflictException('یک همگام‌سازی در حال اجراست');
     }
 
@@ -260,7 +268,8 @@ export class ScoreSyncService {
 
   private isJobStopError(err: unknown): boolean {
     if (isAbortError(err)) return true;
-    if (err instanceof JikanClientError && err.message === 'Request aborted') return true;
+    if (err instanceof JikanClientError && err.message === 'Request aborted')
+      return true;
     const msg = err instanceof Error ? err.message : '';
     return msg === 'Request aborted';
   }
@@ -279,7 +288,11 @@ export class ScoreSyncService {
   }): ScoreSyncFilters {
     const yearRaw = raw.year;
     let year: number | null = null;
-    if (yearRaw != null && String(yearRaw).trim() !== '' && String(yearRaw).trim() !== 'all') {
+    if (
+      yearRaw != null &&
+      String(yearRaw).trim() !== '' &&
+      String(yearRaw).trim() !== 'all'
+    ) {
       const n = Number(yearRaw);
       if (!Number.isFinite(n) || n < 1900 || n > 2100) {
         throw new BadRequestException('سال نامعتبر است');
@@ -293,7 +306,9 @@ export class ScoreSyncService {
     let season: string | null = null;
     if (seasonRaw && seasonRaw !== 'ALL') {
       if (!KNOWN_SEASONS.has(seasonRaw)) {
-        throw new BadRequestException('فصل نامعتبر است (WINTER|SPRING|SUMMER|FALL)');
+        throw new BadRequestException(
+          'فصل نامعتبر است (WINTER|SPRING|SUMMER|FALL)',
+        );
       }
       season = seasonRaw;
     }
@@ -303,7 +318,8 @@ export class ScoreSyncService {
 
   private snapshotJob(): ScoreSyncJobSnapshot | null {
     if (!this.currentJob) return null;
-    const { cancelRequested: _, ...rest } = this.currentJob;
+    const { cancelRequested, ...rest } = this.currentJob;
+    void cancelRequested;
     return {
       ...rest,
       filters: { ...(rest.filters ?? emptyFilters()) },
@@ -323,7 +339,9 @@ export class ScoreSyncService {
       qb.andWhere(`${alias}.year = :year`, { year: filters.year });
     }
     if (filters.season) {
-      qb.andWhere(`UPPER(${alias}.season) = :season`, { season: filters.season });
+      qb.andWhere(`UPPER(${alias}.season) = :season`, {
+        season: filters.season,
+      });
     }
   }
 
@@ -331,12 +349,13 @@ export class ScoreSyncService {
     years: number[];
     seasons: string[];
   }> {
-    const yearRows: Array<{ year: string | number | null }> = await this.animeRepo
-      .createQueryBuilder('a')
-      .select('DISTINCT a.year', 'year')
-      .where('a.year IS NOT NULL')
-      .orderBy('a.year', 'DESC')
-      .getRawMany();
+    const yearRows: Array<{ year: string | number | null }> =
+      await this.animeRepo
+        .createQueryBuilder('a')
+        .select('DISTINCT a.year', 'year')
+        .where('a.year IS NOT NULL')
+        .orderBy('a.year', 'DESC')
+        .getRawMany();
 
     const seasonRows: Array<{ season: string | null }> = await this.animeRepo
       .createQueryBuilder('a')
@@ -350,7 +369,11 @@ export class ScoreSyncService {
       .sort((a, b) => b - a);
 
     const seasons = seasonRows
-      .map((row) => String(row.season ?? '').trim().toUpperCase())
+      .map((row) =>
+        String(row.season ?? '')
+          .trim()
+          .toUpperCase(),
+      )
       .filter((s) => KNOWN_SEASONS.has(s));
 
     const orderedSeasons = ['WINTER', 'SPRING', 'SUMMER', 'FALL'].filter((s) =>
@@ -384,7 +407,8 @@ export class ScoreSyncService {
       without_anilist_id: withoutAnilist,
       mal_eta_seconds: withMal * Math.ceil(MAL_GAP_MS / 1000),
       anilist_eta_seconds:
-        Math.ceil(withAnilist / ANILIST_BATCH) * Math.ceil(ANILIST_GAP_MS / 1000) +
+        Math.ceil(withAnilist / ANILIST_BATCH) *
+          Math.ceil(ANILIST_GAP_MS / 1000) +
         Math.ceil(withAnilist / ANILIST_BATCH) * 2,
     };
   }
@@ -463,7 +487,9 @@ export class ScoreSyncService {
   private formatMalFetchError(err: unknown): string {
     const host = jikanEndpointHost();
     const raw =
-      err instanceof JikanClientError || err instanceof AnilistClientError || err instanceof Error
+      err instanceof JikanClientError ||
+      err instanceof AnilistClientError ||
+      err instanceof Error
         ? err.message
         : 'خطای نامشخص';
     if (err instanceof JikanClientError && err.status === 0) {
@@ -487,7 +513,7 @@ export class ScoreSyncService {
       job.current_title = title;
 
       try {
-        let score = await fetchMalScoreById(target.externalId, {
+        const score = await fetchMalScoreById(target.externalId, {
           signal: this.malFetchSignal(),
         });
         if (job.cancelRequested) break;
@@ -505,7 +531,9 @@ export class ScoreSyncService {
 
         if (canFallback) {
           try {
-            const fallbackScore = await fetchMalScoreByAnilistMalId(target.externalId);
+            const fallbackScore = await fetchMalScoreByAnilistMalId(
+              target.externalId,
+            );
             if (!this.malScoreFallbackWarned) {
               this.malScoreFallbackWarned = true;
               this.pushLog(
@@ -527,7 +555,13 @@ export class ScoreSyncService {
               fallbackErr instanceof Error ? fallbackErr.message : 'ناموفق'
             }`;
             job.counts.errors += 1;
-            this.pushLog(job, 'error', `${title}: ${message}`, target.id, title);
+            this.pushLog(
+              job,
+              'error',
+              `${title}: ${message}`,
+              target.id,
+              title,
+            );
             this.pushAttention(job, target.id, title, message);
             job.done = i + 1;
             if (i < targets.length - 1 && !job.cancelRequested) {
@@ -557,7 +591,9 @@ export class ScoreSyncService {
       job.current_title = displayTitle(chunk[0]!.title, chunk[0]!.titleRomaji);
 
       try {
-        const rows = await fetchAnilistScoresByIds(chunk.map((t) => t.externalId));
+        const rows = await fetchAnilistScoresByIds(
+          chunk.map((t) => t.externalId),
+        );
         const found = new Map(rows.map((r) => [r.anilist_id, r]));
 
         for (const target of chunk) {
@@ -604,7 +640,13 @@ export class ScoreSyncService {
 
     if (score == null) {
       job.counts.no_score += 1;
-      this.pushLog(job, 'warn', `${title}: نمره‌ای در منبع نبود`, target.id, title);
+      this.pushLog(
+        job,
+        'warn',
+        `${title}: نمره‌ای در منبع نبود`,
+        target.id,
+        title,
+      );
       this.pushAttention(job, target.id, title, 'نمره‌ای برنگشت');
       return;
     }
@@ -661,7 +703,11 @@ export class ScoreSyncService {
     reason: string,
   ) {
     if (job.attention.length >= MAX_ATTENTION) return;
-    if (job.attention.some((item) => item.anime_id === animeId && item.reason === reason)) {
+    if (
+      job.attention.some(
+        (item) => item.anime_id === animeId && item.reason === reason,
+      )
+    ) {
       return;
     }
     job.attention.push({ anime_id: animeId, title, reason });
@@ -679,8 +725,12 @@ export class ScoreSyncService {
     }
   }
 
-  private async readLastRun(source: ScoreSyncSource): Promise<ScoreSyncLastRun | null> {
-    const row = await this.settingsRepo.findOne({ where: { key: SETTING_KEYS[source] } });
+  private async readLastRun(
+    source: ScoreSyncSource,
+  ): Promise<ScoreSyncLastRun | null> {
+    const row = await this.settingsRepo.findOne({
+      where: { key: SETTING_KEYS[source] },
+    });
     if (!row?.value) return null;
     try {
       const parsed = JSON.parse(row.value) as ScoreSyncLastRun;

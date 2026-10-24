@@ -89,7 +89,11 @@ export class AutomationJob {
   @Column({ type: 'uuid', name: 'draft_id', nullable: true })
   draftId: string | null;
 
-  @Column({ type: 'jsonb', name: 'release_candidates', default: () => "'[]'::jsonb" })
+  @Column({
+    type: 'jsonb',
+    name: 'release_candidates',
+    default: () => "'[]'::jsonb",
+  })
   releaseCandidates: unknown[];
 
   @Column({ type: 'jsonb', name: 'progress', default: () => "'{}'::jsonb" })

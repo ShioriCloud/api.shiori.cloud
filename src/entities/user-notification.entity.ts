@@ -53,7 +53,10 @@ export class UserNotification {
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
-  @ManyToOne(() => NotificationCampaign, { onDelete: 'SET NULL', nullable: true })
+  @ManyToOne(() => NotificationCampaign, {
+    onDelete: 'SET NULL',
+    nullable: true,
+  })
   @JoinColumn({ name: 'campaign_id' })
   campaign: NotificationCampaign | null;
 }

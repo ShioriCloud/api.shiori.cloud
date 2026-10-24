@@ -24,7 +24,9 @@ export class AnimeCommentsAdminController {
   }
 
   @Get('reports')
-  @ApiOperation({ summary: 'Paginated reported anime comments for admin panel' })
+  @ApiOperation({
+    summary: 'Paginated reported anime comments for admin panel',
+  })
   listReports(@Query() query: ListAnimeCommentReportsAdminQueryDto) {
     return this.admin.listReportedComments(query.page ?? 1, query.limit ?? 20);
   }

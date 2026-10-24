@@ -22,7 +22,6 @@ import {
   captionEntitiesToHtml,
   getMaxPackedEpisodeEnd,
   isCaptionWithinPhotoBudget,
-  repairTgEmojiHtml,
   repairHtmlCaption,
   replaceEpisodeLinesInCaption,
   TELEGRAM_PHOTO_CAPTION_MAX,
@@ -81,7 +80,9 @@ export class ChannelDraftsService {
   }
 
   private adminUserIdsFromEnv(): number[] {
-    const raw = String(this.config.get<string>('telegram.adminUserId') ?? '').trim();
+    const raw = String(
+      this.config.get<string>('telegram.adminUserId') ?? '',
+    ).trim();
     if (!raw) return [];
     return raw
       .split(/[,;\s]+/)
@@ -132,7 +133,9 @@ export class ChannelDraftsService {
   private postsChannelId(anime?: Anime | null): string {
     const fromAnime = String(anime?.channelId ?? '').trim();
     if (fromAnime) return fromAnime;
-    return String(this.config.get<string>('telegram.postsChannelId') ?? '').trim();
+    return String(
+      this.config.get<string>('telegram.postsChannelId') ?? '',
+    ).trim();
   }
 
   private miniAppBotUsername(): string {
@@ -230,7 +233,9 @@ export class ChannelDraftsService {
     create_draft?: boolean;
     createDraft?: boolean;
   }) {
-    const episodeNumber = Number(body.episode_number ?? body.episodeNumber ?? 0);
+    const episodeNumber = Number(
+      body.episode_number ?? body.episodeNumber ?? 0,
+    );
     if (!Number.isFinite(episodeNumber) || episodeNumber <= 0) {
       throw new BadRequestException('episode_number required');
     }
@@ -483,7 +488,11 @@ export class ChannelDraftsService {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`bindTemplate save failed: ${msg}`);
-      if (/channel_cover_file_id|channel_caption_html|channel_id|does not exist/i.test(msg)) {
+      if (
+        /channel_cover_file_id|channel_caption_html|channel_id|does not exist/i.test(
+          msg,
+        )
+      ) {
         throw new BadRequestException(
           'ستون‌های قالب کانال روی جدول anime نیست — production_schema_catchup.sql را اجرا کن',
         );

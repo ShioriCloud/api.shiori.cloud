@@ -18,7 +18,10 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
-import { PortalAuthGuard, type PortalAuthedRequest } from '../portal-auth/portal-auth.guard';
+import {
+  PortalAuthGuard,
+  type PortalAuthedRequest,
+} from '../portal-auth/portal-auth.guard';
 import { ListMediaQueryDto, UpdateMediaDto } from './media-admin.dto';
 import { MediaAdminService } from './media-admin.service';
 import { MediaStorageService } from './media-storage.service';

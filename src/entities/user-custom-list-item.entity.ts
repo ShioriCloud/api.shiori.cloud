@@ -30,7 +30,9 @@ export class UserCustomListItem {
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
-  @ManyToOne(() => UserCustomList, (list) => list.items, { onDelete: 'CASCADE' })
+  @ManyToOne(() => UserCustomList, (list) => list.items, {
+    onDelete: 'CASCADE',
+  })
   @JoinColumn({ name: 'list_id' })
   list: UserCustomList;
 

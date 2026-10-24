@@ -8,7 +8,9 @@ import { externalHttpGetJson } from './external-score.util';
 const defaultJikanBase = 'https://api.jikan.moe/v4';
 
 const jikanBaseUrl = (): string => {
-  const raw = String(process.env.JIKAN_BASE_URL ?? '').trim().replace(/\/+$/, '');
+  const raw = String(process.env.JIKAN_BASE_URL ?? '')
+    .trim()
+    .replace(/\/+$/, '');
   return raw || defaultJikanBase;
 };
 
@@ -85,7 +87,8 @@ const mapStatus = (raw: unknown): string | null => {
   if (!v) return null;
   if (v.includes('currently airing') || v === 'airing') return 'RELEASING';
   if (v.includes('finished')) return 'FINISHED';
-  if (v.includes('not yet') || v.includes('upcoming')) return 'NOT_YET_RELEASED';
+  if (v.includes('not yet') || v.includes('upcoming'))
+    return 'NOT_YET_RELEASED';
   return null;
 };
 
@@ -132,8 +135,9 @@ const mapJikanAnime = (rawUnknown: unknown): MalMappedMedia | null => {
   const jpg = asRecord(images?.jpg);
   const webp = asRecord(images?.webp);
   const cover =
-    String(jpg?.large_image_url ?? jpg?.image_url ?? webp?.large_image_url ?? '').trim() ||
-    null;
+    String(
+      jpg?.large_image_url ?? jpg?.image_url ?? webp?.large_image_url ?? '',
+    ).trim() || null;
 
   const titleDefault = String(raw.title ?? '').trim();
   const titleEnglish = String(raw.title_english ?? '').trim();
@@ -178,7 +182,10 @@ const mapJikanAnime = (rawUnknown: unknown): MalMappedMedia | null => {
   };
 };
 
-const jikanFetch = async (path: string, options?: JikanRequestOptions): Promise<unknown> => {
+const jikanFetch = async (
+  path: string,
+  options?: JikanRequestOptions,
+): Promise<unknown> => {
   const url = `${jikanBaseUrl()}${path}`;
   const result = await externalHttpGetJson(url, {
     signal: options?.signal,
@@ -193,7 +200,9 @@ const jikanFetch = async (path: string, options?: JikanRequestOptions): Promise<
     const host = jikanEndpointHost();
     const base =
       result.error ??
-      (result.status ? `Jikan HTTP ${result.status}` : `Jikan (${host}) unavailable`);
+      (result.status
+        ? `Jikan HTTP ${result.status}`
+        : `Jikan (${host}) unavailable`);
     throw new JikanClientError(base, result.status);
   }
 
@@ -240,7 +249,8 @@ export const fetchMalScoreById = async (
   const json = asRecord(await jikanFetch(`/anime/${id}`, options));
   const data = asRecord(json?.data);
   if (!data) return null;
-  const score = typeof data.score === 'number' ? data.score : Number(data.score);
+  const score =
+    typeof data.score === 'number' ? data.score : Number(data.score);
   if (!Number.isFinite(score) || score <= 0) return null;
   return Math.round(score * 100) / 100;
 };

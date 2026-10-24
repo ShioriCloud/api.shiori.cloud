@@ -119,9 +119,7 @@ export class AnimeCommentsAdminService {
             where: { telegramUserId: In(authorIds) },
           })
         : [];
-    const userById = new Map(
-      users.map((u) => [String(u.telegramUserId), u]),
-    );
+    const userById = new Map(users.map((u) => [String(u.telegramUserId), u]));
 
     const reportRows = await this.reportsRepo.find({
       where: { commentId: In(commentIds) },

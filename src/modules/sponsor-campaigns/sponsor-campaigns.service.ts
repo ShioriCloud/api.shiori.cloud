@@ -171,7 +171,10 @@ export class SponsorCampaignsService {
     return { ok: true };
   }
 
-  async listActiveCampaigns(): Promise<{ ok: true; data: SponsorCampaignBotItem[] }> {
+  async listActiveCampaigns(): Promise<{
+    ok: true;
+    data: SponsorCampaignBotItem[];
+  }> {
     const rows = await this.campaignRepo.find({
       where: { isActive: true },
       order: { sortOrder: 'ASC', createdAt: 'ASC' },
@@ -241,7 +244,9 @@ export class SponsorCampaignsService {
   }
 
   private normalizeUsername(value?: string | null): string | null {
-    const trimmed = String(value ?? '').trim().replace(/^@/, '');
+    const trimmed = String(value ?? '')
+      .trim()
+      .replace(/^@/, '');
     return trimmed || null;
   }
 

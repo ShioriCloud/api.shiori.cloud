@@ -48,7 +48,9 @@ describe('isExternalTransportFailure', () => {
   it('treats status 0 and timeout text as transport errors', () => {
     expect(isExternalTransportFailure('anything', 0)).toBe(true);
     expect(isExternalTransportFailure('HTTP 429', 429)).toBe(false);
-    expect(isExternalTransportFailure('api.jikan.moe: ETIMEDOUT', 0)).toBe(true);
+    expect(isExternalTransportFailure('api.jikan.moe: ETIMEDOUT', 0)).toBe(
+      true,
+    );
   });
 });
 

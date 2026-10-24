@@ -169,7 +169,9 @@ export class SupportTicketsService {
     const limit = filters.limit && filters.limit > 0 ? filters.limit : 10;
     const search = String(filters.search ?? '').trim();
 
-    const qb = this.ticketRepo.createQueryBuilder('t').orderBy('t.updatedAt', 'DESC');
+    const qb = this.ticketRepo
+      .createQueryBuilder('t')
+      .orderBy('t.updatedAt', 'DESC');
 
     if (filters.status) {
       qb.andWhere('t.status = :status', { status: filters.status });
@@ -302,7 +304,9 @@ export class SupportTicketsService {
     return ticket;
   }
 
-  private async loadMessages(ticketId: string): Promise<SupportTicketMessage[]> {
+  private async loadMessages(
+    ticketId: string,
+  ): Promise<SupportTicketMessage[]> {
     return this.messageRepo.find({
       where: { ticketId },
       order: { createdAt: 'ASC' },
@@ -329,7 +333,11 @@ export class SupportTicketsService {
       closed: 0,
     };
     for (const row of rows) {
-      if (row.status === 'open' || row.status === 'answered' || row.status === 'closed') {
+      if (
+        row.status === 'open' ||
+        row.status === 'answered' ||
+        row.status === 'closed'
+      ) {
         summary[row.status] = Number(row.count) || 0;
       }
     }
@@ -342,9 +350,7 @@ export class SupportTicketsService {
     return { open: summary.open };
   }
 
-  private async loadUsers(
-    ids: string[],
-  ): Promise<Map<string, TelegramUser>> {
+  private async loadUsers(ids: string[]): Promise<Map<string, TelegramUser>> {
     const unique = [...new Set(ids.map(String))];
     if (unique.length === 0) return new Map();
     const rows = await this.userRepo.find({
@@ -408,7 +414,10 @@ export class SupportTicketsService {
 
   private displayName(user: TelegramUser | undefined): string {
     if (!user) return 'کاربر';
-    const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+    const full = [user.firstName, user.lastName]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
     return full || user.username || 'کاربر';
   }
 }

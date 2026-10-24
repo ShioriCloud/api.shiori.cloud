@@ -53,7 +53,9 @@ export class DownloadTokensController {
       'Token wallet status for current user (allowlist/on) + Daramet recharge links',
   })
   wallet(@Req() req: AppUserAuthedRequest) {
-    return this.downloadTokensService.getWalletStatus(String(req.telegramUserId));
+    return this.downloadTokensService.getWalletStatus(
+      String(req.telegramUserId),
+    );
   }
 
   @Post('wallet/refresh')
@@ -76,11 +78,10 @@ export class DownloadTokensController {
 
   @Post('free-download/claim')
   @UseGuards(AppUserAuthGuard)
-  @ApiOperation({ summary: 'Spend 1 token and return free episode download link' })
-  claim(
-    @Req() req: AppUserAuthedRequest,
-    @Body() body: ClaimFreeDownloadDto,
-  ) {
+  @ApiOperation({
+    summary: 'Spend 1 token and return free episode download link',
+  })
+  claim(@Req() req: AppUserAuthedRequest, @Body() body: ClaimFreeDownloadDto) {
     return this.downloadTokensService.claimFreeDownload(
       String(req.telegramUserId),
       body.episode_id,
@@ -101,7 +102,8 @@ export class DownloadTokensController {
       tokens: body.tokens,
       amountIrr: body.amount_irr,
       note: body.note,
-      reason: body.amount_irr && !body.tokens ? 'donation_credit' : 'admin_grant',
+      reason:
+        body.amount_irr && !body.tokens ? 'donation_credit' : 'admin_grant',
       actorTelegramUserId: req.portalTelegramUserId,
     });
   }
@@ -112,7 +114,9 @@ export class DownloadTokensController {
     summary: 'Poll Daramet donations and credit wallets (x-cron-secret)',
   })
   async darametSync(@Headers('x-cron-secret') cronSecret: string | undefined) {
-    const expected = String(this.config.get<string>('cron.secret') ?? '').trim();
+    const expected = String(
+      this.config.get<string>('cron.secret') ?? '',
+    ).trim();
     const provided = String(cronSecret ?? '').trim();
     const allowDev = Boolean(this.config.get<boolean>('allowDevAuth'));
 

@@ -40,4 +40,3 @@ export class PortalAuthController {
     return { ok: true };
   }
 }
-

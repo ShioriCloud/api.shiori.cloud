@@ -4,5 +4,8 @@ import type { DownloadTokenWalletMode } from '../download-tokens/download-token-
 export const SOCIAL_PROFILE_RESPONSE_MODE: DownloadTokenWalletMode = 'on';
 
 export const isSocialProfileEnabledFor = (
-  _telegramUserId: string | number,
-): boolean => true;
+  telegramUserId: string | number,
+): boolean => {
+  void telegramUserId;
+  return true;
+};

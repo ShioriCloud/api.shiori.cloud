@@ -30,13 +30,19 @@ export class UserAnimeListController {
 
   @Post()
   @ApiOperation({ summary: 'Upsert list entry' })
-  upsert(@Req() req: AppUserAuthedRequest, @Body() body: UpsertUserAnimeListDto) {
+  upsert(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: UpsertUserAnimeListDto,
+  ) {
     return this.userAnimeListService.upsert(String(req.telegramUserId), body);
   }
 
   @Delete(':animeId')
   @ApiOperation({ summary: 'Remove anime from list' })
   remove(@Req() req: AppUserAuthedRequest, @Param('animeId') animeId: string) {
-    return this.userAnimeListService.remove(String(req.telegramUserId), animeId);
+    return this.userAnimeListService.remove(
+      String(req.telegramUserId),
+      animeId,
+    );
   }
 }

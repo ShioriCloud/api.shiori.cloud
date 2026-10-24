@@ -58,7 +58,9 @@ export class HomeAdminService {
 
   async createBlock(body: CreateHomeBlockDto): Promise<HomeBlockAdminItem> {
     if (body.type === 'system_rail') {
-      throw new BadRequestException('ریل‌های اصلی از قبل وجود دارند و قابل ایجاد نیستند');
+      throw new BadRequestException(
+        'ریل‌های اصلی از قبل وجود دارند و قابل ایجاد نیستند',
+      );
     }
     validateBlockPayload(body.type, body.title, body.config);
 
@@ -120,7 +122,8 @@ export class HomeAdminService {
 
     if (body.type !== undefined) row.type = body.type;
     if (body.title !== undefined) row.title = body.title?.trim() || null;
-    if (body.subtitle !== undefined) row.subtitle = body.subtitle?.trim() || null;
+    if (body.subtitle !== undefined)
+      row.subtitle = body.subtitle?.trim() || null;
     if (body.description !== undefined) {
       row.description = body.description?.trim() || null;
     }
@@ -131,7 +134,9 @@ export class HomeAdminService {
     return this.toAdminItem(saved);
   }
 
-  async reorderBlocks(body: ReorderHomeBlocksDto): Promise<HomeBlockAdminItem[]> {
+  async reorderBlocks(
+    body: ReorderHomeBlocksDto,
+  ): Promise<HomeBlockAdminItem[]> {
     await this.ensureSystemRails();
     const ids = body.ordered_ids;
     const rows = await this.blockRepo.find();
@@ -164,7 +169,10 @@ export class HomeAdminService {
     return this.listBlocks();
   }
 
-  async toggleBlock(id: string, isActive: boolean): Promise<HomeBlockAdminItem> {
+  async toggleBlock(
+    id: string,
+    isActive: boolean,
+  ): Promise<HomeBlockAdminItem> {
     const row = await this.blockRepo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Home block not found');
     row.isActive = isActive;
@@ -176,14 +184,18 @@ export class HomeAdminService {
     const row = await this.blockRepo.findOne({ where: { id } });
     if (!row) throw new NotFoundException('Home block not found');
     if (row.type === 'system_rail') {
-      throw new BadRequestException('ریل‌های اصلی قابل حذف نیستند — غیرفعال کنید');
+      throw new BadRequestException(
+        'ریل‌های اصلی قابل حذف نیستند — غیرفعال کنید',
+      );
     }
     await this.blockRepo.delete({ id });
   }
 
   /** Seed missing built-in rails (idempotent). Requires DB CHECK to allow system_rail. */
   private async ensureSystemRails(): Promise<void> {
-    const existing = await this.blockRepo.find({ where: { type: 'system_rail' } });
+    const existing = await this.blockRepo.find({
+      where: { type: 'system_rail' },
+    });
     const have = new Set(
       existing
         .map((row) => (row.config as SystemRailConfig).rail_id)
