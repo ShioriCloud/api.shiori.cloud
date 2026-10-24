@@ -135,12 +135,32 @@ export class AnimeCommentsService {
   }
 
   async listMine(viewerId: string, page = 1, limit = 20) {
+    return this.listByUser(viewerId, viewerId, page, limit);
+  }
+
+  async listByUser(
+    viewerId: string,
+    targetTelegramUserId: string,
+    page = 1,
+    limit = 20,
+  ) {
     this.assertEnabled(viewerId);
+    const targetId = String(targetTelegramUserId).trim();
+    if (!targetId) {
+      throw new BadRequestException('user id required');
+    }
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(50, Math.max(1, limit));
 
     const [rows, total] = await this.commentsRepo.findAndCount({
-      where: { telegramUserId: viewerId, isDeleted: false },
+      where: { telegramUserId: targetId, isDeleted: false },
       order: { createdAt: 'DESC' },
       skip: (safePage - 1) * safeLimit,
       take: safeLimit,

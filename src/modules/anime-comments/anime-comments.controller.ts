@@ -49,6 +49,23 @@ export class AnimeCommentsController {
     return this.comments.listMine(String(req.telegramUserId), p, l);
   }
 
+  @Get('users/:telegramUserId')
+  @ApiOperation({ summary: 'Public comments written by a user' })
+  listUser(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const { page: p, limit: l } = parsePage(page, limit);
+    return this.comments.listByUser(
+      String(req.telegramUserId),
+      telegramUserId,
+      p,
+      l,
+    );
+  }
+
   @Get('anime/:animeId')
   @ApiOperation({ summary: 'List comments or replies for an anime' })
   list(
