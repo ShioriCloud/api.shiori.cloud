@@ -628,3 +628,9 @@ CREATE TABLE IF NOT EXISTS user_social_mutes (
 
 CREATE INDEX IF NOT EXISTS idx_user_social_mutes_muter
   ON user_social_mutes (muter_telegram_user_id, created_at DESC);
+
+-- user_anime_list: heart / watchlist vs progress-only tracking
+ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS is_favorite boolean NOT NULL DEFAULT true;
+UPDATE user_anime_list SET is_favorite = true WHERE is_favorite IS NULL;
+CREATE INDEX IF NOT EXISTS idx_user_anime_list_favorite
+  ON user_anime_list (anime_id) WHERE is_favorite = true;

@@ -45,6 +45,7 @@ export type SocialProfileWatchedItem = {
   episodes_watched: number;
   episodes_total: number | null;
   user_rating: number | null;
+  is_favorite: boolean;
   updated_at: string;
 };
 
@@ -1218,6 +1219,7 @@ export class UserSocialProfileService {
           row.userRating != null && row.userRating !== ''
             ? Number(row.userRating)
             : null,
+        is_favorite: row.isFavorite !== false,
         updated_at: row.updatedAt.toISOString(),
       };
     });

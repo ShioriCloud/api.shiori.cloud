@@ -25,6 +25,7 @@ export class UserAnimeListService {
           row.userRating != null && row.userRating !== ''
             ? Number(row.userRating)
             : null,
+        is_favorite: row.isFavorite !== false,
         updated_at: row.updatedAt.toISOString(),
       })),
     };
@@ -50,21 +51,32 @@ export class UserAnimeListService {
 
     const ratingTouched = body.user_rating !== undefined;
 
+    const isFavorite =
+      body.is_favorite !== undefined
+        ? body.is_favorite
+        : row
+          ? row.isFavorite !== false
+          : false;
+
     if (!row) {
       row = this.listRepo.create({
         telegramUserId,
         animeId,
         episodesWatched,
         userRating,
+        isFavorite,
       });
     } else {
       row.episodesWatched = episodesWatched;
       if (body.user_rating !== undefined) row.userRating = userRating;
+      if (body.is_favorite !== undefined) row.isFavorite = body.is_favorite;
     }
 
     await this.listRepo.save(row);
 
-    const favoriteCount = await this.listRepo.count({ where: { animeId } });
+    const favoriteCount = await this.listRepo.count({
+      where: { animeId, isFavorite: true },
+    });
     const shioriScore = ratingTouched
       ? await this.refreshShioriScore(animeId)
       : undefined;
@@ -81,7 +93,9 @@ export class UserAnimeListService {
     if (!result.affected) {
       throw new NotFoundException('List entry not found');
     }
-    const favoriteCount = await this.listRepo.count({ where: { animeId } });
+    const favoriteCount = await this.listRepo.count({
+      where: { animeId, isFavorite: true },
+    });
     const shioriScore = await this.refreshShioriScore(animeId);
     return {
       ok: true as const,

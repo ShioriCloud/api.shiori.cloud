@@ -1,5 +1,14 @@
 import { Transform, Type } from 'class-transformer';
-import { IsNumber, IsOptional, IsString, IsUUID, Max, Min, ValidateIf } from 'class-validator';
+import {
+  IsBoolean,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+  ValidateIf,
+} from 'class-validator';
 
 export class UpsertUserAnimeListDto {
   @IsString()
@@ -23,4 +32,8 @@ export class UpsertUserAnimeListDto {
   @Min(1)
   @Max(10)
   user_rating?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  is_favorite?: boolean;
 }

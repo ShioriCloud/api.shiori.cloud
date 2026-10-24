@@ -32,6 +32,10 @@ export class UserAnimeListEntry {
   })
   userRating: string | null;
 
+  /** Heart / watchlist; progress can exist without this flag. */
+  @Column({ type: 'boolean', name: 'is_favorite', default: true })
+  isFavorite: boolean;
+
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
