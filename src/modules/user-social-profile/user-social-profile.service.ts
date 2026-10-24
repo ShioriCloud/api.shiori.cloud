@@ -382,6 +382,7 @@ export class UserSocialProfileService {
       .where('u.is_banned = false')
       .andWhere(
         `(LOWER(COALESCE(u.username, '')) LIKE :like
+          OR LOWER(COALESCE(u.social_display_name, '')) LIKE :like
           OR LOWER(COALESCE(u.first_name, '')) LIKE :like
           OR LOWER(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) LIKE :like)`,
         { like },
