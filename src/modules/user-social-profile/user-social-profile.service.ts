@@ -409,25 +409,28 @@ export class UserSocialProfileService {
         followingTelegramUserId: targetId,
       });
 
-      const follower = await this.usersRepo.findOne({
-        where: { telegramUserId: viewerId },
-      });
+      const [follower, targetUser] = await Promise.all([
+        this.usersRepo.findOne({ where: { telegramUserId: viewerId } }),
+        this.usersRepo.findOne({ where: { telegramUserId: targetId } }),
+      ]);
       const followerName = follower
         ? this.displayNameOf(follower)
         : 'یک کاربر';
-      await this.notificationsRepo.save(
-        this.notificationsRepo.create({
-          telegramUserId: targetId,
-          kind: 'social_follow',
-          title: 'دنبال‌کننده جدید',
-          message: `${followerName} دنبالت کرد`,
-          href: `/u/${encodeURIComponent(viewerId)}`,
-          animeId: null,
-          episodeNumber: null,
-          campaignId: null,
-          isRead: false,
-        }),
-      );
+      if (targetUser?.notifySocialFollow !== false) {
+        await this.notificationsRepo.save(
+          this.notificationsRepo.create({
+            telegramUserId: targetId,
+            kind: 'social_follow',
+            title: 'دنبال‌کننده جدید',
+            message: `${followerName} دنبالت کرد`,
+            href: `/u/${encodeURIComponent(viewerId)}`,
+            animeId: null,
+            episodeNumber: null,
+            campaignId: null,
+            isRead: false,
+          }),
+        );
+      }
     }
     return { ok: true, is_following: true };
   }

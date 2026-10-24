@@ -5,6 +5,9 @@ ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS social_display_name text;
 
 ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS notify_social_follow boolean NOT NULL DEFAULT true;
+
+ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS hide_watch_activity boolean NOT NULL DEFAULT false;
 
 ALTER TABLE user_custom_lists

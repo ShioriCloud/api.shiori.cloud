@@ -57,6 +57,10 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'notify_telegram_dm', default: true })
   notifyTelegramDm: boolean;
 
+  /** In-app inbox when someone follows you. */
+  @Column({ type: 'boolean', name: 'notify_social_follow', default: true })
+  notifySocialFollow: boolean;
+
   /** When true, @username is hidden on social profile surfaces. */
   @Column({ type: 'boolean', name: 'hide_telegram_username', default: false })
   hideTelegramUsername: boolean;
