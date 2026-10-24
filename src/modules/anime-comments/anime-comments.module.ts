@@ -6,7 +6,6 @@ import {
   AnimeCommentLike,
   AnimeCommentReport,
   TelegramUser,
-  UserNotification,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { UserSocialProfileModule } from '../user-social-profile/user-social-profile.module';
@@ -25,7 +24,6 @@ import { AnimeCommentsService } from './anime-comments.service';
       AnimeCommentReport,
       Anime,
       TelegramUser,
-      UserNotification,
     ]),
   ],
   controllers: [AnimeCommentsController, AnimeCommentsAdminController],

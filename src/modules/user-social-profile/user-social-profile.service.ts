@@ -15,7 +15,6 @@ import {
   UserAnimeListEntry,
   UserCustomList,
   UserCustomListItem,
-  UserNotification,
   UserSocialBadge,
   UserSocialFollow,
 } from '../../entities';
@@ -31,6 +30,7 @@ import {
   type SocialBadgeMetrics,
   socialBadgeTitle,
 } from './social-profile-badges.util';
+import { SocialNotificationDeliveryService } from './social-notification-delivery.service';
 import { UserSocialModerationService } from './user-social-moderation.service';
 import {
   minutesForWatched,
@@ -210,8 +210,7 @@ export class UserSocialProfileService {
     private readonly customListRepo: Repository<UserCustomList>,
     @InjectRepository(UserCustomListItem)
     private readonly customListItemRepo: Repository<UserCustomListItem>,
-    @InjectRepository(UserNotification)
-    private readonly notificationsRepo: Repository<UserNotification>,
+    private readonly socialNotifications: SocialNotificationDeliveryService,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AnimeTranslator)
@@ -454,28 +453,19 @@ export class UserSocialProfileService {
         followingTelegramUserId: targetId,
       });
 
-      const [follower, targetUser] = await Promise.all([
-        this.usersRepo.findOne({ where: { telegramUserId: viewerId } }),
-        this.usersRepo.findOne({ where: { telegramUserId: targetId } }),
-      ]);
+      const follower = await this.usersRepo.findOne({
+        where: { telegramUserId: viewerId },
+      });
       const followerName = follower
         ? this.displayNameOf(follower)
         : 'یک کاربر';
-      if (targetUser?.notifySocialFollow !== false) {
-        await this.notificationsRepo.save(
-          this.notificationsRepo.create({
-            telegramUserId: targetId,
-            kind: 'social_follow',
-            title: 'دنبال‌کننده جدید',
-            message: `${followerName} دنبالت کرد`,
-            href: `/u/${encodeURIComponent(viewerId)}`,
-            animeId: null,
-            episodeNumber: null,
-            campaignId: null,
-            isRead: false,
-          }),
-        );
-      }
+      await this.socialNotifications.deliver({
+        recipientTelegramUserId: targetId,
+        kind: 'social_follow',
+        title: 'دنبال‌کننده جدید',
+        message: `${followerName} دنبالت کرد`,
+        href: `/u/${encodeURIComponent(viewerId)}`,
+      });
     }
     return { ok: true, is_following: true };
   }

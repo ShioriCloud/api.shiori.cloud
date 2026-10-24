@@ -65,6 +65,10 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'notify_comment_reply', default: true })
   notifyCommentReply: boolean;
 
+  /** In-app inbox when someone likes your anime comment (first like only). */
+  @Column({ type: 'boolean', name: 'notify_comment_like', default: true })
+  notifyCommentLike: boolean;
+
   /** When true, @username is hidden on social profile surfaces. */
   @Column({ type: 'boolean', name: 'hide_telegram_username', default: false })
   hideTelegramUsername: boolean;

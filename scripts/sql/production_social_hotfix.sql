@@ -11,6 +11,9 @@ ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS notify_comment_reply boolean NOT NULL DEFAULT true;
 
 ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS notify_comment_like boolean NOT NULL DEFAULT true;
+
+ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS hide_watch_activity boolean NOT NULL DEFAULT false;
 
 ALTER TABLE user_custom_lists

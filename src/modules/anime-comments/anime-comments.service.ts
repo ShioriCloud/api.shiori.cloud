@@ -12,8 +12,8 @@ import {
   AnimeCommentLike,
   AnimeCommentReport,
   TelegramUser,
-  UserNotification,
 } from '../../entities';
+import { SocialNotificationDeliveryService } from '../user-social-profile/social-notification-delivery.service';
 import { UserSocialModerationService } from '../user-social-profile/user-social-moderation.service';
 import { isSocialProfileEnabledFor } from '../user-social-profile/social-profile-rollout.util';
 
@@ -54,10 +54,18 @@ export class AnimeCommentsService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
-    @InjectRepository(UserNotification)
-    private readonly notificationsRepo: Repository<UserNotification>,
+    private readonly socialNotifications: SocialNotificationDeliveryService,
     private readonly moderation: UserSocialModerationService,
   ) {}
+
+  private displayNameOf(user: TelegramUser): string {
+    return (
+      user.socialDisplayName?.trim() ||
+      user.firstName?.trim() ||
+      user.username?.trim() ||
+      'یک کاربر'
+    );
+  }
 
   access(telegramUserId: string): { enabled: boolean } {
     return { enabled: isSocialProfileEnabledFor(telegramUserId) };
@@ -220,32 +228,18 @@ export class AnimeCommentsService {
           viewerId,
         );
         if (!blocked) {
-          const parentUser = await this.usersRepo.findOne({
-            where: { telegramUserId: parentAuthorId },
+          const author = await this.usersRepo.findOne({
+            where: { telegramUserId: viewerId },
           });
-          if (parentUser?.notifyCommentReply !== false) {
-            const author = await this.usersRepo.findOne({
-              where: { telegramUserId: viewerId },
-            });
-            const name =
-              author?.socialDisplayName?.trim() ||
-              author?.firstName?.trim() ||
-              author?.username?.trim() ||
-              'یک کاربر';
-            await this.notificationsRepo.save(
-              this.notificationsRepo.create({
-                telegramUserId: parentAuthorId,
-                kind: 'comment_reply',
-                title: 'پاسخ به نظرت',
-                message: `${name} به نظرت پاسخ داد`,
-                href: `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`,
-                animeId: anime.id,
-                episodeNumber: null,
-                campaignId: null,
-                isRead: false,
-              }),
-            );
-          }
+          const name = author ? this.displayNameOf(author) : 'یک کاربر';
+          await this.socialNotifications.deliver({
+            recipientTelegramUserId: parentAuthorId,
+            kind: 'comment_reply',
+            title: 'پاسخ به نظرت',
+            message: `${name} به نظرت پاسخ داد`,
+            href: `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`,
+            animeId: anime.id,
+          });
         }
       }
     }
@@ -277,6 +271,34 @@ export class AnimeCommentsService {
         commentId: comment.id,
         telegramUserId: viewerId,
       });
+
+      const authorId = String(comment.telegramUserId);
+      if (authorId !== viewerId) {
+        const blocked = await this.moderation.arePeersBlocked(authorId, viewerId);
+        if (!blocked) {
+          const likeCount = await this.likesRepo.count({
+            where: { commentId: comment.id },
+          });
+          if (likeCount === 1) {
+            const [anime, liker] = await Promise.all([
+              this.animeRepo.findOne({ where: { id: comment.animeId } }),
+              this.usersRepo.findOne({ where: { telegramUserId: viewerId } }),
+            ]);
+            const name = liker ? this.displayNameOf(liker) : 'یک کاربر';
+            const href = anime
+              ? `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`
+              : '/notifications';
+            await this.socialNotifications.deliver({
+              recipientTelegramUserId: authorId,
+              kind: 'comment_like',
+              title: 'پسند روی نظرت',
+              message: `${name} نظرت را پسندید`,
+              href,
+              animeId: comment.animeId,
+            });
+          }
+        }
+      }
     }
     return this.likeState(comment.id, viewerId);
   }
