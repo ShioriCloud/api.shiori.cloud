@@ -3,15 +3,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Anime, TelegramUser } from '../../entities';
-import {
-  isDownloadTokenWalletEnabledFor,
-  parseDownloadTokenWalletMode,
-  parseIdAllowlist,
-} from '../download-tokens/download-token-wallet.util';
+import { isSocialProfileEnabledFor } from '../user-social-profile/social-profile-rollout.util';
 import {
   MAX_USER_CUSTOM_LISTS,
   USER_CUSTOM_LIST_ICONS,
@@ -75,15 +70,10 @@ export class UserCustomListsService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
-    private readonly config: ConfigService,
   ) {}
 
   private isSocialEnabledFor(telegramUserId: string): boolean {
-    return isDownloadTokenWalletEnabledFor(
-      telegramUserId,
-      parseDownloadTokenWalletMode(this.config.get<string>('socialProfile.mode')),
-      parseIdAllowlist(this.config.get<string>('socialProfile.allowlist')),
-    );
+    return isSocialProfileEnabledFor(telegramUserId);
   }
 
   async list(telegramUserId: string): Promise<{ lists: UserCustomListDto[] }> {

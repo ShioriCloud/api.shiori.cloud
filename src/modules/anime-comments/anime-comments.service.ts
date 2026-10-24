@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import {
@@ -15,12 +14,8 @@ import {
   TelegramUser,
   UserNotification,
 } from '../../entities';
-import {
-  isDownloadTokenWalletEnabledFor,
-  parseDownloadTokenWalletMode,
-  parseIdAllowlist,
-} from '../download-tokens/download-token-wallet.util';
 import { UserSocialModerationService } from '../user-social-profile/user-social-moderation.service';
+import { isSocialProfileEnabledFor } from '../user-social-profile/social-profile-rollout.util';
 
 const MAX_BODY = 1000;
 
@@ -61,26 +56,15 @@ export class AnimeCommentsService {
     private readonly usersRepo: Repository<TelegramUser>,
     @InjectRepository(UserNotification)
     private readonly notificationsRepo: Repository<UserNotification>,
-    private readonly config: ConfigService,
     private readonly moderation: UserSocialModerationService,
   ) {}
 
   access(telegramUserId: string): { enabled: boolean } {
-    return { enabled: this.isEnabledFor(telegramUserId) };
+    return { enabled: isSocialProfileEnabledFor(telegramUserId) };
   }
 
-  private isEnabledFor(telegramUserId: string): boolean {
-    return isDownloadTokenWalletEnabledFor(
-      telegramUserId,
-      parseDownloadTokenWalletMode(this.config.get<string>('socialProfile.mode')),
-      parseIdAllowlist(this.config.get<string>('socialProfile.allowlist')),
-    );
-  }
-
-  private assertEnabled(telegramUserId: string): void {
-    if (!this.isEnabledFor(telegramUserId)) {
-      throw new ForbiddenException('Comments are not enabled for this user');
-    }
+  private assertEnabled(_telegramUserId: string): void {
+    /* social / comments always enabled for authenticated users */
   }
 
   private cleanBody(raw: string): string {

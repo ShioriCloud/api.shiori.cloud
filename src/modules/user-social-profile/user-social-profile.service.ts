@@ -4,7 +4,6 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
@@ -19,12 +18,11 @@ import {
   UserSocialBadge,
   UserSocialFollow,
 } from '../../entities';
+import type { DownloadTokenWalletMode } from '../download-tokens/download-token-wallet.util';
 import {
-  isDownloadTokenWalletEnabledFor,
-  parseDownloadTokenWalletMode,
-  parseIdAllowlist,
-  type DownloadTokenWalletMode,
-} from '../download-tokens/download-token-wallet.util';
+  isSocialProfileEnabledFor,
+  SOCIAL_PROFILE_RESPONSE_MODE,
+} from './social-profile-rollout.util';
 
 import {
   eligibleSocialBadgeIds,
@@ -160,7 +158,6 @@ export type SocialProfileFollowSuggestionsResponse = {
 @Injectable()
 export class UserSocialProfileService {
   constructor(
-    private readonly config: ConfigService,
     private readonly moderation: UserSocialModerationService,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
@@ -286,27 +283,15 @@ export class UserSocialProfileService {
   }
 
   private mode(): DownloadTokenWalletMode {
-    return parseDownloadTokenWalletMode(
-      this.config.get<string>('socialProfile.mode'),
-    );
-  }
-
-  private allowlist(): Set<string> {
-    return parseIdAllowlist(this.config.get<string>('socialProfile.allowlist'));
+    return SOCIAL_PROFILE_RESPONSE_MODE;
   }
 
   isEnabledFor(telegramUserId: string): boolean {
-    return isDownloadTokenWalletEnabledFor(
-      telegramUserId,
-      this.mode(),
-      this.allowlist(),
-    );
+    return isSocialProfileEnabledFor(telegramUserId);
   }
 
-  private assertSocialEnabled(viewerTelegramUserId: string): void {
-    if (!this.isEnabledFor(String(viewerTelegramUserId).trim())) {
-      throw new ForbiddenException('Social profile is not enabled for this user');
-    }
+  private assertSocialEnabled(_viewerTelegramUserId: string): void {
+    /* always enabled */
   }
 
   /** Viewer must be in rollout; target must exist in telegram_users. */
@@ -651,10 +636,7 @@ export class UserSocialProfileService {
     }
 
     const scoreById = new Map(ranked.map((r) => [r.candidate_id, r.score]));
-    const candidateIds = ranked
-      .map((r) => r.candidate_id)
-      .filter((id) => this.isEnabledFor(id))
-      .slice(0, safeLimit);
+    const candidateIds = ranked.map((r) => r.candidate_id).slice(0, safeLimit);
 
     const users = await this.loadProfileListUsers(candidateIds);
     const items: SocialProfileFollowSuggestionItem[] = users.map((u) => ({
