@@ -14,6 +14,7 @@ import {
   TelegramUser,
   UserAnimeListEntry,
   UserCustomList,
+  UserCustomListItem,
   UserNotification,
   UserSocialBadge,
   UserSocialFollow,
@@ -123,18 +124,54 @@ export type SocialProfileUserListResponse = {
   limit: number;
 };
 
-export type SocialProfileFeedItem = {
-  type: 'watch_progress' | 'rating' | 'list_add';
-  actor: SocialProfileUserListItem;
+export type SocialProfileFeedAnimeRef = {
   anime_id: string;
   slug: string | null;
   title: string;
   image: string;
-  episodes_watched: number;
-  episodes_total: number | null;
-  user_rating: number | null;
-  updated_at: string;
 };
+
+export type SocialProfileFeedItem =
+  | {
+      type: 'watch_progress' | 'rating' | 'list_add';
+      actor: SocialProfileUserListItem;
+      anime_id: string;
+      slug: string | null;
+      title: string;
+      image: string;
+      episodes_watched: number;
+      episodes_total: number | null;
+      user_rating: number | null;
+      updated_at: string;
+    }
+  | {
+      type: 'anime_comment';
+      actor: SocialProfileUserListItem;
+      comment_id: string;
+      comment_preview: string;
+      anime_id: string;
+      slug: string | null;
+      title: string;
+      image: string;
+      updated_at: string;
+    }
+  | {
+      type: 'public_list_add';
+      actor: SocialProfileUserListItem;
+      list_id: string;
+      list_name: string;
+      anime_id: string;
+      slug: string | null;
+      title: string;
+      image: string;
+      updated_at: string;
+    }
+  | {
+      type: 'user_follow';
+      actor: SocialProfileUserListItem;
+      target: SocialProfileUserListItem;
+      updated_at: string;
+    };
 
 export type SocialProfileFeedResponse = {
   enabled: boolean;
@@ -171,6 +208,8 @@ export class UserSocialProfileService {
     private readonly commentsRepo: Repository<AnimeComment>,
     @InjectRepository(UserCustomList)
     private readonly customListRepo: Repository<UserCustomList>,
+    @InjectRepository(UserCustomListItem)
+    private readonly customListItemRepo: Repository<UserCustomListItem>,
     @InjectRepository(UserNotification)
     private readonly notificationsRepo: Repository<UserNotification>,
     @InjectRepository(Anime)
@@ -181,9 +220,15 @@ export class UserSocialProfileService {
     private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
   ) {}
 
+  private commentPreview(body: string, maxLen = 140): string {
+    const flat = body.replace(/\s+/g, ' ').trim();
+    if (flat.length <= maxLen) return flat;
+    return `${flat.slice(0, maxLen - 1)}…`;
+  }
+
   private classifyFeedType(
     row: UserAnimeListEntry,
-  ): SocialProfileFeedItem['type'] {
+  ): 'watch_progress' | 'rating' | 'list_add' {
     const eps = row.episodesWatched ?? 0;
     const ratingRaw =
       row.userRating != null && row.userRating !== ''
@@ -730,52 +775,205 @@ export class UserSocialProfileService {
       };
     }
 
-    const qb = this.listRepo
-      .createQueryBuilder('list')
-      .where('list.telegram_user_id IN (:...ids)', { ids: visibleIds })
-      .orderBy('list.updated_at', 'DESC');
+    const sourceCap = Math.min(120, safePage * safeLimit + safeLimit);
 
-    const total = await qb.getCount();
-    const rows = await qb
-      .skip((safePage - 1) * safeLimit)
-      .take(safeLimit)
+    const listWhere = {
+      ids: visibleIds,
+    };
+    const listTotal = await this.listRepo
+      .createQueryBuilder('list')
+      .where('list.telegram_user_id IN (:...ids)', listWhere)
+      .getCount();
+    const listRows = await this.listRepo
+      .createQueryBuilder('list')
+      .where('list.telegram_user_id IN (:...ids)', listWhere)
+      .orderBy('list.updated_at', 'DESC')
+      .take(sourceCap)
       .getMany();
 
-    const actorIds = [...new Set(rows.map((r) => r.telegramUserId))];
+    const commentWhere = { ids: followingFiltered };
+    const commentTotal = await this.commentsRepo
+      .createQueryBuilder('c')
+      .where('c.telegram_user_id IN (:...ids)', commentWhere)
+      .andWhere('c.is_deleted = false')
+      .andWhere('c.parent_id IS NULL')
+      .getCount();
+    const commentRows = await this.commentsRepo
+      .createQueryBuilder('c')
+      .where('c.telegram_user_id IN (:...ids)', commentWhere)
+      .andWhere('c.is_deleted = false')
+      .andWhere('c.parent_id IS NULL')
+      .orderBy('c.created_at', 'DESC')
+      .take(sourceCap)
+      .getMany();
+
+    const publicListWhere = { ids: followingFiltered };
+    const publicListTotal = await this.customListItemRepo
+      .createQueryBuilder('item')
+      .innerJoin(UserCustomList, 'clist', 'clist.id = item.list_id')
+      .where('clist.telegram_user_id IN (:...ids)', publicListWhere)
+      .andWhere('clist.is_public = true')
+      .getCount();
+    const publicListRows = await this.customListItemRepo
+      .createQueryBuilder('item')
+      .innerJoin(UserCustomList, 'clist', 'clist.id = item.list_id')
+      .where('clist.telegram_user_id IN (:...ids)', publicListWhere)
+      .andWhere('clist.is_public = true')
+      .orderBy('item.created_at', 'DESC')
+      .select([
+        'item.id AS item_id',
+        'item.anime_id AS anime_id',
+        'item.created_at AS created_at',
+        'clist.id AS list_id',
+        'clist.name AS list_name',
+        'clist.telegram_user_id AS owner_id',
+      ])
+      .take(sourceCap)
+      .getRawMany<{
+        item_id: string;
+        anime_id: string;
+        created_at: Date;
+        list_id: string;
+        list_name: string;
+        owner_id: string;
+      }>();
+
+    const followWhere = { ids: followingFiltered };
+    const followTotal = await this.followRepo
+      .createQueryBuilder('f')
+      .where('f.follower_telegram_user_id IN (:...ids)', followWhere)
+      .getCount();
+    const followRows = await this.followRepo
+      .createQueryBuilder('f')
+      .where('f.follower_telegram_user_id IN (:...ids)', followWhere)
+      .orderBy('f.created_at', 'DESC')
+      .take(sourceCap)
+      .getMany();
+
+    const total = listTotal + commentTotal + publicListTotal + followTotal;
+
+    type Staged = SocialProfileFeedItem & { sortTs: number };
+    const staged: Staged[] = [];
+
+    const actorIdSet = new Set<string>();
+    const animeIdSet = new Set<string>();
+    const targetIdSet = new Set<string>();
+
+    for (const row of listRows) {
+      actorIdSet.add(String(row.telegramUserId));
+      animeIdSet.add(row.animeId);
+    }
+    for (const row of commentRows) {
+      actorIdSet.add(String(row.telegramUserId));
+      animeIdSet.add(row.animeId);
+    }
+    for (const row of publicListRows) {
+      actorIdSet.add(String(row.owner_id));
+      animeIdSet.add(row.anime_id);
+    }
+    for (const row of followRows) {
+      actorIdSet.add(String(row.followerTelegramUserId));
+      targetIdSet.add(String(row.followingTelegramUserId));
+    }
+
+    const blockedForTargets = await this.moderation.blockedPeerIds(viewerId);
+    const filteredFollowRows = followRows.filter(
+      (row) =>
+        !blockedForTargets.has(String(row.followingTelegramUserId)) &&
+        !muted.has(String(row.followingTelegramUserId)),
+    );
+
+    const actorIds = [...actorIdSet, ...targetIdSet];
     const actors = await this.loadProfileListUsers(actorIds);
     const actorById = new Map(actors.map((a) => [a.telegram_user_id, a]));
 
-    const animeIds = rows.map((r) => r.animeId);
+    const animeIds = [...animeIdSet];
     const animes =
       animeIds.length > 0
         ? await this.animeRepo.find({ where: { id: In(animeIds) } })
         : [];
     const animeById = new Map(animes.map((a) => [a.id, a]));
 
-    const items: SocialProfileFeedItem[] = rows
-      .map((row) => {
-        const actor = actorById.get(String(row.telegramUserId));
-        const anime = animeById.get(row.animeId);
-        if (!actor || !anime) return null;
-        const ratingRaw =
-          row.userRating != null && row.userRating !== ''
-            ? Number(row.userRating)
-            : null;
-        return {
-          type: this.classifyFeedType(row),
-          actor,
-          anime_id: row.animeId,
-          slug: anime.slug ?? null,
-          title: anime.title ?? '—',
-          image: anime.coverImage || anime.featuredImage || '',
-          episodes_watched: row.episodesWatched ?? 0,
-          episodes_total: anime.episodesCount ?? null,
-          user_rating:
-            ratingRaw != null && Number.isFinite(ratingRaw) ? ratingRaw : null,
-          updated_at: row.updatedAt.toISOString(),
-        };
-      })
-      .filter((x): x is SocialProfileFeedItem => x != null);
+    const animeCard = (animeId: string): SocialProfileFeedAnimeRef | null => {
+      const anime = animeById.get(animeId);
+      if (!anime) return null;
+      return {
+        anime_id: animeId,
+        slug: anime.slug ?? null,
+        title: anime.title ?? '—',
+        image: anime.coverImage || anime.featuredImage || '',
+      };
+    };
+
+    for (const row of listRows) {
+      const actor = actorById.get(String(row.telegramUserId));
+      const card = animeCard(row.animeId);
+      if (!actor || !card) continue;
+      const ratingRaw =
+        row.userRating != null && row.userRating !== ''
+          ? Number(row.userRating)
+          : null;
+      staged.push({
+        type: this.classifyFeedType(row),
+        actor,
+        ...card,
+        episodes_watched: row.episodesWatched ?? 0,
+        episodes_total: animeById.get(row.animeId)?.episodesCount ?? null,
+        user_rating:
+          ratingRaw != null && Number.isFinite(ratingRaw) ? ratingRaw : null,
+        updated_at: row.updatedAt.toISOString(),
+        sortTs: row.updatedAt.getTime(),
+      });
+    }
+
+    for (const row of commentRows) {
+      const actor = actorById.get(String(row.telegramUserId));
+      const card = animeCard(row.animeId);
+      if (!actor || !card) continue;
+      staged.push({
+        type: 'anime_comment',
+        actor,
+        comment_id: row.id,
+        comment_preview: this.commentPreview(row.body),
+        ...card,
+        updated_at: row.createdAt.toISOString(),
+        sortTs: row.createdAt.getTime(),
+      });
+    }
+
+    for (const row of publicListRows) {
+      const actor = actorById.get(String(row.owner_id));
+      const card = animeCard(row.anime_id);
+      if (!actor || !card) continue;
+      staged.push({
+        type: 'public_list_add',
+        actor,
+        list_id: row.list_id,
+        list_name: row.list_name,
+        ...card,
+        updated_at: new Date(row.created_at).toISOString(),
+        sortTs: new Date(row.created_at).getTime(),
+      });
+    }
+
+    for (const row of filteredFollowRows) {
+      const actor = actorById.get(String(row.followerTelegramUserId));
+      const target = actorById.get(String(row.followingTelegramUserId));
+      if (!actor || !target) continue;
+      staged.push({
+        type: 'user_follow',
+        actor,
+        target,
+        updated_at: row.createdAt.toISOString(),
+        sortTs: row.createdAt.getTime(),
+      });
+    }
+
+    staged.sort((a, b) => b.sortTs - a.sortTs);
+    const skip = (safePage - 1) * safeLimit;
+    const items: SocialProfileFeedItem[] = staged
+      .slice(skip, skip + safeLimit)
+      .map(({ sortTs: _sortTs, ...item }) => item);
 
     return {
       enabled: true,
