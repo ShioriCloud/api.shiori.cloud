@@ -171,11 +171,27 @@ export class UserSocialProfileService {
 
   private displayNameOf(user: TelegramUser): string {
     return (
+      user.socialDisplayName?.trim() ||
       user.firstName?.trim() ||
       user.username?.trim() ||
       user.email?.trim() ||
       'کاربر'
     );
+  }
+
+  async updateMe(telegramUserId: string, displayName: string) {
+    this.assertSocialEnabled(telegramUserId);
+    const user = await this.usersRepo.findOne({
+      where: { telegramUserId: String(telegramUserId) },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const next = displayName.trim().slice(0, 40);
+    if (next.length === 1) {
+      throw new BadRequestException('display name too short');
+    }
+    user.socialDisplayName = next.length === 0 ? null : next;
+    await this.usersRepo.save(user);
+    return { ok: true as const, display_name: this.displayNameOf(user) };
   }
 
   private async resolveLinkedTranslator(
@@ -629,6 +645,7 @@ export class UserSocialProfileService {
     return {
       telegram_user_id: String(user.telegramUserId),
       display_name:
+        user.socialDisplayName?.trim() ||
         user.firstName?.trim() ||
         user.username?.trim() ||
         user.email?.trim() ||
@@ -754,6 +771,7 @@ export class UserSocialProfileService {
     });
 
     const displayName =
+      user?.socialDisplayName?.trim() ||
       user?.firstName?.trim() ||
       user?.username?.trim() ||
       user?.email?.trim() ||

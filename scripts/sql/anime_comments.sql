@@ -1,3 +1,7 @@
+-- Public display name (optional; falls back to Telegram first_name)
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS social_display_name text;
+
 -- Anime comments + likes + reports. Safe to re-run.
 
 CREATE TABLE IF NOT EXISTS anime_comments (

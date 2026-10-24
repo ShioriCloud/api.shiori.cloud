@@ -8,6 +8,10 @@ export class TelegramUser {
   @Column({ type: 'text', name: 'first_name', default: '' })
   firstName: string;
 
+  /** Optional public name; falls back to Telegram first_name when empty. */
+  @Column({ type: 'text', name: 'social_display_name', nullable: true })
+  socialDisplayName: string | null;
+
   @Column({ type: 'text', name: 'last_name', nullable: true })
   lastName: string | null;
 

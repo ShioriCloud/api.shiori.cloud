@@ -212,7 +212,10 @@ export class AnimeCommentsService {
           where: { telegramUserId: viewerId },
         });
         const name =
-          author?.firstName?.trim() || author?.username?.trim() || 'یک کاربر';
+          author?.socialDisplayName?.trim() ||
+          author?.firstName?.trim() ||
+          author?.username?.trim() ||
+          'یک کاربر';
         await this.notificationsRepo.save(
           this.notificationsRepo.create({
             telegramUserId: String(parent.telegramUserId),
@@ -363,7 +366,10 @@ export class AnimeCommentsService {
         author: {
           telegram_user_id: String(row.telegramUserId),
           display_name:
-            user?.firstName?.trim() || user?.username?.trim() || 'کاربر',
+            user?.socialDisplayName?.trim() ||
+            user?.firstName?.trim() ||
+            user?.username?.trim() ||
+            'کاربر',
           username: null,
           photo_url: user?.photoUrl?.trim() || null,
         },

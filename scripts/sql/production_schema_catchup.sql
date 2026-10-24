@@ -552,6 +552,9 @@ CREATE INDEX IF NOT EXISTS idx_user_social_follows_follower_created
 ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS hide_watch_activity boolean NOT NULL DEFAULT false;
 
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS social_display_name text;
+
 -- Anime comments
 CREATE TABLE IF NOT EXISTS anime_comments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

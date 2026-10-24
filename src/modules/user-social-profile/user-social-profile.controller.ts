@@ -1,8 +1,10 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -13,6 +15,7 @@ import {
   AppUserAuthGuard,
   AppUserAuthedRequest,
 } from '../../telegram/app-user-auth.guard';
+import { UpdateSocialProfileDto } from './user-social-profile.dto';
 import { UserSocialProfileService } from './user-social-profile.service';
 
 const parsePageLimit = (page?: string, limit?: string) => {
@@ -51,6 +54,12 @@ export class UserSocialProfileController {
   ) {
     const { page: p, limit: l } = parsePageLimit(page, limit);
     return this.socialProfile.getMe(String(req.telegramUserId), p, l);
+  }
+
+  @Patch('me')
+  @ApiOperation({ summary: 'Update own public display name' })
+  updateMe(@Req() req: AppUserAuthedRequest, @Body() body: UpdateSocialProfileDto) {
+    return this.socialProfile.updateMe(String(req.telegramUserId), body.display_name);
   }
 
   @Get('feed')
