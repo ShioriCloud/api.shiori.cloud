@@ -202,6 +202,20 @@ export class UserSocialProfileService {
     const eligible = eligibleSocialBadgeIds(metrics);
     if (eligible.length === 0) return [];
 
+    try {
+      return await this.resolveProfileBadgesPersisted(telegramUserId, eligible);
+    } catch {
+      return eligible.map((id) => ({
+        id,
+        title: socialBadgeTitle(id),
+      }));
+    }
+  }
+
+  private async resolveProfileBadgesPersisted(
+    telegramUserId: string,
+    eligible: string[],
+  ): Promise<SocialProfileMeResponse['badges']> {
     const userId = String(telegramUserId);
     const existing = await this.badgeRepo.find({
       where: { telegramUserId: userId },
