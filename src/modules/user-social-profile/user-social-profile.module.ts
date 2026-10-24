@@ -5,8 +5,11 @@ import {
   AnimeTranslator,
   AnimeTranslatorLink,
   TelegramUser,
+  AnimeComment,
   UserAnimeListEntry,
+  UserCustomList,
   UserNotification,
+  UserSocialBadge,
   UserSocialFollow,
 } from '../../entities';
 import { UserSocialProfileController } from './user-social-profile.controller';
@@ -18,6 +21,9 @@ import { UserSocialProfileService } from './user-social-profile.service';
       TelegramUser,
       UserAnimeListEntry,
       UserSocialFollow,
+      UserSocialBadge,
+      AnimeComment,
+      UserCustomList,
       UserNotification,
       Anime,
       AnimeTranslator,

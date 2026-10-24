@@ -596,3 +596,13 @@ CREATE TABLE IF NOT EXISTS anime_comment_reports (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT anime_comment_reports_unique UNIQUE (comment_id, telegram_user_id)
 );
+
+CREATE TABLE IF NOT EXISTS user_social_badges (
+  telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  badge_id text NOT NULL,
+  earned_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (telegram_user_id, badge_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_social_badges_user
+  ON user_social_badges (telegram_user_id, earned_at DESC);

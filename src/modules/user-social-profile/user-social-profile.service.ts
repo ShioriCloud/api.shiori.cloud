@@ -9,11 +9,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import {
   Anime,
+  AnimeComment,
   AnimeTranslator,
   AnimeTranslatorLink,
   TelegramUser,
   UserAnimeListEntry,
+  UserCustomList,
   UserNotification,
+  UserSocialBadge,
   UserSocialFollow,
 } from '../../entities';
 import {
@@ -23,6 +26,12 @@ import {
   type DownloadTokenWalletMode,
 } from '../download-tokens/download-token-wallet.util';
 
+import {
+  eligibleSocialBadgeIds,
+  SOCIAL_BADGE_NEW_MS,
+  type SocialBadgeMetrics,
+  socialBadgeTitle,
+} from './social-profile-badges.util';
 import {
   minutesForWatched,
   normalizeProfileFormat,
@@ -145,6 +154,12 @@ export class UserSocialProfileService {
     private readonly listRepo: Repository<UserAnimeListEntry>,
     @InjectRepository(UserSocialFollow)
     private readonly followRepo: Repository<UserSocialFollow>,
+    @InjectRepository(UserSocialBadge)
+    private readonly badgeRepo: Repository<UserSocialBadge>,
+    @InjectRepository(AnimeComment)
+    private readonly commentsRepo: Repository<AnimeComment>,
+    @InjectRepository(UserCustomList)
+    private readonly customListRepo: Repository<UserCustomList>,
     @InjectRepository(UserNotification)
     private readonly notificationsRepo: Repository<UserNotification>,
     @InjectRepository(Anime)
@@ -167,6 +182,46 @@ export class UserSocialProfileService {
     if (eps > 0) return 'watch_progress';
     if (hasRating) return 'rating';
     return 'list_add';
+  }
+
+  private async resolveProfileBadges(
+    telegramUserId: string,
+    metrics: SocialBadgeMetrics,
+  ): Promise<SocialProfileMeResponse['badges']> {
+    const eligible = eligibleSocialBadgeIds(metrics);
+    if (eligible.length === 0) return [];
+
+    const userId = String(telegramUserId);
+    const existing = await this.badgeRepo.find({
+      where: { telegramUserId: userId },
+    });
+    const earnedById = new Map(existing.map((row) => [row.badgeId, row]));
+    const now = new Date();
+    const toCreate = eligible
+      .filter((id) => !earnedById.has(id))
+      .map((badgeId) =>
+        this.badgeRepo.create({
+          telegramUserId: userId,
+          badgeId,
+          earnedAt: now,
+        }),
+      );
+    if (toCreate.length > 0) {
+      await this.badgeRepo.save(toCreate);
+      for (const row of toCreate) {
+        earnedById.set(row.badgeId, row);
+      }
+    }
+
+    const freshCutoff = Date.now() - SOCIAL_BADGE_NEW_MS;
+    return eligible.map((id) => {
+      const earned = earnedById.get(id);
+      return {
+        id,
+        title: socialBadgeTitle(id),
+        is_new: earned ? earned.earnedAt.getTime() >= freshCutoff : undefined,
+      };
+    });
   }
 
   private displayNameOf(user: TelegramUser): string {
@@ -743,11 +798,32 @@ export class UserSocialProfileService {
       }))
       .sort((a, b) => b.count - a.count);
 
-    const badges: SocialProfileMeResponse['badges'] = [];
-    if (rows.length >= 1) badges.push({ id: 'first_anime', title: 'اولین انیمه' });
-    if (rows.length >= 10) badges.push({ id: 'ten_anime', title: '۱۰ انیمه' });
-    if (episodesWatched >= 100) badges.push({ id: 'hundred_eps', title: '۱۰۰ قسمت', is_new: true });
-    if (ratings.length >= 5) badges.push({ id: 'five_ratings', title: '۵ نمره' });
+    const targetId = String(telegramUserId);
+    const [followersCount, followingCount, commentsCount, publicListsCount] =
+      await Promise.all([
+        this.followRepo.count({ where: { followingTelegramUserId: targetId } }),
+        this.followRepo.count({ where: { followerTelegramUserId: targetId } }),
+        this.commentsRepo.count({
+          where: { telegramUserId: targetId, isDeleted: false },
+        }),
+        this.customListRepo.count({
+          where: { telegramUserId: targetId, isPublic: true },
+        }),
+      ]);
+
+    const badgeMetrics: SocialBadgeMetrics = {
+      animeCount: rows.length,
+      episodesWatched,
+      ratingsCount: ratings.length,
+      activeDays: activeDayKeys.size,
+      watchHours: estimatedHours,
+      followersCount,
+      followingCount,
+      commentsCount,
+      publicListsCount,
+    };
+
+    const badges = await this.resolveProfileBadges(targetId, badgeMetrics);
 
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(100, Math.max(1, limit));
@@ -813,12 +889,6 @@ export class UserSocialProfileService {
         })),
       };
     }
-
-    const targetId = String(telegramUserId);
-    const [followersCount, followingCount] = await Promise.all([
-      this.followRepo.count({ where: { followingTelegramUserId: targetId } }),
-      this.followRepo.count({ where: { followerTelegramUserId: targetId } }),
-    ]);
 
     let relationship: SocialProfileMeResponse['relationship'];
     const viewerId = viewerTelegramUserId?.trim();

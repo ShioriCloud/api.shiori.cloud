@@ -12,6 +12,7 @@ export { AnimeTranslator } from './anime-translator.entity';
 export { AnimeTranslatorLink } from './anime-translator-link.entity';
 export { UserAnimeListEntry } from './user-anime-list-entry.entity';
 export { UserSocialFollow } from './user-social-follow.entity';
+export { UserSocialBadge } from './user-social-badge.entity';
 export { AnimeComment } from './anime-comment.entity';
 export { AnimeCommentLike } from './anime-comment-like.entity';
 export { AnimeCommentReport } from './anime-comment-report.entity';
