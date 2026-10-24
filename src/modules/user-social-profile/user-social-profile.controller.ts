@@ -62,6 +62,19 @@ export class UserSocialProfileController {
     return this.socialProfile.updateMe(String(req.telegramUserId), body.display_name);
   }
 
+  @Get('suggestions')
+  @ApiOperation({ summary: 'Users to follow (friends-of-friends or popular)' })
+  suggestions(
+    @Req() req: AppUserAuthedRequest,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.socialProfile.getFollowSuggestions(
+      String(req.telegramUserId),
+      Number.isFinite(limitNum) ? limitNum : 10,
+    );
+  }
+
   @Get('feed')
   @ApiOperation({ summary: 'Activity feed from users you follow' })
   feed(

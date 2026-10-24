@@ -147,6 +147,16 @@ export type SocialProfileFeedResponse = {
   limit: number;
 };
 
+export type SocialProfileFollowSuggestionItem = SocialProfileUserListItem & {
+  mutual_connections: number;
+};
+
+export type SocialProfileFollowSuggestionsResponse = {
+  enabled: boolean;
+  mode: DownloadTokenWalletMode;
+  items: SocialProfileFollowSuggestionItem[];
+};
+
 @Injectable()
 export class UserSocialProfileService {
   constructor(
@@ -572,6 +582,87 @@ export class UserSocialProfileService {
       page,
       limit,
     );
+  }
+
+  async getFollowSuggestions(
+    viewerTelegramUserId: string,
+    limit = 10,
+  ): Promise<SocialProfileFollowSuggestionsResponse> {
+    const mode = this.mode();
+    const viewerId = String(viewerTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return { enabled: false, mode, items: [] };
+    }
+
+    const safeLimit = Math.min(20, Math.max(1, limit));
+    const blocked = await this.moderation.blockedPeerIds(viewerId);
+
+    const followingRows = await this.followRepo.find({
+      where: { followerTelegramUserId: viewerId },
+      select: { followingTelegramUserId: true },
+    });
+    const followingIds = followingRows.map((r) => r.followingTelegramUserId);
+    const exclude = new Set<string>([viewerId, ...followingIds, ...blocked]);
+
+    type Ranked = { candidate_id: string; score: number };
+    let ranked: Ranked[] = [];
+
+    if (followingIds.length > 0) {
+      ranked = await this.followRepo
+        .createQueryBuilder('f')
+        .select('f.following_telegram_user_id', 'candidate_id')
+        .addSelect('COUNT(*)', 'score')
+        .where('f.follower_telegram_user_id IN (:...followingIds)', {
+          followingIds,
+        })
+        .andWhere('f.following_telegram_user_id NOT IN (:...exclude)', {
+          exclude: [...exclude],
+        })
+        .groupBy('f.following_telegram_user_id')
+        .orderBy('score', 'DESC')
+        .addOrderBy('f.following_telegram_user_id', 'ASC')
+        .limit(safeLimit * 3)
+        .getRawMany<{ candidate_id: string; score: string }>()
+        .then((rows) =>
+          rows.map((r) => ({
+            candidate_id: String(r.candidate_id),
+            score: Number(r.score) || 0,
+          })),
+        );
+    } else {
+      ranked = await this.followRepo
+        .createQueryBuilder('f')
+        .select('f.following_telegram_user_id', 'candidate_id')
+        .addSelect('COUNT(*)', 'score')
+        .where('f.following_telegram_user_id NOT IN (:...exclude)', {
+          exclude: [...exclude],
+        })
+        .groupBy('f.following_telegram_user_id')
+        .orderBy('score', 'DESC')
+        .addOrderBy('f.following_telegram_user_id', 'ASC')
+        .limit(safeLimit * 3)
+        .getRawMany<{ candidate_id: string; score: string }>()
+        .then((rows) =>
+          rows.map((r) => ({
+            candidate_id: String(r.candidate_id),
+            score: Number(r.score) || 0,
+          })),
+        );
+    }
+
+    const scoreById = new Map(ranked.map((r) => [r.candidate_id, r.score]));
+    const candidateIds = ranked
+      .map((r) => r.candidate_id)
+      .filter((id) => this.isEnabledFor(id))
+      .slice(0, safeLimit);
+
+    const users = await this.loadProfileListUsers(candidateIds);
+    const items: SocialProfileFollowSuggestionItem[] = users.map((u) => ({
+      ...u,
+      mutual_connections: scoreById.get(u.telegram_user_id) ?? 0,
+    }));
+
+    return { enabled: true, mode, items };
   }
 
   async getFeed(
