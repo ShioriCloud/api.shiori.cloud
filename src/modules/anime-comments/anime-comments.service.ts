@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,12 +13,14 @@ import {
   AnimeCommentLike,
   AnimeCommentReport,
   TelegramUser,
+  UserSocialFollow,
 } from '../../entities';
 import { SocialNotificationDeliveryService } from '../user-social-profile/social-notification-delivery.service';
 import { UserSocialModerationService } from '../user-social-profile/user-social-moderation.service';
 import { isSocialProfileEnabledFor } from '../user-social-profile/social-profile-rollout.util';
 
 const MAX_BODY = 1000;
+const FOLLOWER_COMMENT_NOTIFY_CAP = 200;
 
 export type AnimeCommentAuthorDto = {
   telegram_user_id: string;
@@ -39,10 +42,16 @@ export type AnimeCommentDto = {
   reply_count: number;
   like_count: number;
   liked_by_me: boolean;
+  reply_to: {
+    comment_id: string;
+    author: AnimeCommentAuthorDto;
+  } | null;
 };
 
 @Injectable()
 export class AnimeCommentsService {
+  private readonly logger = new Logger(AnimeCommentsService.name);
+
   constructor(
     @InjectRepository(AnimeComment)
     private readonly commentsRepo: Repository<AnimeComment>,
@@ -54,6 +63,8 @@ export class AnimeCommentsService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
+    @InjectRepository(UserSocialFollow)
+    private readonly followRepo: Repository<UserSocialFollow>,
     private readonly socialNotifications: SocialNotificationDeliveryService,
     private readonly moderation: UserSocialModerationService,
   ) {}
@@ -189,59 +200,164 @@ export class AnimeCommentsService {
     };
   }
 
+  private async resolveReplyThread(
+    animeId: string,
+    input: { parent_id?: string; reply_to_comment_id?: string },
+  ): Promise<{ rootId: string | null; replyToId: string | null }> {
+    let rootId: string | null = null;
+    let replyToId = input.reply_to_comment_id?.trim() || null;
+
+    if (input.parent_id?.trim()) {
+      const anchor = await this.commentsRepo.findOne({
+        where: { id: input.parent_id.trim(), animeId },
+      });
+      if (!anchor || anchor.isDeleted) {
+        throw new NotFoundException('Parent comment not found');
+      }
+      rootId = anchor.parentId ?? anchor.id;
+      if (anchor.parentId && !replyToId) {
+        replyToId = anchor.id;
+      }
+    }
+
+    if (replyToId) {
+      const target = await this.commentsRepo.findOne({
+        where: { id: replyToId, animeId },
+      });
+      if (!target || target.isDeleted) {
+        throw new NotFoundException('Reply target not found');
+      }
+      const targetRoot = target.parentId ?? target.id;
+      if (!rootId) {
+        rootId = targetRoot;
+      } else if (targetRoot !== rootId) {
+        throw new BadRequestException('reply target must be in the same thread');
+      }
+      replyToId = target.id;
+    }
+
+    if (replyToId && !rootId) {
+      throw new BadRequestException('invalid reply thread');
+    }
+
+    return { rootId, replyToId };
+  }
+
+  private async notifyFollowersOfRootComment(
+    authorId: string,
+    anime: Anime,
+    authorName: string,
+  ): Promise<void> {
+    const edges = await this.followRepo.find({
+      where: { followingTelegramUserId: authorId },
+      order: { createdAt: 'DESC' },
+      take: FOLLOWER_COMMENT_NOTIFY_CAP,
+    });
+    if (edges.length === 0) return;
+
+    const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
+    const animeTitle = anime.title ?? 'انیمه';
+
+    await Promise.all(
+      edges.map(async (edge) => {
+        const followerId = String(edge.followerTelegramUserId);
+        if (followerId === authorId) return;
+        if (await this.moderation.arePeersBlocked(followerId, authorId)) return;
+        await this.socialNotifications.deliver({
+          recipientTelegramUserId: followerId,
+          kind: 'following_comment',
+          title: 'نظر از دنبال‌شده',
+          message: `${authorName} روی «${animeTitle}» نظر گذاشت`,
+          href,
+          animeId: anime.id,
+        });
+      }),
+    );
+  }
+
   async create(
     viewerId: string,
-    input: { anime_id: string; body: string; parent_id?: string },
+    input: {
+      anime_id: string;
+      body: string;
+      parent_id?: string;
+      reply_to_comment_id?: string;
+    },
   ) {
     this.assertEnabled(viewerId);
     const anime = await this.resolveAnimeId(input.anime_id);
     const body = this.cleanBody(input.body);
-    let parentId: string | null = null;
-
-    if (input.parent_id) {
-      const parent = await this.commentsRepo.findOne({
-        where: { id: input.parent_id, animeId: anime.id },
-      });
-      if (!parent || parent.isDeleted) {
-        throw new NotFoundException('Parent comment not found');
-      }
-      if (parent.parentId) {
-        throw new BadRequestException('replies to replies are not allowed');
-      }
-      parentId = parent.id;
-    }
+    const { rootId, replyToId } = await this.resolveReplyThread(anime.id, input);
 
     const saved = await this.commentsRepo.save({
       animeId: anime.id,
-      parentId,
+      parentId: rootId,
+      replyToCommentId: replyToId,
       telegramUserId: viewerId,
       body,
       isDeleted: false,
     });
 
-    if (parentId) {
-      const parent = await this.commentsRepo.findOne({ where: { id: parentId } });
-      const parentAuthorId = parent ? String(parent.telegramUserId) : '';
-      if (parent && parentAuthorId !== viewerId) {
+    const author = await this.usersRepo.findOne({
+      where: { telegramUserId: viewerId },
+    });
+    const name = author ? this.displayNameOf(author) : 'یک کاربر';
+    const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
+
+    if (rootId) {
+      const root = await this.commentsRepo.findOne({ where: { id: rootId } });
+      const rootAuthorId = root ? String(root.telegramUserId) : '';
+      if (root && rootAuthorId !== viewerId) {
         const blocked = await this.moderation.arePeersBlocked(
-          parentAuthorId,
+          rootAuthorId,
           viewerId,
         );
         if (!blocked) {
-          const author = await this.usersRepo.findOne({
-            where: { telegramUserId: viewerId },
-          });
-          const name = author ? this.displayNameOf(author) : 'یک کاربر';
           await this.socialNotifications.deliver({
-            recipientTelegramUserId: parentAuthorId,
+            recipientTelegramUserId: rootAuthorId,
             kind: 'comment_reply',
             title: 'پاسخ به نظرت',
             message: `${name} به نظرت پاسخ داد`,
-            href: `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`,
+            href,
             animeId: anime.id,
           });
         }
       }
+
+      if (replyToId && replyToId !== rootId) {
+        const target = await this.commentsRepo.findOne({ where: { id: replyToId } });
+        const targetAuthorId = target ? String(target.telegramUserId) : '';
+        if (
+          target &&
+          targetAuthorId !== viewerId &&
+          targetAuthorId !== rootAuthorId
+        ) {
+          const blocked = await this.moderation.arePeersBlocked(
+            targetAuthorId,
+            viewerId,
+          );
+          if (!blocked) {
+            await this.socialNotifications.deliver({
+              recipientTelegramUserId: targetAuthorId,
+              kind: 'comment_reply',
+              title: 'پاسخ به تو',
+              message: `${name} در پاسخ به نظرت نوشت`,
+              href,
+              animeId: anime.id,
+            });
+          }
+        }
+      }
+    } else {
+      void this.notifyFollowersOfRootComment(viewerId, anime, name).catch(
+        (err) => {
+          this.logger.warn(
+            `follower comment notify failed: ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        },
+      );
     }
 
     const [dto] = await this.hydrate([saved], viewerId);
@@ -357,11 +473,43 @@ export class AnimeCommentsService {
     if (visibleRows.length === 0) return [];
 
     const ids = visibleRows.map((r) => r.id);
-    const authorIds = [...new Set(visibleRows.map((r) => String(r.telegramUserId)))];
+    const replyToIds = [
+      ...new Set(
+        visibleRows
+          .map((r) => r.replyToCommentId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const replyToRows =
+      replyToIds.length > 0
+        ? await this.commentsRepo.find({ where: { id: In(replyToIds) } })
+        : [];
+    const replyToById = new Map(replyToRows.map((r) => [r.id, r]));
+
+    const authorIds = [
+      ...new Set([
+        ...visibleRows.map((r) => String(r.telegramUserId)),
+        ...replyToRows.map((r) => String(r.telegramUserId)),
+      ]),
+    ];
     const users = await this.usersRepo.find({
       where: { telegramUserId: In(authorIds) },
     });
     const userById = new Map(users.map((u) => [String(u.telegramUserId), u]));
+
+    const authorDto = (telegramUserId: string): AnimeCommentAuthorDto => {
+      const user = userById.get(telegramUserId);
+      return {
+        telegram_user_id: telegramUserId,
+        display_name:
+          user?.socialDisplayName?.trim() ||
+          user?.firstName?.trim() ||
+          user?.username?.trim() ||
+          'کاربر',
+        username: null,
+        photo_url: user?.photoUrl?.trim() || null,
+      };
+    };
 
     const replyRows = await this.commentsRepo
       .createQueryBuilder('c')
@@ -398,8 +546,10 @@ export class AnimeCommentsService {
     );
 
     return visibleRows.map((row) => {
-      const user = userById.get(String(row.telegramUserId));
       const likes = likeById.get(row.id);
+      const replyTarget = row.replyToCommentId
+        ? replyToById.get(row.replyToCommentId)
+        : undefined;
       return {
         id: row.id,
         anime_id: row.animeId,
@@ -409,16 +559,14 @@ export class AnimeCommentsService {
         updated_at: row.updatedAt.toISOString(),
         is_deleted: row.isDeleted,
         is_own: String(row.telegramUserId) === viewerId,
-        author: {
-          telegram_user_id: String(row.telegramUserId),
-          display_name:
-            user?.socialDisplayName?.trim() ||
-            user?.firstName?.trim() ||
-            user?.username?.trim() ||
-            'کاربر',
-          username: null,
-          photo_url: user?.photoUrl?.trim() || null,
-        },
+        author: authorDto(String(row.telegramUserId)),
+        reply_to:
+          replyTarget && !replyTarget.isDeleted
+            ? {
+                comment_id: replyTarget.id,
+                author: authorDto(String(replyTarget.telegramUserId)),
+              }
+            : null,
         reply_count: replyById.get(row.id) ?? 0,
         like_count: likes?.count ?? 0,
         liked_by_me: likes?.liked ?? false,

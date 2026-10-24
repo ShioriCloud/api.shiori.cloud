@@ -12,6 +12,10 @@ export class CreateAnimeCommentDto {
   @IsOptional()
   @IsUUID()
   parent_id?: string;
+
+  @IsOptional()
+  @IsUUID()
+  reply_to_comment_id?: string;
 }
 
 export class ReportAnimeCommentDto {

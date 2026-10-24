@@ -9,7 +9,8 @@ import { TelegramBotService } from '../../telegram/telegram-bot.service';
 export type SocialInboxKind =
   | 'social_follow'
   | 'comment_reply'
-  | 'comment_like';
+  | 'comment_like'
+  | 'following_comment';
 
 type DeliverInput = {
   recipientTelegramUserId: string;
@@ -42,6 +43,8 @@ export class SocialNotificationDeliveryService {
         return user.notifyCommentReply !== false;
       case 'comment_like':
         return user.notifyCommentLike !== false;
+      case 'following_comment':
+        return user.notifyFollowingComment !== false;
       default:
         return true;
     }

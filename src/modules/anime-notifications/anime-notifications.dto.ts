@@ -23,6 +23,10 @@ export class UpdateNotificationPreferencesDto {
 
   @IsOptional()
   @IsBoolean()
+  notify_following_comment?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   hide_telegram_username?: boolean;
 
   @IsOptional()

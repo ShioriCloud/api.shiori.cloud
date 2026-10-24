@@ -20,6 +20,10 @@ export class AnimeComment {
   @Column({ type: 'uuid', name: 'parent_id', nullable: true })
   parentId: string | null;
 
+  /** When set, this reply is directed at another comment in the same thread. */
+  @Column({ type: 'uuid', name: 'reply_to_comment_id', nullable: true })
+  replyToCommentId: string | null;
+
   @Column({ type: 'bigint', name: 'telegram_user_id' })
   telegramUserId: string;
 

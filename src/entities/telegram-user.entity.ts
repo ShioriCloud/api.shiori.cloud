@@ -69,6 +69,10 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'notify_comment_like', default: true })
   notifyCommentLike: boolean;
 
+  /** When someone you follow posts a root comment on an anime. */
+  @Column({ type: 'boolean', name: 'notify_following_comment', default: true })
+  notifyFollowingComment: boolean;
+
   /** When true, @username is hidden on social profile surfaces. */
   @Column({ type: 'boolean', name: 'hide_telegram_username', default: false })
   hideTelegramUsername: boolean;
