@@ -458,7 +458,7 @@ export const buildEpisodeCaptionLine = (opts: {
   const epLabel = String(opts.episodeNumber).padStart(2, '0');
   const marker =
     opts.isNew === false ? premiumEmoji('success') : premiumEmoji('arrowDown');
-  const video = tgLink(opts.videoUrl, videoLabel(opts.videoFileType));
+  const video = tgLink(opts.videoUrl, videoLabel());
   if (opts.subtitleUrl?.trim()) {
     return `${marker} <b>E${epLabel}</b>: ${video} | ${tgLink(opts.subtitleUrl.trim(), 'Subtitle')}`;
   }
