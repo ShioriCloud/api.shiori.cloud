@@ -35,6 +35,32 @@ export class UserCustomListsController {
     return this.customListsService.list(String(req.telegramUserId));
   }
 
+  @Get('users/:telegramUserId/public')
+  @ApiOperation({ summary: 'Public custom lists for another user' })
+  listPublic(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+  ) {
+    return this.customListsService.listPublicForUser(
+      String(req.telegramUserId),
+      telegramUserId,
+    );
+  }
+
+  @Get('users/:telegramUserId/public/:listId')
+  @ApiOperation({ summary: 'One public custom list with anime cards' })
+  getPublic(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+    @Param('listId') listId: string,
+  ) {
+    return this.customListsService.getPublicList(
+      String(req.telegramUserId),
+      telegramUserId,
+      listId,
+    );
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create a custom list (max 5)' })
   create(

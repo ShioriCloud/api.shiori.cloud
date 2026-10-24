@@ -37,6 +37,9 @@ export class UserCustomList {
   @Column({ type: 'text', default: 'heart' })
   icon: string;
 
+  @Column({ type: 'boolean', name: 'is_public', default: false })
+  isPublic: boolean;
+
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 

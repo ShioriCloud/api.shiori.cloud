@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS user_custom_lists (
   telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
   name text NOT NULL,
   icon text NOT NULL DEFAULT 'heart',
+  is_public boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );

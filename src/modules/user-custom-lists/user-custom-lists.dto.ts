@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsOptional,
   IsString,
@@ -24,6 +25,10 @@ export class CreateUserCustomListDto {
   @IsOptional()
   @IsIn([...USER_CUSTOM_LIST_ICONS])
   icon?: (typeof USER_CUSTOM_LIST_ICONS)[number];
+
+  @IsOptional()
+  @IsBoolean()
+  is_public?: boolean;
 }
 
 export class UpdateUserCustomListDto {
@@ -36,6 +41,10 @@ export class UpdateUserCustomListDto {
   @IsOptional()
   @IsIn([...USER_CUSTOM_LIST_ICONS])
   icon?: (typeof USER_CUSTOM_LIST_ICONS)[number];
+
+  @IsOptional()
+  @IsBoolean()
+  is_public?: boolean;
 }
 
 export class AddUserCustomListItemDto {

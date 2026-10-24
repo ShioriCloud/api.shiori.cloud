@@ -3,9 +3,15 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Anime } from '../../entities';
+import { In, Repository } from 'typeorm';
+import { Anime, TelegramUser } from '../../entities';
+import {
+  isDownloadTokenWalletEnabledFor,
+  parseDownloadTokenWalletMode,
+  parseIdAllowlist,
+} from '../download-tokens/download-token-wallet.util';
 import {
   MAX_USER_CUSTOM_LISTS,
   USER_CUSTOM_LIST_ICONS,
@@ -29,9 +35,28 @@ export type UserCustomListDto = {
   id: string;
   name: string;
   icon: UserCustomListIcon;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
   items: UserCustomListItemDto[];
+};
+
+export type PublicUserCustomListSummary = {
+  id: string;
+  name: string;
+  icon: UserCustomListIcon;
+  item_count: number;
+  updated_at: string;
+};
+
+export type PublicUserCustomListDetail = PublicUserCustomListSummary & {
+  items: Array<{
+    anime_id: string;
+    slug: string | null;
+    title: string;
+    image: string;
+    position: number;
+  }>;
 };
 
 const normalizeName = (name: string) => name.trim().replace(/\s+/g, ' ');
@@ -48,7 +73,18 @@ export class UserCustomListsService {
     private readonly itemRepo: Repository<UserCustomListItem>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
+    @InjectRepository(TelegramUser)
+    private readonly usersRepo: Repository<TelegramUser>,
+    private readonly config: ConfigService,
   ) {}
+
+  private isSocialEnabledFor(telegramUserId: string): boolean {
+    return isDownloadTokenWalletEnabledFor(
+      telegramUserId,
+      parseDownloadTokenWalletMode(this.config.get<string>('socialProfile.mode')),
+      parseIdAllowlist(this.config.get<string>('socialProfile.allowlist')),
+    );
+  }
 
   async list(telegramUserId: string): Promise<{ lists: UserCustomListDto[] }> {
     const rows = await this.listRepo.find({
@@ -94,6 +130,7 @@ export class UserCustomListsService {
       telegramUserId,
       name,
       icon: body.icon ?? 'heart',
+      isPublic: body.is_public === true,
     });
     await this.listRepo.save(list);
     list.items = [];
@@ -115,6 +152,9 @@ export class UserCustomListsService {
     }
     if (body.icon !== undefined) {
       list.icon = body.icon;
+    }
+    if (body.is_public !== undefined) {
+      list.isPublic = body.is_public;
     }
     list.updatedAt = new Date();
     await this.listRepo.save(list);
@@ -210,6 +250,98 @@ export class UserCustomListsService {
     return this.getListDto(telegramUserId, list.id);
   }
 
+  async listPublicForUser(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+  ): Promise<{ enabled: boolean; lists: PublicUserCustomListSummary[] }> {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    const enabled = this.isSocialEnabledFor(viewerId);
+    if (!enabled) {
+      return { enabled: false, lists: [] };
+    }
+
+    const target = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!target) {
+      throw new NotFoundException('User not found');
+    }
+
+    const rows = await this.listRepo.find({
+      where: { telegramUserId: targetId, isPublic: true },
+      relations: { items: true },
+      order: { updatedAt: 'DESC' },
+    });
+
+    return {
+      enabled: true,
+      lists: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        icon: isListIcon(row.icon) ? row.icon : 'heart',
+        item_count: row.items?.length ?? 0,
+        updated_at: row.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async getPublicList(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+    listId: string,
+  ): Promise<{ enabled: boolean; list: PublicUserCustomListDetail | null }> {
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    const enabled = this.isSocialEnabledFor(viewerId);
+    if (!enabled) {
+      return { enabled: false, list: null };
+    }
+
+    const list = await this.listRepo.findOne({
+      where: { id: listId, telegramUserId: targetId, isPublic: true },
+      relations: { items: true },
+    });
+    if (!list) {
+      throw new NotFoundException('public list not found');
+    }
+
+    const items = [...(list.items ?? [])].sort((a, b) => {
+      if (a.position !== b.position) return a.position - b.position;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
+    const animeIds = items.map((item) => item.animeId);
+    const animes =
+      animeIds.length > 0
+        ? await this.animeRepo.find({ where: { id: In(animeIds) } })
+        : [];
+    const animeById = new Map(animes.map((a) => [a.id, a]));
+
+    return {
+      enabled: true,
+      list: {
+        id: list.id,
+        name: list.name,
+        icon: isListIcon(list.icon) ? list.icon : 'heart',
+        item_count: items.length,
+        updated_at: list.updatedAt.toISOString(),
+        items: items
+          .map((item) => {
+            const anime = animeById.get(item.animeId);
+            if (!anime) return null;
+            return {
+              anime_id: item.animeId,
+              slug: anime.slug ?? null,
+              title: anime.title ?? '—',
+              image: anime.coverImage || anime.featuredImage || '',
+              position: item.position,
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => x != null),
+      },
+    };
+  }
+
   private async requireList(
     telegramUserId: string,
     listId: string,
@@ -263,6 +395,7 @@ export class UserCustomListsService {
       id: list.id,
       name: list.name,
       icon: isListIcon(list.icon) ? list.icon : 'heart',
+      is_public: list.isPublic === true,
       created_at: list.createdAt.toISOString(),
       updated_at: list.updatedAt.toISOString(),
       items: items.map((item) => ({

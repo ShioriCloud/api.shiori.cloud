@@ -451,12 +451,20 @@ CREATE TABLE IF NOT EXISTS user_custom_lists (
   telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
   name text NOT NULL,
   icon text NOT NULL DEFAULT 'heart',
+  is_public boolean NOT NULL DEFAULT false,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_custom_lists_user
   ON user_custom_lists (telegram_user_id, created_at ASC);
+
+ALTER TABLE user_custom_lists
+  ADD COLUMN IF NOT EXISTS is_public boolean NOT NULL DEFAULT false;
+
+CREATE INDEX IF NOT EXISTS idx_user_custom_lists_public
+  ON user_custom_lists (telegram_user_id, is_public)
+  WHERE is_public = true;
 
 CREATE TABLE IF NOT EXISTS user_custom_list_items (
   id bigserial PRIMARY KEY,
