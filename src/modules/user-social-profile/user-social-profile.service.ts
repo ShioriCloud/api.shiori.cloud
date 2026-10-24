@@ -765,7 +765,8 @@ export class UserSocialProfileService {
       };
     }
 
-    const sourceCap = Math.min(120, safePage * safeLimit + safeLimit);
+    const mergeNeed = safePage * safeLimit;
+    const sourceCap = Math.min(600, mergeNeed + safeLimit * 2);
 
     const listWhere = {
       ids: visibleIds,
