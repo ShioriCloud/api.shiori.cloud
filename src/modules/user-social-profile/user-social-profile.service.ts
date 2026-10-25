@@ -24,9 +24,15 @@ import {
 } from './social-profile-rollout.util';
 
 import {
+  buildSocialBadgeCatalog,
+  buildSocialBadgePublicList,
   eligibleSocialBadgeIds,
   SOCIAL_BADGE_NEW_MS,
+  SOCIAL_BADGE_TOTAL_COUNT,
+  type EarnedBadgeMeta,
+  type SocialBadgeCatalogResponse,
   type SocialBadgeMetrics,
+  type SocialBadgePublicResponse,
   socialBadgeTitle,
 } from './social-profile-badges.util';
 import { SocialNotificationDeliveryService } from './social-notification-delivery.service';
@@ -75,6 +81,7 @@ export type SocialProfileMeResponse = {
     episodes_watched: number;
   }>;
   badges?: Array<{ id: string; title: string; is_new?: boolean }>;
+  badges_summary?: { earned_count: number; total_count: number };
   watched?: {
     items: SocialProfileWatchedItem[];
     total: number;
@@ -255,6 +262,149 @@ export class UserSocialProfileService {
         title: socialBadgeTitle(id),
       }));
     }
+  }
+
+  private async computeBadgeMetrics(
+    telegramUserId: string,
+  ): Promise<SocialBadgeMetrics> {
+    const targetId = String(telegramUserId);
+    const rows = await this.listRepo.find({
+      where: { telegramUserId: targetId },
+    });
+
+    const ratings = rows
+      .map((r) =>
+        r.userRating != null && r.userRating !== ''
+          ? Number(r.userRating)
+          : null,
+      )
+      .filter((v): v is number => v != null && Number.isFinite(v));
+
+    const episodesWatched = rows.reduce(
+      (sum, r) => sum + (r.episodesWatched ?? 0),
+      0,
+    );
+    const activeDayKeys = new Set(
+      rows.map((r) => r.updatedAt.toISOString().slice(0, 10)),
+    );
+
+    const animeIds = rows.map((r) => r.animeId);
+    const animes =
+      animeIds.length > 0
+        ? await this.animeRepo.find({ where: { id: In(animeIds) } })
+        : [];
+    const animeById = new Map(animes.map((a) => [a.id, a]));
+
+    const estimatedMinutes = rows.reduce((sum, row) => {
+      const anime = animeById.get(row.animeId);
+      return sum + minutesForWatched(anime?.format, row.episodesWatched ?? 0);
+    }, 0);
+    const estimatedHours = Math.round(estimatedMinutes / 60);
+
+    const [followersCount, followingCount, commentsCount, publicListsCount] =
+      await Promise.all([
+        this.followRepo.count({ where: { followingTelegramUserId: targetId } }),
+        this.followRepo.count({ where: { followerTelegramUserId: targetId } }),
+        this.commentsRepo.count({
+          where: { telegramUserId: targetId, isDeleted: false },
+        }),
+        this.customListRepo.count({
+          where: { telegramUserId: targetId, isPublic: true },
+        }),
+      ]);
+
+    return {
+      animeCount: rows.length,
+      episodesWatched,
+      ratingsCount: ratings.length,
+      activeDays: activeDayKeys.size,
+      watchHours: estimatedHours,
+      followersCount,
+      followingCount,
+      commentsCount,
+      publicListsCount,
+    };
+  }
+
+  private async loadEarnedBadgeMeta(
+    telegramUserId: string,
+    metrics: SocialBadgeMetrics,
+  ): Promise<Map<string, EarnedBadgeMeta>> {
+    const eligible = eligibleSocialBadgeIds(metrics);
+    await this.resolveProfileBadgesPersisted(telegramUserId, eligible);
+    const existing = await this.badgeRepo.find({
+      where: { telegramUserId: String(telegramUserId) },
+    });
+    const freshCutoff = Date.now() - SOCIAL_BADGE_NEW_MS;
+    const map = new Map<string, EarnedBadgeMeta>();
+    for (const row of existing) {
+      map.set(row.badgeId, {
+        earned_at: row.earnedAt.toISOString(),
+        is_new: row.earnedAt.getTime() >= freshCutoff,
+      });
+    }
+    return map;
+  }
+
+  async getMyBadgeCatalog(
+    telegramUserId: string,
+  ): Promise<SocialBadgeCatalogResponse> {
+    this.assertSocialEnabled();
+    const userId = String(telegramUserId);
+    if (!this.isEnabledFor(userId)) {
+      return {
+        enabled: false,
+        earned_count: 0,
+        total_count: SOCIAL_BADGE_TOTAL_COUNT,
+        categories: [],
+      };
+    }
+    const metrics = await this.computeBadgeMetrics(userId);
+    const earned = await this.loadEarnedBadgeMeta(userId, metrics);
+    return buildSocialBadgeCatalog(metrics, earned);
+  }
+
+  async getUserBadgeDisplay(
+    viewerTelegramUserId: string,
+    targetTelegramUserId: string,
+  ): Promise<SocialBadgePublicResponse> {
+    this.assertSocialEnabled();
+    const viewerId = String(viewerTelegramUserId).trim();
+    const targetId = String(targetTelegramUserId).trim();
+    if (!this.isEnabledFor(viewerId)) {
+      return {
+        enabled: false,
+        earned_count: 0,
+        total_count: SOCIAL_BADGE_TOTAL_COUNT,
+        display_name: '',
+        badges: [],
+      };
+    }
+
+    const user = await this.usersRepo.findOne({
+      where: { telegramUserId: targetId },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const isSelf = viewerId === targetId;
+    const watchHidden = !isSelf && user.hideWatchActivity === true;
+    const displayName = this.displayNameOf(user);
+
+    if (watchHidden) {
+      return {
+        enabled: true,
+        earned_count: 0,
+        total_count: SOCIAL_BADGE_TOTAL_COUNT,
+        display_name: displayName,
+        badges: [],
+      };
+    }
+
+    const metrics = await this.computeBadgeMetrics(targetId);
+    const earned = await this.loadEarnedBadgeMeta(targetId, metrics);
+    return buildSocialBadgePublicList(earned, displayName);
   }
 
   private async resolveProfileBadgesPersisted(
@@ -1359,6 +1509,12 @@ export class UserSocialProfileService {
       top_genres: watchHidden ? [] : topGenres,
       by_format: watchHidden ? [] : byFormat,
       badges: watchHidden ? [] : badges,
+      badges_summary: watchHidden
+        ? undefined
+        : {
+            earned_count: badges?.length ?? 0,
+            total_count: SOCIAL_BADGE_TOTAL_COUNT,
+          },
       watched: {
         items: watchHidden ? [] : watchedItems,
         total: watchHidden ? 0 : rows.length,

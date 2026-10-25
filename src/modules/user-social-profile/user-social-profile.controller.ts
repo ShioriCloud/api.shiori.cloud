@@ -42,6 +42,28 @@ const parseListPageLimit = (page?: string, limit?: string) => {
 export class UserSocialProfileController {
   constructor(private readonly socialProfile: UserSocialProfileService) {}
 
+  @Get('me/badges')
+  @ApiOperation({
+    summary: 'Full badge catalog with per-badge progress (own profile)',
+  })
+  myBadges(@Req() req: AppUserAuthedRequest) {
+    return this.socialProfile.getMyBadgeCatalog(String(req.telegramUserId));
+  }
+
+  @Get('users/:telegramUserId/badges')
+  @ApiOperation({
+    summary: 'Earned badges for another user (display-only sheet)',
+  })
+  userBadges(
+    @Req() req: AppUserAuthedRequest,
+    @Param('telegramUserId') telegramUserId: string,
+  ) {
+    return this.socialProfile.getUserBadgeDisplay(
+      String(req.telegramUserId),
+      telegramUserId,
+    );
+  }
+
   @Get('me')
   @ApiOperation({
     summary:
