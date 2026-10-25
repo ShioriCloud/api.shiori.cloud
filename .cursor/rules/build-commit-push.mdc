@@ -9,6 +9,6 @@ When you finish implementing requested code changes in this repo:
 
 1. Run `npm run build` and fix errors until it passes.
 2. Commit all related changes (never commit `.env` or other secrets unless the user explicitly asks).
-3. Push to `origin` **`master`** (not `main`) without waiting for the user to ask.
+3. Push to `origin` **`master`** (not `main`) immediately after a successful commit — **do not wait** for the user to ask (they expect push after every code change).
 
 Skip commit/push only when the user explicitly says not to, or when the task was question-only / no code changes.
