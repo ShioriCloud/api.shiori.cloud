@@ -1,8 +1,11 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { UserAnimeListEntry } from '../../entities';
-import { UpsertUserAnimeListDto } from './user-anime-list.dto';
+import {
+  ReorderUserAnimeFavoritesDto,
+  UpsertUserAnimeListDto,
+} from './user-anime-list.dto';
 
 @Injectable()
 export class UserAnimeListService {
@@ -12,10 +15,12 @@ export class UserAnimeListService {
   ) {}
 
   async list(telegramUserId: string) {
-    const rows = await this.listRepo.find({
-      where: { telegramUserId },
-      order: { updatedAt: 'DESC' },
-    });
+    const rows = await this.listRepo
+      .createQueryBuilder('e')
+      .where('e.telegram_user_id = :telegramUserId', { telegramUserId })
+      .orderBy('e.favorite_rank', 'ASC', 'NULLS LAST')
+      .addOrderBy('e.updated_at', 'DESC')
+      .getMany();
 
     return {
       items: rows.map((row) => ({
@@ -26,6 +31,9 @@ export class UserAnimeListService {
             ? Number(row.userRating)
             : null,
         is_favorite: row.isFavorite !== false,
+        favorite_rank: row.favoriteRank,
+        list_status: row.listStatus,
+        list_status_at: row.listStatusAt?.toISOString() ?? null,
         updated_at: row.updatedAt.toISOString(),
       })),
     };
@@ -58,6 +66,15 @@ export class UserAnimeListService {
           ? row.isFavorite !== false
           : false;
 
+    const listStatusTouched = body.list_status !== undefined;
+    const nextListStatus =
+      body.list_status !== undefined
+        ? body.list_status
+        : (row?.listStatus ?? null);
+    const listStatusChanged =
+      listStatusTouched &&
+      String(nextListStatus ?? '') !== String(row?.listStatus ?? '');
+
     if (!row) {
       row = this.listRepo.create({
         telegramUserId,
@@ -65,11 +82,35 @@ export class UserAnimeListService {
         episodesWatched,
         userRating,
         isFavorite,
+        listStatus: nextListStatus,
+        listStatusAt:
+          listStatusChanged || (listStatusTouched && nextListStatus)
+            ? new Date()
+            : null,
       });
     } else {
       row.episodesWatched = episodesWatched;
       if (body.user_rating !== undefined) row.userRating = userRating;
       if (body.is_favorite !== undefined) row.isFavorite = body.is_favorite;
+      if (listStatusTouched) {
+        row.listStatus = nextListStatus;
+        if (listStatusChanged) row.listStatusAt = new Date();
+      }
+    }
+
+    if (isFavorite && row.favoriteRank == null) {
+      const maxRow = await this.listRepo
+        .createQueryBuilder('e')
+        .select('MAX(e.favorite_rank)', 'max')
+        .where('e.telegram_user_id = :telegramUserId', { telegramUserId })
+        .andWhere('e.is_favorite = true')
+        .getRawOne<{ max: number | null }>();
+      const max = maxRow?.max != null ? Number(maxRow.max) : -1;
+      row.favoriteRank = Number.isFinite(max) ? max + 1 : 0;
+    }
+
+    if (!isFavorite && body.is_favorite === false) {
+      row.favoriteRank = null;
     }
 
     await this.listRepo.save(row);
@@ -86,6 +127,34 @@ export class UserAnimeListService {
       favorite_count: favoriteCount,
       ...(shioriScore !== undefined ? { shiori_score: shioriScore } : {}),
     };
+  }
+
+  async reorderFavorites(
+    telegramUserId: string,
+    body: ReorderUserAnimeFavoritesDto,
+  ) {
+    const ids = body.anime_ids.map((id) => id.trim()).filter(Boolean);
+    if (ids.length === 0) {
+      return { ok: true as const };
+    }
+
+    const rows = await this.listRepo.find({
+      where: {
+        telegramUserId,
+        animeId: In(ids),
+        isFavorite: true,
+      },
+    });
+    const rowByAnime = new Map(rows.map((r) => [r.animeId, r]));
+
+    for (let i = 0; i < ids.length; i++) {
+      const row = rowByAnime.get(ids[i]);
+      if (!row) continue;
+      row.favoriteRank = i;
+    }
+
+    await this.listRepo.save(rows);
+    return { ok: true as const };
   }
 
   async remove(telegramUserId: string, animeId: string) {

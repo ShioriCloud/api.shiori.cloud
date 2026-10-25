@@ -659,3 +659,10 @@ ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS is_favorite boolean NOT NUL
 UPDATE user_anime_list SET is_favorite = true WHERE is_favorite IS NULL;
 CREATE INDEX IF NOT EXISTS idx_user_anime_list_favorite
   ON user_anime_list (anime_id) WHERE is_favorite = true;
+
+ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS favorite_rank int NULL;
+ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS list_status varchar(20) NULL;
+ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS list_status_at timestamptz NULL;
+CREATE INDEX IF NOT EXISTS idx_user_anime_list_favorite_rank
+  ON user_anime_list (telegram_user_id, favorite_rank)
+  WHERE is_favorite = true AND favorite_rank IS NOT NULL;

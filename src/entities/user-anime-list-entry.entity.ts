@@ -36,6 +36,16 @@ export class UserAnimeListEntry {
   @Column({ type: 'boolean', name: 'is_favorite', default: true })
   isFavorite: boolean;
 
+  /** Lower = higher on profile favorites (null = unordered). */
+  @Column({ type: 'int', name: 'favorite_rank', nullable: true })
+  favoriteRank: number | null;
+
+  @Column({ type: 'varchar', length: 20, name: 'list_status', nullable: true })
+  listStatus: string | null;
+
+  @Column({ type: 'timestamptz', name: 'list_status_at', nullable: true })
+  listStatusAt: Date | null;
+
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 

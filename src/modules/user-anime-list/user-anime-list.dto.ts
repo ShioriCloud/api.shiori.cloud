@@ -1,6 +1,10 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -9,6 +13,17 @@ import {
   Min,
   ValidateIf,
 } from 'class-validator';
+
+export const USER_ANIME_LIST_STATUSES = [
+  'planning',
+  'watching',
+  'completed',
+  'rewatching',
+  'paused',
+  'dropped',
+] as const;
+
+export type UserAnimeListStatus = (typeof USER_ANIME_LIST_STATUSES)[number];
 
 export class UpsertUserAnimeListDto {
   @IsString()
@@ -37,4 +52,17 @@ export class UpsertUserAnimeListDto {
   @IsOptional()
   @IsBoolean()
   is_favorite?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @IsIn([...USER_ANIME_LIST_STATUSES])
+  list_status?: UserAnimeListStatus | null;
+}
+
+export class ReorderUserAnimeFavoritesDto {
+  @IsArray()
+  @ArrayMinSize(0)
+  @ArrayMaxSize(500)
+  @IsUUID('4', { each: true })
+  anime_ids!: string[];
 }
