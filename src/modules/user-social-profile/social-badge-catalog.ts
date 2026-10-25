@@ -92,6 +92,8 @@ export const BADGE_DEFINITIONS_V1: BadgeDefinitionV1[] = [
     rarity: 'common',
     order: 10,
     active: true,
+    /** Served from mini-app `public/badges/{id}.jpg`. */
+    imageUrl: '/badges/episode_zero.jpg',
     condition: { kind: 'metric', metric: 'user_registered', target: 1 },
   },
   {
