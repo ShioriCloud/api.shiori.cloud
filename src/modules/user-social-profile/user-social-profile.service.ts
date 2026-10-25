@@ -77,6 +77,7 @@ export type SocialProfileMeResponse = {
     id: string;
     title: string;
     image_url?: string | null;
+    rarity?: string;
     is_new?: boolean;
   }>;
   badges_summary?: { earned_count: number; total_count: number };

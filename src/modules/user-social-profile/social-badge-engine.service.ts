@@ -362,6 +362,7 @@ export class SocialBadgeEngineService {
       id: string;
       title: string;
       image_url: string | null;
+      rarity: string;
       is_new?: boolean;
     }>
   > {
@@ -374,6 +375,7 @@ export class SocialBadgeEngineService {
       id: string;
       title: string;
       image_url: string | null;
+      rarity: string;
       is_new?: boolean;
     }>;
     earned_count: number;
@@ -392,6 +394,7 @@ export class SocialBadgeEngineService {
         id,
         title: def.title,
         image_url: def.imageUrl ?? null,
+        rarity: def.rarity,
         is_new: new Date(at).getTime() >= freshCutoff,
       };
     };
