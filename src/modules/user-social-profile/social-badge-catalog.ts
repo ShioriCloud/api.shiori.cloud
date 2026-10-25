@@ -38,6 +38,10 @@ export type BadgeDefinitionV1 = {
   condition: BadgeCondition;
 };
 
+/** Mini-app static art: `public/badges/{id}.webp` (transparent cutout, no UI frame). */
+export const badgeArtUrl = (badgeId: string): string =>
+  `/badges/${badgeId}.webp`;
+
 export const BADGE_CATEGORIES: Array<{
   id: BadgeCategoryKey;
   label: string;
@@ -92,8 +96,6 @@ export const BADGE_DEFINITIONS_V1: BadgeDefinitionV1[] = [
     rarity: 'common',
     order: 10,
     active: true,
-    /** Transparent PNG object art from mini-app `public/badges/{id}.png`. */
-    imageUrl: '/badges/episode_zero.png',
     condition: { kind: 'metric', metric: 'user_registered', target: 1 },
   },
   {
@@ -304,6 +306,11 @@ export const BADGE_DEFINITIONS_V1: BadgeDefinitionV1[] = [
     },
   },
 ];
+
+BADGE_DEFINITIONS_V1.forEach((def) => {
+  if (!def.imageUrl) def.imageUrl = badgeArtUrl(def.id);
+});
+
 
 export const ACTIVE_BADGE_IDS = new Set(
   BADGE_DEFINITIONS_V1.filter((b) => b.active).map((b) => b.id),
