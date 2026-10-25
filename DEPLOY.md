@@ -29,6 +29,8 @@ If API logs show `Unable to connect to the database` / `ECONNREFUSED`:
 
 2. **Recommended on server** (`/opt/api.shiori.cloud`):
 
+This folder is usually **deploy-only** (`.env` + `docker-compose.yml`) — **not** a git clone. Updates are **`docker compose pull`** after CI publishes `ghcr.io/shioricloud/api.shiori.cloud:latest`. Do not expect `git pull` here.
+
 ```bash
 cd /opt/api.shiori.cloud
 cp .env.example .env   # set TELEGRAM_BOT_TOKEN, POSTGRES_PASSWORD, APP_ALLOW_ORIGINS, …
@@ -79,6 +81,15 @@ Set repository **Variables** for frontend builds (optional — defaults to `http
 docker pull ghcr.io/<owner>/shiori-api:latest
 docker run --rm -p 4001:4001 --env-file .env ghcr.io/<owner>/shiori-api:latest
 ```
+
+After `docker compose pull` on the server, verify the running API (401 without portal token is OK; 404 means `latest` is still an old image):
+
+```bash
+docker exec api.shiori.cloud test -f dist/modules/anime-comments/anime-comments-admin.controller.js && echo OK
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:4001/api/v1/anime-comments-admin/summary
+```
+
+If `latest` lags `master`, pull the image tagged with the commit SHA from GHCR Packages, update compose `image:` (or retag), then `docker compose up -d --force-recreate`.
 
 ### Docker (local build)
 
