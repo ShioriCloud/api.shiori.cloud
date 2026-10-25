@@ -311,6 +311,30 @@ BADGE_DEFINITIONS_V1.forEach((def) => {
   if (!def.imageUrl) def.imageUrl = badgeArtUrl(def.id);
 });
 
+/** How to earn (shown under description). Hidden badges use `HIDDEN_BADGE_UNLOCK_GUIDE_FA` only. */
+export const BADGE_UNLOCK_HINTS_FA: Record<string, string> = {
+  episode_zero: 'با ساخت حساب یا ورود به شیوری',
+  first_choice: 'اولین انیمه را به علاقه‌مندی‌ها یا دنبال‌شده‌ها اضافه کن',
+  arc_hunter: '۱۰ انیمهٔ متفاوت در لیست تماشا',
+  world_librarian: '۳۰ انیمهٔ متفاوت در لیست تماشا',
+  next_episode: 'اولین دریافت موفق یک قسمت انیمه',
+  marathon_watcher: '۲۵ قسمت متفاوت دریافت کن',
+  archive_guardian: '۱۰۰ قسمت متفاوت دریافت کن',
+  ending_credits: 'اولین انیمه را با وضعیت تکمیل‌شده ثبت کن',
+  arc_conqueror: '۱۰ انیمهٔ متفاوت را تکمیل کن',
+  ending_legend: '۳۰ انیمهٔ متفاوت را تکمیل کن',
+  first_dialogue: 'اولین نظر تأییدشده را ثبت کن',
+  fandom_voice: '۱۰ نظر تأییدشده روی حداقل ۳ انیمهٔ متفاوت',
+  senpai_critic: 'به ۱۰ انیمهٔ متفاوت امتیاز بده',
+  shiori_senpai: '۹۰ روز عضویت و حداقل یک فعالیت بعد از آن',
+  shiori_veteran: '۳۶۵ روز عضویت و حداقل یک فعالیت بعد از آن',
+};
+
+export const HIDDEN_BADGE_UNLOCK_GUIDE_FA =
+  'با فعالیت در بخش‌های مختلف شیوری ممکن است نشان مخفی باز شود.';
+
+export const badgeUnlockHint = (def: BadgeDefinitionV1): string | null =>
+  BADGE_UNLOCK_HINTS_FA[def.id] ?? null;
 
 export const ACTIVE_BADGE_IDS = new Set(
   BADGE_DEFINITIONS_V1.filter((b) => b.active).map((b) => b.id),

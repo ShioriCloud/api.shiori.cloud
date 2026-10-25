@@ -73,7 +73,12 @@ export type SocialProfileMeResponse = {
     count: number;
     episodes_watched: number;
   }>;
-  badges?: Array<{ id: string; title: string; is_new?: boolean }>;
+  badges?: Array<{
+    id: string;
+    title: string;
+    image_url?: string | null;
+    is_new?: boolean;
+  }>;
   badges_summary?: { earned_count: number; total_count: number };
   watched?: {
     items: SocialProfileWatchedItem[];

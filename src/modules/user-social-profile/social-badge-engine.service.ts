@@ -10,8 +10,10 @@ import {
   BADGE_CATEGORIES,
   BADGE_DEFINITIONS_V1,
   badgeDefinitionById,
+  badgeUnlockHint,
   evaluateCondition,
   eligibleBadgeIdsV1,
+  HIDDEN_BADGE_UNLOCK_GUIDE_FA,
   LEGACY_BADGE_ID_MAP,
   SOCIAL_BADGE_TOTAL_COUNT,
   type BadgeDefinitionV1,
@@ -37,6 +39,7 @@ export type SocialBadgeCatalogItemDto = {
   rarity: string;
   hidden: boolean;
   hint: string | null;
+  unlock_hint: string | null;
   earned: boolean;
   earned_at: string | null;
   is_new: boolean;
@@ -213,6 +216,9 @@ export class SocialBadgeEngineService {
       rarity: def.rarity,
       hidden: def.hidden === true,
       hint: isHiddenLocked ? (def.hiddenDescription ?? null) : null,
+      unlock_hint: isHiddenLocked
+        ? HIDDEN_BADGE_UNLOCK_GUIDE_FA
+        : badgeUnlockHint(def),
       earned: isEarned,
       earned_at: earned.get(def.id)?.earned_at ?? null,
       is_new: earned.get(def.id)?.is_new === true,
@@ -223,7 +229,7 @@ export class SocialBadgeEngineService {
             target: aggTarget,
           },
       progress_parts: progressParts,
-      image_url: isEarned || !isHiddenLocked ? def.imageUrl ?? null : null,
+      image_url: isEarned ? def.imageUrl ?? null : null,
     };
   }
 
@@ -352,14 +358,24 @@ export class SocialBadgeEngineService {
 
   /** Profile chip list — showcase first, then recent earned. */
   async getProfileBadgeChips(telegramUserId: string): Promise<
-    Array<{ id: string; title: string; is_new?: boolean }>
+    Array<{
+      id: string;
+      title: string;
+      image_url: string | null;
+      is_new?: boolean;
+    }>
   > {
     const { chips } = await this.syncForProfile(telegramUserId);
     return chips;
   }
 
   async syncForProfile(telegramUserId: string): Promise<{
-    chips: Array<{ id: string; title: string; is_new?: boolean }>;
+    chips: Array<{
+      id: string;
+      title: string;
+      image_url: string | null;
+      is_new?: boolean;
+    }>;
     earned_count: number;
     showcase: string[];
   }> {
@@ -375,6 +391,7 @@ export class SocialBadgeEngineService {
       return {
         id,
         title: def.title,
+        image_url: def.imageUrl ?? null,
         is_new: new Date(at).getTime() >= freshCutoff,
       };
     };
