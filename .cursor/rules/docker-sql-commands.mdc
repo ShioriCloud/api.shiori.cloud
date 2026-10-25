@@ -1,34 +1,63 @@
 ---
-description: Always write production SQL commands for Docker Postgres with Shiori DB credentials
+description: Production server — always give copy-paste docker/docker compose commands (deploy + SQL)
 alwaysApply: true
 ---
 
-# Docker SQL commands (production)
+# Production server commands (Docker only)
 
-When giving the user SQL / migration / schema commands to run on the server:
+Production API lives at **`/opt/api.shiori.cloud`**. There is **no `.git`** on the server — deploy by pulling images, not `git pull`.
 
-1. **Always** write them as `docker exec` (or `docker compose exec`) commands — never bare `psql` against localhost.
-2. Use these credentials and container defaults unless the user overrides them:
+When the user needs to run anything on **production**:
+
+1. **Always** write **complete, copy-paste** `bash` blocks using `docker` or `docker compose` — ready to run on the server.
+2. Do **not** give bare `psql` on localhost, bare `npm` on the host, or `git` on `/opt/api.shiori.cloud` unless the user explicitly targets local dev compose.
+3. Default API stack directory:
+
+```bash
+cd /opt/api.shiori.cloud
+```
+
+## Deploy API after `master` push (GitHub Actions image)
+
+```bash
+cd /opt/api.shiori.cloud
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+If `latest` is stale, use the SHA tag from GHCR or build on a machine with git clone (see `DEPLOY.md` in repo).
+
+## Postgres (container `postgres`)
 
 | Variable | Value |
 |----------|--------|
-| Container | `postgres` (confirmed on prod: `docker ps \| grep postgres` → name `postgres`) |
-| Host (inside Docker network) | `postgres` |
-| Port | `5432` |
+| Container | `postgres` (`docker ps \| grep postgres`) |
 | User | `dawn` |
 | Database | `shiori-cloud` |
 | Password | `64C5D5ow5D5Xiv5YLNcrnQfG` |
 
-## Preferred patterns
+### Catch-up / migration file from repo (run on a host that has the file, or pipe after `scp`)
 
 ```bash
-# File from repo
 docker exec -i postgres \
   env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
   psql -U dawn -d shiori-cloud \
-  < scripts/sql/production_schema_catchup.sql
+  < /path/on/server/production_schema_catchup.sql
+```
 
-# Inline SQL
+Example after copying `scripts/sql/production_schema_catchup.sql` to the server:
+
+```bash
+docker exec -i postgres \
+  env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
+  psql -U dawn -d shiori-cloud \
+  < /tmp/production_schema_catchup.sql
+```
+
+### Inline SQL
+
+```bash
 docker exec -i postgres \
   env PGPASSWORD='64C5D5ow5D5Xiv5YLNcrnQfG' \
   psql -U dawn -d shiori-cloud <<'SQL'
@@ -36,4 +65,13 @@ docker exec -i postgres \
 SQL
 ```
 
-Do **not** use `shiori` / `shiori` as user/db for production server commands unless the user says the local compose stack is the target.
+Do **not** use `shiori` / `shiori` as user/db on production unless the user says the **local** compose stack is the target.
+
+## Logs / health (when useful)
+
+```bash
+cd /opt/api.shiori.cloud
+docker compose logs -f --tail=100 api
+```
+
+(Adjust service name if `compose.yml` uses a different key.)
