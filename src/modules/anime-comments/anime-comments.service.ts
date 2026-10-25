@@ -282,6 +282,113 @@ export class AnimeCommentsService {
     return { rootId, replyToId };
   }
 
+  /** Called when a comment becomes publicly visible (immediate approve or admin approval). */
+  async deliverPublishNotificationsForComment(commentId: string): Promise<void> {
+    const comment = await this.commentsRepo.findOne({
+      where: { id: commentId },
+    });
+    if (
+      !comment ||
+      comment.isDeleted ||
+      comment.moderationStatus !== 'approved'
+    ) {
+      return;
+    }
+
+    const anime = await this.animeRepo.findOne({
+      where: { id: comment.animeId },
+    });
+    if (!anime) return;
+
+    const authorId = String(comment.telegramUserId);
+    const author = await this.usersRepo.findOne({
+      where: { telegramUserId: authorId },
+    });
+    const authorName = author ? this.displayNameOf(author) : 'یک کاربر';
+    const rootId = comment.parentId ?? null;
+    const replyToId = comment.replyToCommentId ?? null;
+
+    await this.deliverPublishNotifications({
+      comment,
+      anime,
+      authorId,
+      authorName,
+      rootId,
+      replyToId,
+    });
+  }
+
+  private async deliverPublishNotifications(input: {
+    comment: AnimeComment;
+    anime: Anime;
+    authorId: string;
+    authorName: string;
+    rootId: string | null;
+    replyToId: string | null;
+  }): Promise<void> {
+    const { anime, authorId, authorName, rootId, replyToId } = input;
+    const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
+
+    if (rootId) {
+      const root = await this.commentsRepo.findOne({ where: { id: rootId } });
+      const rootAuthorId = root ? String(root.telegramUserId) : '';
+      if (root && rootAuthorId !== authorId) {
+        const blocked = await this.moderation.arePeersBlocked(
+          rootAuthorId,
+          authorId,
+        );
+        if (!blocked) {
+          await this.socialNotifications.deliver({
+            recipientTelegramUserId: rootAuthorId,
+            kind: 'comment_reply',
+            title: 'پاسخ به نظرت',
+            message: `${authorName} به نظرت پاسخ داد`,
+            href,
+            animeId: anime.id,
+          });
+        }
+      }
+
+      if (replyToId && replyToId !== rootId) {
+        const target = await this.commentsRepo.findOne({
+          where: { id: replyToId },
+        });
+        const targetAuthorId = target ? String(target.telegramUserId) : '';
+        if (
+          target &&
+          targetAuthorId !== authorId &&
+          targetAuthorId !== rootAuthorId
+        ) {
+          const blocked = await this.moderation.arePeersBlocked(
+            targetAuthorId,
+            authorId,
+          );
+          if (!blocked) {
+            await this.socialNotifications.deliver({
+              recipientTelegramUserId: targetAuthorId,
+              kind: 'comment_reply',
+              title: 'پاسخ به تو',
+              message: `${authorName} در پاسخ به نظرت نوشت`,
+              href,
+              animeId: anime.id,
+            });
+          }
+        }
+      }
+      return;
+    }
+
+    void this.notifyFollowersOfRootComment(authorId, anime, authorName).catch(
+      (err) => {
+        this.logger.warn(
+          `follower comment notify failed: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      },
+    );
+  }
+
   private async notifyFollowersOfRootComment(
     authorId: string,
     anime: Anime,
@@ -345,65 +452,16 @@ export class AnimeCommentsService {
       where: { telegramUserId: viewerId },
     });
     const name = author ? this.displayNameOf(author) : 'یک کاربر';
-    const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
 
-    const notifyNow = saved.moderationStatus !== 'pending';
-    if (rootId && notifyNow) {
-      const root = await this.commentsRepo.findOne({ where: { id: rootId } });
-      const rootAuthorId = root ? String(root.telegramUserId) : '';
-      if (root && rootAuthorId !== viewerId) {
-        const blocked = await this.moderation.arePeersBlocked(
-          rootAuthorId,
-          viewerId,
-        );
-        if (!blocked) {
-          await this.socialNotifications.deliver({
-            recipientTelegramUserId: rootAuthorId,
-            kind: 'comment_reply',
-            title: 'پاسخ به نظرت',
-            message: `${name} به نظرت پاسخ داد`,
-            href,
-            animeId: anime.id,
-          });
-        }
-      }
-
-      if (replyToId && replyToId !== rootId) {
-        const target = await this.commentsRepo.findOne({
-          where: { id: replyToId },
-        });
-        const targetAuthorId = target ? String(target.telegramUserId) : '';
-        if (
-          target &&
-          targetAuthorId !== viewerId &&
-          targetAuthorId !== rootAuthorId
-        ) {
-          const blocked = await this.moderation.arePeersBlocked(
-            targetAuthorId,
-            viewerId,
-          );
-          if (!blocked) {
-            await this.socialNotifications.deliver({
-              recipientTelegramUserId: targetAuthorId,
-              kind: 'comment_reply',
-              title: 'پاسخ به تو',
-              message: `${name} در پاسخ به نظرت نوشت`,
-              href,
-              animeId: anime.id,
-            });
-          }
-        }
-      }
-    } else if (notifyNow) {
-      void this.notifyFollowersOfRootComment(viewerId, anime, name).catch(
-        (err) => {
-          this.logger.warn(
-            `follower comment notify failed: ${
-              err instanceof Error ? err.message : err
-            }`,
-          );
-        },
-      );
+    if (saved.moderationStatus !== 'pending') {
+      await this.deliverPublishNotifications({
+        comment: saved,
+        anime,
+        authorId: viewerId,
+        authorName: name,
+        rootId,
+        replyToId,
+      });
     }
 
     const [dto] = await this.hydrate([saved], viewerId);

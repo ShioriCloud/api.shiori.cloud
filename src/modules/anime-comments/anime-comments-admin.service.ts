@@ -9,6 +9,7 @@ import {
   TelegramUser,
 } from '../../entities';
 import { ListAnimeCommentsAdminQueryDto } from './anime-comments-admin.dto';
+import { AnimeCommentsService } from './anime-comments.service';
 
 export type AnimeCommentReportAdminItem = {
   comment_id: string;
@@ -41,6 +42,7 @@ export class AnimeCommentsAdminService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(TelegramUser)
     private readonly usersRepo: Repository<TelegramUser>,
+    private readonly commentsService: AnimeCommentsService,
   ) {}
 
   async getPendingReportedCommentCount(): Promise<{ pending: number }> {
@@ -307,6 +309,11 @@ export class AnimeCommentsAdminService {
     comment.moderationStatus = status;
     comment.moderatedAt = new Date();
     await this.commentsRepo.save(comment);
+    if (status === 'approved') {
+      void this.commentsService
+        .deliverPublishNotificationsForComment(comment.id)
+        .catch(() => undefined);
+    }
     return { ok: true, moderation_status: status };
   }
 }
