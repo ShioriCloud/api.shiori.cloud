@@ -7,6 +7,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+export type AnimeCommentModerationStatus = 'pending' | 'approved' | 'rejected';
+
 @Entity('anime_comments')
 @Index(['animeId', 'parentId', 'createdAt'])
 @Index(['telegramUserId', 'createdAt'])
@@ -32,6 +34,17 @@ export class AnimeComment {
 
   @Column({ type: 'boolean', name: 'is_deleted', default: false })
   isDeleted: boolean;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    name: 'moderation_status',
+    default: 'pending',
+  })
+  moderationStatus: AnimeCommentModerationStatus;
+
+  @Column({ type: 'timestamptz', name: 'moderated_at', nullable: true })
+  moderatedAt: Date | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

@@ -4,9 +4,11 @@ import { In, Repository } from 'typeorm';
 import {
   Anime,
   AnimeComment,
+  type AnimeCommentModerationStatus,
   AnimeCommentReport,
   TelegramUser,
 } from '../../entities';
+import { ListAnimeCommentsAdminQueryDto } from './anime-comments-admin.dto';
 
 export type AnimeCommentReportAdminItem = {
   comment_id: string;
@@ -197,5 +199,114 @@ export class AnimeCommentsAdminService {
     if (!comment) throw new NotFoundException('Comment not found');
     await this.reportsRepo.delete({ commentId: id });
     return { ok: true as const };
+  }
+
+  async getPendingModerationCount(): Promise<{ pending: number }> {
+    const pending = await this.commentsRepo.count({
+      where: { moderationStatus: 'pending', isDeleted: false },
+    });
+    return { pending };
+  }
+
+  async listForModeration(query: ListAnimeCommentsAdminQueryDto) {
+    const page = Math.max(1, query.page ?? 1);
+    const limit = Math.min(100, Math.max(1, query.limit ?? 20));
+    const status = query.status ?? 'pending';
+    const search = query.search?.trim() ?? '';
+
+    const qb = this.commentsRepo
+      .createQueryBuilder('c')
+      .innerJoin(Anime, 'a', 'a.id = c.anime_id')
+      .where('c.is_deleted = false');
+
+    if (status !== 'all') {
+      qb.andWhere('c.moderation_status = :status', { status });
+    }
+    if (search) {
+      qb.andWhere(
+        `(c.body ILIKE :q OR a.title ILIKE :q OR CAST(c.telegram_user_id AS text) = :exact)`,
+        { q: `%${search}%`, exact: search },
+      );
+    }
+    qb.orderBy('c.created_at', 'DESC');
+
+    const [rows, total] = await qb
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getManyAndCount();
+
+    const animeIds = [...new Set(rows.map((r) => r.animeId))];
+    const animes =
+      animeIds.length > 0
+        ? await this.animeRepo.find({ where: { id: In(animeIds) } })
+        : [];
+    const animeTitleById = new Map(
+      animes.map((a) => [a.id, a.title?.trim() || '—']),
+    );
+
+    const summaryRows = await this.commentsRepo
+      .createQueryBuilder('c')
+      .select('c.moderation_status', 'status')
+      .addSelect('COUNT(*)', 'count')
+      .where('c.is_deleted = false')
+      .groupBy('c.moderation_status')
+      .getRawMany<{ status: AnimeCommentModerationStatus; count: string }>();
+
+    const summary = { pending: 0, approved: 0, rejected: 0 };
+    for (const row of summaryRows) {
+      const n = Number(row.count) || 0;
+      if (row.status === 'pending') summary.pending = n;
+      else if (row.status === 'approved') summary.approved = n;
+      else if (row.status === 'rejected') summary.rejected = n;
+    }
+
+    const authorIds = [...new Set(rows.map((r) => String(r.telegramUserId)))];
+    const users =
+      authorIds.length > 0
+        ? await this.usersRepo.find({
+            where: { telegramUserId: In(authorIds) },
+          })
+        : [];
+    const userById = new Map(users.map((u) => [String(u.telegramUserId), u]));
+
+    const items = rows.map((row) => {
+      const user = userById.get(String(row.telegramUserId));
+      return {
+        id: row.id,
+        anime_id: row.animeId,
+        anime_title: animeTitleById.get(row.animeId) ?? '—',
+        parent_id: row.parentId,
+        body: row.body,
+        moderation_status: row.moderationStatus,
+        created_at: row.createdAt.toISOString(),
+        author: {
+          telegram_user_id: String(row.telegramUserId),
+          display_name:
+            user?.socialDisplayName?.trim() ||
+            user?.firstName?.trim() ||
+            user?.username?.trim() ||
+            'کاربر',
+          username: user?.username?.trim() || null,
+          photo_url: user?.photoUrl?.trim() || null,
+        },
+      };
+    });
+
+    return { items, total, page, limit, summary };
+  }
+
+  async moderateComment(
+    commentId: string,
+    status: 'approved' | 'rejected',
+  ): Promise<{ ok: true; moderation_status: AnimeCommentModerationStatus }> {
+    const id = String(commentId ?? '').trim();
+    const comment = await this.commentsRepo.findOne({ where: { id } });
+    if (!comment || comment.isDeleted) {
+      throw new NotFoundException('Comment not found');
+    }
+    comment.moderationStatus = status;
+    comment.moderatedAt = new Date();
+    await this.commentsRepo.save(comment);
+    return { ok: true, moderation_status: status };
   }
 }

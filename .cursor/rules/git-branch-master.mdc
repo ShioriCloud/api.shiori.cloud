@@ -1,0 +1,15 @@
+---
+description: Git default branch for api.shiori.cloud
+alwaysApply: true
+---
+
+# Git branch: `master` only
+
+For **api.shiori.cloud**:
+
+- Default branch is **`master`** (`origin/HEAD` → `master`).
+- **Do not** push commits or open PRs targeting **`main`**.
+- After implementing changes: `git checkout master`, commit, `git push origin master`.
+- Docker publish workflow runs on **`master`** only.
+
+If local `main` exists, treat it as stale; merge or cherry-pick into `master` instead of pushing `main`.

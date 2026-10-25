@@ -6,10 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository, SelectQueryBuilder } from 'typeorm';
 import {
   Anime,
   AnimeComment,
+  type AnimeCommentModerationStatus,
   AnimeCommentLike,
   AnimeCommentReport,
   TelegramUser,
@@ -42,6 +43,8 @@ export type AnimeCommentDto = {
   reply_count: number;
   like_count: number;
   liked_by_me: boolean;
+  moderation_status: AnimeCommentModerationStatus;
+  is_pending: boolean;
   reply_to: {
     comment_id: string;
     author: AnimeCommentAuthorDto;
@@ -86,6 +89,21 @@ export class AnimeCommentsService {
     /* social / comments always enabled for authenticated users */
   }
 
+  private applyModerationVisibility(
+    qb: SelectQueryBuilder<AnimeComment>,
+    viewerId: string,
+    includeOwnPending: boolean,
+  ): void {
+    if (includeOwnPending) {
+      qb.andWhere(
+        `(c.moderation_status = :approved OR (c.telegram_user_id = :viewerId AND c.moderation_status = :pending))`,
+        { approved: 'approved', viewerId, pending: 'pending' },
+      );
+    } else {
+      qb.andWhere(`c.moderation_status = :approved`, { approved: 'approved' });
+    }
+  }
+
   private cleanBody(raw: string): string {
     const body = String(raw ?? '')
       .replace(/\r\n/g, '\n')
@@ -126,16 +144,22 @@ export class AnimeCommentsService {
     const safeLimit = Math.min(50, Math.max(1, limit));
     const parent = parentId?.trim() || null;
 
-    const where = parent
-      ? { animeId: anime.id, parentId: parent }
-      : { animeId: anime.id, parentId: IsNull() };
-
-    const [rows, total] = await this.commentsRepo.findAndCount({
-      where,
-      order: { createdAt: 'DESC' },
-      skip: (safePage - 1) * safeLimit,
-      take: safeLimit,
-    });
+    const qb = this.commentsRepo
+      .createQueryBuilder('c')
+      .where('c.anime_id = :animeId', { animeId: anime.id })
+      .andWhere('c.is_deleted = false');
+    this.applyModerationVisibility(qb, viewerId, true);
+    if (parent) {
+      qb.andWhere('c.parent_id = :parentId', { parentId: parent });
+    } else {
+      qb.andWhere('c.parent_id IS NULL');
+    }
+    qb.orderBy('c.created_at', 'DESC');
+    const total = await qb.getCount();
+    const rows = await qb
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getMany();
 
     const items = await this.hydrate(rows, viewerId);
     return { items, total, page: safePage, limit: safeLimit };
@@ -166,12 +190,18 @@ export class AnimeCommentsService {
     const safePage = Math.max(1, page);
     const safeLimit = Math.min(50, Math.max(1, limit));
 
-    const [rows, total] = await this.commentsRepo.findAndCount({
-      where: { telegramUserId: targetId, isDeleted: false },
-      order: { createdAt: 'DESC' },
-      skip: (safePage - 1) * safeLimit,
-      take: safeLimit,
-    });
+    const includeOwnPending = viewerId === targetId;
+    const qb = this.commentsRepo
+      .createQueryBuilder('c')
+      .where('c.telegram_user_id = :targetId', { targetId })
+      .andWhere('c.is_deleted = false');
+    this.applyModerationVisibility(qb, viewerId, includeOwnPending);
+    qb.orderBy('c.created_at', 'DESC');
+    const total = await qb.getCount();
+    const rows = await qb
+      .skip((safePage - 1) * safeLimit)
+      .take(safeLimit)
+      .getMany();
 
     const comments = await this.hydrate(rows, viewerId);
     const animeIds = [...new Set(rows.map((r) => r.animeId))];
@@ -215,6 +245,11 @@ export class AnimeCommentsService {
       });
       if (!anchor || anchor.isDeleted) {
         throw new NotFoundException('Parent comment not found');
+      }
+      if (anchor.moderationStatus !== 'approved') {
+        throw new BadRequestException(
+          'Cannot reply until the thread is approved',
+        );
       }
       rootId = anchor.parentId ?? anchor.id;
       if (anchor.parentId && !replyToId) {
@@ -303,6 +338,7 @@ export class AnimeCommentsService {
       telegramUserId: viewerId,
       body,
       isDeleted: false,
+      moderationStatus: 'pending',
     });
 
     const author = await this.usersRepo.findOne({
@@ -311,7 +347,8 @@ export class AnimeCommentsService {
     const name = author ? this.displayNameOf(author) : 'یک کاربر';
     const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
 
-    if (rootId) {
+    const notifyNow = saved.moderationStatus !== 'pending';
+    if (rootId && notifyNow) {
       const root = await this.commentsRepo.findOne({ where: { id: rootId } });
       const rootAuthorId = root ? String(root.telegramUserId) : '';
       if (root && rootAuthorId !== viewerId) {
@@ -357,7 +394,7 @@ export class AnimeCommentsService {
           }
         }
       }
-    } else {
+    } else if (notifyNow) {
       void this.notifyFollowersOfRootComment(viewerId, anime, name).catch(
         (err) => {
           this.logger.warn(
@@ -527,12 +564,14 @@ export class AnimeCommentsService {
       };
     };
 
-    const replyRows = await this.commentsRepo
+    const replyQb = this.commentsRepo
       .createQueryBuilder('c')
       .select('c.parent_id', 'parent_id')
       .addSelect('COUNT(*)', 'count')
       .where('c.parent_id IN (:...ids)', { ids })
-      .andWhere('c.is_deleted = false')
+      .andWhere('c.is_deleted = false');
+    this.applyModerationVisibility(replyQb, viewerId, true);
+    const replyRows = await replyQb
       .groupBy('c.parent_id')
       .getRawMany<{ parent_id: string; count: string }>();
     const replyById = new Map(
@@ -576,6 +615,8 @@ export class AnimeCommentsService {
         updated_at: row.updatedAt.toISOString(),
         is_deleted: row.isDeleted,
         is_own: String(row.telegramUserId) === viewerId,
+        moderation_status: row.moderationStatus ?? 'approved',
+        is_pending: (row.moderationStatus ?? 'approved') === 'pending',
         author: authorDto(String(row.telegramUserId)),
         reply_to:
           replyTarget && !replyTarget.isDeleted

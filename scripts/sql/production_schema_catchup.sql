@@ -581,6 +581,31 @@ CREATE INDEX IF NOT EXISTS idx_anime_comments_thread
 CREATE INDEX IF NOT EXISTS idx_anime_comments_author
   ON anime_comments (telegram_user_id, created_at DESC);
 
+ALTER TABLE anime_comments
+  ADD COLUMN IF NOT EXISTS moderation_status varchar(20);
+
+ALTER TABLE anime_comments
+  ADD COLUMN IF NOT EXISTS moderated_at timestamptz;
+
+UPDATE anime_comments
+SET moderation_status = 'approved'
+WHERE moderation_status IS NULL
+  AND is_deleted = false;
+
+ALTER TABLE anime_comments
+  ALTER COLUMN moderation_status SET DEFAULT 'pending';
+
+UPDATE anime_comments
+SET moderation_status = 'pending'
+WHERE moderation_status IS NULL;
+
+ALTER TABLE anime_comments
+  ALTER COLUMN moderation_status SET NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_anime_comments_moderation_created
+  ON anime_comments (moderation_status, created_at DESC)
+  WHERE is_deleted = false;
+
 CREATE TABLE IF NOT EXISTS anime_comment_likes (
   comment_id uuid NOT NULL REFERENCES anime_comments (id) ON DELETE CASCADE,
   telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
