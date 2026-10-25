@@ -12,7 +12,9 @@ import {
   Anime,
   AnimeEpisode,
   TelegramUser,
+  UserEpisodeDownloadReceipt,
 } from '../../entities';
+import { recordEpisodeDownloadReceipt } from '../../common/record-episode-download-receipt';
 import {
   extendSubscriptionExpiry,
   hasActiveSubscription,
@@ -32,6 +34,8 @@ export class SubscriptionsService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(AdminAuditEvent)
     private readonly auditRepo: Repository<AdminAuditEvent>,
+    @InjectRepository(UserEpisodeDownloadReceipt)
+    private readonly receiptRepo: Repository<UserEpisodeDownloadReceipt>,
   ) {}
 
   private async recordAdminGrantAudit(input: {
@@ -215,6 +219,12 @@ export class SubscriptionsService {
     const downloadLink =
       episode.downloadLink?.trim() ||
       `https://t.me/ShioriUploadBot?start=get_${episode.id}`;
+
+    await recordEpisodeDownloadReceipt(this.receiptRepo, {
+      telegramUserId,
+      episodeId,
+      source: 'subscription_episode',
+    });
 
     return { download_link: downloadLink, expires_at: me.expires_at };
   }

@@ -16,6 +16,7 @@ import {
   DownloadTokenLedger,
   TelegramUser,
 } from '../../entities';
+import { recordEpisodeDownloadReceipt } from '../../common/record-episode-download-receipt';
 import { DarametDonatesClient } from './daramet-donates.client';
 import {
   DONATION_TOKEN_TIERS,
@@ -262,6 +263,12 @@ export class DownloadTokensService {
           note: null,
         }),
       );
+
+      await recordEpisodeDownloadReceipt(manager, {
+        telegramUserId,
+        episodeId,
+        source: 'free_download',
+      });
 
       return { balance: next, download_link: downloadLink };
     });

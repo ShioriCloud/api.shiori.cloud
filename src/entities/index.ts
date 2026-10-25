@@ -13,6 +13,8 @@ export { AnimeTranslatorLink } from './anime-translator-link.entity';
 export { UserAnimeListEntry } from './user-anime-list-entry.entity';
 export { UserSocialFollow } from './user-social-follow.entity';
 export { UserSocialBadge } from './user-social-badge.entity';
+export { UserSocialBadgeShowcase } from './user-social-badge-showcase.entity';
+export { UserEpisodeDownloadReceipt } from './user-episode-download-receipt.entity';
 export { UserSocialBlock } from './user-social-block.entity';
 export { UserSocialMute } from './user-social-mute.entity';
 export {

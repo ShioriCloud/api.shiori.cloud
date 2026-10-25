@@ -666,3 +666,38 @@ ALTER TABLE user_anime_list ADD COLUMN IF NOT EXISTS list_status_at timestamptz 
 CREATE INDEX IF NOT EXISTS idx_user_anime_list_favorite_rank
   ON user_anime_list (telegram_user_id, favorite_rank)
   WHERE is_favorite = true AND favorite_rank IS NOT NULL;
+
+-- Social badges v1: unlock source, profile showcase, episode receipts
+ALTER TABLE user_social_badges
+  ADD COLUMN IF NOT EXISTS unlock_source text NOT NULL DEFAULT 'auto';
+
+CREATE TABLE IF NOT EXISTS user_social_badge_showcase (
+  telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  slot smallint NOT NULL CHECK (slot >= 1 AND slot <= 3),
+  badge_id text NOT NULL,
+  PRIMARY KEY (telegram_user_id, slot)
+);
+
+CREATE TABLE IF NOT EXISTS user_episode_download_receipts (
+  telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
+  episode_id uuid NOT NULL,
+  source text NOT NULL DEFAULT 'free_download',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (telegram_user_id, episode_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_episode_download_receipts_user
+  ON user_episode_download_receipts (telegram_user_id, created_at DESC);
+
+INSERT INTO user_episode_download_receipts (telegram_user_id, episode_id, source, created_at)
+SELECT DISTINCT
+  l.telegram_user_id,
+  l.ref_id::uuid,
+  'free_download',
+  MIN(l.created_at)
+FROM download_token_ledger l
+WHERE l.reason = 'free_download'
+  AND l.ref_type = 'episode'
+  AND l.ref_id IS NOT NULL
+GROUP BY l.telegram_user_id, l.ref_id
+ON CONFLICT (telegram_user_id, episode_id) DO NOTHING;

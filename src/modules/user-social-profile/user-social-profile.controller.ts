@@ -50,6 +50,19 @@ export class UserSocialProfileController {
     return this.socialProfile.getMyBadgeCatalog(String(req.telegramUserId));
   }
 
+  @Patch('me/badges/showcase')
+  @ApiOperation({ summary: 'Choose up to 3 earned badges for profile display' })
+  updateBadgeShowcase(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: { badge_ids?: string[] },
+  ) {
+    const ids = Array.isArray(body?.badge_ids) ? body.badge_ids : [];
+    return this.socialProfile.updateBadgeShowcase(
+      String(req.telegramUserId),
+      ids,
+    );
+  }
+
   @Get('users/:telegramUserId/badges')
   @ApiOperation({
     summary: 'Earned badges for another user (display-only sheet)',

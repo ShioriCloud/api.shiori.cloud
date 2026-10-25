@@ -10,4 +10,7 @@ export class UserSocialBadge {
 
   @Column({ type: 'timestamptz', name: 'earned_at', default: () => 'now()' })
   earnedAt: Date;
+
+  @Column({ type: 'text', name: 'unlock_source', default: 'auto' })
+  unlockSource: string;
 }

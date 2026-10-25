@@ -5,6 +5,7 @@ import {
   AnimeEpisode,
   DownloadTokenLedger,
   TelegramUser,
+  UserEpisodeDownloadReceipt,
 } from '../../entities';
 import { PortalAuthModule } from '../portal-auth/portal-auth.module';
 import { TelegramModule } from '../../telegram/telegram.module';
@@ -18,6 +19,7 @@ import { DownloadTokensService } from './download-tokens.service';
       TelegramUser,
       AnimeEpisode,
       DownloadTokenLedger,
+      UserEpisodeDownloadReceipt,
       AdminAuditEvent,
     ]),
     TelegramModule,
