@@ -9,6 +9,7 @@ import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { normalizeSlug } from '../../common/slug.util';
 import { findAnimeByIdOrSlug } from '../../common/anime-ref.util';
+import { parseTelegramFileDownloadKey } from '../../common/telegram-file-link.util';
 import {
   fetchMalAnimeById,
   JikanClientError,
@@ -36,6 +37,7 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
   UserAnimeListEntry,
   UserCustomListItem,
   UserNotification,
@@ -81,6 +83,8 @@ export class AnimeAdminService {
     private readonly translatorRepo: Repository<AnimeTranslator>,
     @InjectRepository(AnimeTranslatorLink)
     private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
+    @InjectRepository(BotFile)
+    private readonly botFileRepo: Repository<BotFile>,
     @InjectRepository(UserAnimeListEntry)
     private readonly userListRepo: Repository<UserAnimeListEntry>,
     @InjectRepository(UserNotification)
@@ -508,6 +512,18 @@ export class AnimeAdminService {
     return map;
   }
 
+  private normalizeSlugList(slugs: string[]): string[] {
+    return [...new Set(slugs.map((s) => String(s ?? '').trim()).filter(Boolean))].sort();
+  }
+
+  private slugListsEqual(a: string[], b: string[]): boolean {
+    const left = this.normalizeSlugList(a);
+    const right = this.normalizeSlugList(b);
+    return (
+      left.length === right.length && left.every((value, index) => value === right[index])
+    );
+  }
+
   private async replaceGenreSlugs(animeId: string, slugs: string[]) {
     await this.genreLinkRepo.delete({ animeId });
     if (slugs.length === 0) return;
@@ -518,6 +534,12 @@ export class AnimeAdminService {
     if (links.length > 0) await this.genreLinkRepo.save(links);
   }
 
+  private async replaceGenreSlugsIfChanged(animeId: string, slugs: string[]) {
+    const current = await this.getAnimeGenreSlugs(animeId);
+    if (this.slugListsEqual(current, slugs)) return;
+    await this.replaceGenreSlugs(animeId, slugs);
+  }
+
   private async replaceStudioSlugs(animeId: string, slugs: string[]) {
     await this.studioLinkRepo.delete({ animeId });
     if (slugs.length === 0) return;
@@ -526,6 +548,12 @@ export class AnimeAdminService {
       this.studioLinkRepo.create({ animeId, studioId: s.id }),
     );
     if (links.length > 0) await this.studioLinkRepo.save(links);
+  }
+
+  private async replaceStudioSlugsIfChanged(animeId: string, slugs: string[]) {
+    const current = await this.getAnimeStudioSlugs(animeId);
+    if (this.slugListsEqual(current, slugs)) return;
+    await this.replaceStudioSlugs(animeId, slugs);
   }
 
   private async requireAnime(idOrSlug: string) {
@@ -980,13 +1008,13 @@ export class AnimeAdminService {
     this.markAdminEdited(anime, editorId);
     await this.animeRepo.save(anime);
     const genreSlugs = this.pick<string[]>(body, 'genre_slugs', 'genreSlugs');
-    if (genreSlugs) await this.replaceGenreSlugs(id, genreSlugs);
+    if (genreSlugs) await this.replaceGenreSlugsIfChanged(id, genreSlugs);
     const studioSlugs = this.pick<string[]>(
       body,
       'studio_slugs',
       'studioSlugs',
     );
-    if (studioSlugs) await this.replaceStudioSlugs(id, studioSlugs);
+    if (studioSlugs) await this.replaceStudioSlugsIfChanged(id, studioSlugs);
     return this.getAnimeAdmin(id);
   }
 
@@ -1057,16 +1085,44 @@ export class AnimeAdminService {
       where: { animeId },
       order: { episodeNumber: 'ASC' },
     });
-    return episodes.map((e) => ({
-      id: e.id,
-      episode_number: e.episodeNumber ?? 0,
-      title: e.title,
-      download_link: e.downloadLink,
-      video_file_type: normalizeEpisodeVideoFileType(e.videoFileType),
-    }));
+    const keys = [
+      ...new Set(
+        episodes
+          .map((e) => {
+            if (String(e.title ?? '').trim()) return null;
+            return parseTelegramFileDownloadKey(e.downloadLink ?? '');
+          })
+          .filter((key): key is string => Boolean(key)),
+      ),
+    ];
+    const files =
+      keys.length > 0
+        ? await this.botFileRepo.find({ where: { key: In(keys) } })
+        : [];
+    const nameByKey = new Map(
+      files.map((f) => [f.key, String(f.fileName ?? '').trim() || f.key]),
+    );
+    return episodes.map((e) => {
+      const fileKey = parseTelegramFileDownloadKey(e.downloadLink ?? '');
+      const fileDisplay =
+        String(e.title ?? '').trim() ||
+        (fileKey ? nameByKey.get(fileKey) ?? null : null);
+      return {
+        id: e.id,
+        anime_id: animeId,
+        episode_number: e.episodeNumber ?? 0,
+        title: e.title,
+        download_link: e.downloadLink,
+        video_file_type: normalizeEpisodeVideoFileType(e.videoFileType),
+        file_display_name: fileDisplay || null,
+      };
+    });
   }
 
-  async insertEpisode(body: Payload) {
+  async insertEpisode(
+    body: Payload,
+    opts?: { skipAutoNotify?: boolean },
+  ) {
     const animeIdRaw = String(
       this.pick<string>(body, 'anime_id', 'animeId') ?? '',
     );
@@ -1101,7 +1157,7 @@ export class AnimeAdminService {
     await this.touchAnimeLastEpisodeAt(animeId, saved.createdAt ?? new Date());
 
     const episodeNumber = saved.episodeNumber ?? 0;
-    if (episodeNumber > 0) {
+    if (!opts?.skipAutoNotify && episodeNumber > 0) {
       // createdBy must be a telegram user id or null — 'auto' breaks bigint FK and was swallowed.
       void this.notificationsAdminService
         .notifyEpisodeRelease(
@@ -1116,12 +1172,21 @@ export class AnimeAdminService {
         });
     }
 
+    const fileKey = parseTelegramFileDownloadKey(saved.downloadLink ?? '');
+    let fileDisplay = String(saved.title ?? '').trim() || null;
+    if (!fileDisplay && fileKey) {
+      const file = await this.botFileRepo.findOne({ where: { key: fileKey } });
+      fileDisplay = file?.fileName?.trim() || fileKey;
+    }
+
     return {
       id: saved.id,
+      anime_id: animeId,
       episode_number: saved.episodeNumber ?? 0,
       title: saved.title,
       download_link: saved.downloadLink,
       video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
+      file_display_name: fileDisplay,
     };
   }
 
@@ -1145,11 +1210,79 @@ export class AnimeAdminService {
 
   async insertEpisodesBatch(animeIdOrSlug: string, episodes: Payload[]) {
     const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
-    const created = [];
-    for (const ep of episodes) {
-      created.push(await this.insertEpisode({ ...ep, anime_id: animeId }));
+    if (!Array.isArray(episodes) || episodes.length === 0) {
+      return { inserted: 0, skipped: 0, items: [] as Payload[] };
     }
-    return created;
+
+    const anime = await this.animeRepo.findOne({
+      where: { id: animeId },
+      select: { id: true, videoFileType: true },
+    });
+    const defaultVideoType = normalizeEpisodeVideoFileType(anime?.videoFileType);
+
+    const created: Payload[] = [];
+    let skipped = 0;
+
+    await this.dataSource.transaction(async (manager) => {
+      const episodeRepo = manager.getRepository(AnimeEpisode);
+      for (const ep of episodes) {
+        const videoFileTypeRaw = this.pick<string | null>(
+          ep,
+          'video_file_type',
+          'videoFileType',
+        );
+        const videoFileType =
+          videoFileTypeRaw != null
+            ? normalizeEpisodeVideoFileType(videoFileTypeRaw)
+            : defaultVideoType;
+        const episodeNumber = Number(
+          this.pick(ep, 'episode_number', 'episodeNumber') ?? 0,
+        );
+        const entity = episodeRepo.create({
+          animeId,
+          episodeNumber,
+          title: this.pick<string | null>(ep, 'title', 'title') ?? null,
+          downloadLink:
+            this.pick<string | null>(ep, 'download_link', 'downloadLink') ??
+            null,
+          videoFileType,
+        });
+        try {
+          const saved = await episodeRepo.save(entity);
+          created.push({
+            id: saved.id,
+            anime_id: animeId,
+            episode_number: saved.episodeNumber ?? 0,
+            title: saved.title,
+            download_link: saved.downloadLink,
+            video_file_type: normalizeEpisodeVideoFileType(saved.videoFileType),
+          });
+        } catch (err: unknown) {
+          const code =
+            typeof err === 'object' &&
+            err != null &&
+            'code' in err &&
+            typeof (err as { code: unknown }).code === 'string'
+              ? (err as { code: string }).code
+              : '';
+          if (code === '23505') {
+            skipped += 1;
+            continue;
+          }
+          throw err;
+        }
+      }
+    });
+
+    if (created.length > 0) {
+      await this.touchAnimeLastEpisodeAt(animeId, new Date());
+    }
+
+    return {
+      inserted: created.length,
+      skipped,
+      items: created,
+    };
   }
 
   async updateEpisode(id: string, body: Payload) {
@@ -1551,7 +1684,68 @@ export class AnimeAdminService {
 
   async replaceAnimeStudios(animeIdOrSlug: string, slugs: string[]) {
     const animeId = await this.resolveAnimeRecordId(animeIdOrSlug);
-    await this.replaceStudioSlugs(animeId, slugs);
+    await this.replaceStudioSlugsIfChanged(animeId, slugs);
+  }
+
+  async getAnimeEditBundle(idOrSlug: string, includeRaw?: string) {
+    const parts = new Set(
+      String(includeRaw ?? 'all')
+        .split(',')
+        .map((p) => p.trim().toLowerCase())
+        .filter(Boolean),
+    );
+    const all = parts.has('all');
+    const wantCore = all || parts.has('core');
+    const wantMedia = all || parts.has('media');
+    const wantTranslators = all || parts.has('translators');
+    if (!wantCore && !wantMedia && !wantTranslators) {
+      throw new BadRequestException(
+        'include must contain core, media, translators, or all',
+      );
+    }
+
+    const animeId = await this.resolveAnimeRecordId(idOrSlug);
+    const bundle: Record<string, unknown> = { anime_id: animeId };
+
+    if (wantCore) {
+      const [anime, genreSlugs, studioSlugs, series] = await Promise.all([
+        this.getAnimeAdmin(idOrSlug),
+        this.getAnimeGenreSlugs(animeId),
+        this.getAnimeStudioSlugs(animeId),
+        this.getSeriesDraft(animeId),
+      ]);
+      const [genreRows, studioRows] = await Promise.all([
+        genreSlugs.length > 0
+          ? this.genreRepo.find({ where: { slug: In(genreSlugs) } })
+          : Promise.resolve([]),
+        studioSlugs.length > 0
+          ? this.studioRepo.find({ where: { slug: In(studioSlugs) } })
+          : Promise.resolve([]),
+      ]);
+      bundle.anime = anime;
+      bundle.genre_slugs = genreSlugs;
+      bundle.studio_slugs = studioSlugs;
+      bundle.genres = genreRows.map((g) => this.toGenre(g));
+      bundle.studios = studioRows.map((s) => this.toStudio(s));
+      bundle.series = series;
+    }
+
+    if (wantMedia) {
+      const [episodes, subtitles, subtitlePacks] = await Promise.all([
+        this.listEpisodes(animeId),
+        this.listSubtitles(animeId),
+        this.listSubtitlePacks(animeId),
+      ]);
+      bundle.episodes = episodes;
+      bundle.subtitles = subtitles;
+      bundle.subtitle_packs = subtitlePacks;
+    }
+
+    if (wantTranslators) {
+      bundle.translator_links = await this.listTranslatorLinks(animeId);
+    }
+
+    return bundle;
   }
 
   async listTranslators(params?: CatalogAdminListParams | string) {
@@ -1683,6 +1877,7 @@ export class AnimeAdminService {
     });
     return rows.map((s) => ({
       id: s.id,
+      anime_id: animeId,
       episode_number: s.episodeNumber,
       title: s.title,
       subtitle_link: s.subtitleLink,

@@ -163,6 +163,18 @@ export class AnimeAdminController {
     return this.animeAdminService.upsertAnime(body, req.portalTelegramUserId);
   }
 
+  @Get('anime/:animeId/edit-bundle')
+  @ApiOperation({
+    summary:
+      'Anime edit page payload (core / media / translators via include=)',
+  })
+  getAnimeEditBundle(
+    @Param('animeId') animeId: string,
+    @Query('include') include?: string,
+  ) {
+    return this.animeAdminService.getAnimeEditBundle(animeId, include);
+  }
+
   @Get('anime/:animeId/episodes')
   listEpisodes(@Param('animeId') animeId: string) {
     return this.animeAdminService.listEpisodes(animeId);

@@ -13,6 +13,7 @@ import {
   AnimeSubtitlePack,
   AnimeTranslator,
   AnimeTranslatorLink,
+  BotFile,
   UserAnimeListEntry,
   UserNotification,
 } from '../../entities';
@@ -40,6 +41,7 @@ import { AnimeAdminService } from './anime-admin.service';
       AnimeSeriesMember,
       AnimeTranslator,
       AnimeTranslatorLink,
+      BotFile,
       UserAnimeListEntry,
       UserNotification,
     ]),
