@@ -30,5 +30,6 @@ import { AnimeCommentsService } from './anime-comments.service';
   ],
   controllers: [AnimeCommentsController, AnimeCommentsAdminController],
   providers: [AnimeCommentsService, AnimeCommentsAdminService],
+  exports: [AnimeCommentsAdminService],
 })
 export class AnimeCommentsModule {}

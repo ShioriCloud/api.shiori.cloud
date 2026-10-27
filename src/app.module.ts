@@ -69,6 +69,7 @@ import { UserAnimeListModule } from './modules/user-anime-list/user-anime-list.m
 import { UserCustomListsModule } from './modules/user-custom-lists/user-custom-lists.module';
 import { AnimeAdminModule } from './modules/anime-admin/anime-admin.module';
 import { PortalAuthModule } from './modules/portal-auth/portal-auth.module';
+import { PortalAdminModule } from './modules/portal-admin/portal-admin.module';
 import { FilesAdminModule } from './modules/files-admin/files-admin.module';
 import { NotificationsAdminModule } from './modules/notifications-admin/notifications-admin.module';
 import { TelegramUsersAdminModule } from './modules/telegram-users-admin/telegram-users-admin.module';
@@ -165,6 +166,7 @@ import { TelegramModule } from './telegram/telegram.module';
     AnimeNotificationsModule,
     AppAuthModule,
     PortalAuthModule,
+    PortalAdminModule,
     AnimeAdminModule,
     TelegramUsersAdminModule,
     FilesAdminModule,

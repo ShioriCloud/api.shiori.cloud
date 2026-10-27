@@ -19,5 +19,6 @@ import { SupportTicketsService } from './support-tickets.service';
   ],
   controllers: [SupportTicketsController, SupportTicketsAdminController],
   providers: [SupportTicketsService],
+  exports: [SupportTicketsService],
 })
 export class SupportTicketsModule {}
