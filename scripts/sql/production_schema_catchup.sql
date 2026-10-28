@@ -673,10 +673,17 @@ ALTER TABLE user_social_badges
 
 CREATE TABLE IF NOT EXISTS user_social_badge_showcase (
   telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,
-  slot smallint NOT NULL CHECK (slot >= 1 AND slot <= 3),
+  slot smallint NOT NULL CHECK (slot >= 1 AND slot <= 4),
   badge_id text NOT NULL,
   PRIMARY KEY (telegram_user_id, slot)
 );
+
+-- Existing DBs created with slot <= 3
+ALTER TABLE user_social_badge_showcase
+  DROP CONSTRAINT IF EXISTS user_social_badge_showcase_slot_check;
+ALTER TABLE user_social_badge_showcase
+  ADD CONSTRAINT user_social_badge_showcase_slot_check
+  CHECK (slot >= 1 AND slot <= 4);
 
 CREATE TABLE IF NOT EXISTS user_episode_download_receipts (
   telegram_user_id bigint NOT NULL REFERENCES telegram_users (telegram_user_id) ON DELETE CASCADE,

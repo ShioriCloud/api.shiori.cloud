@@ -347,17 +347,19 @@ export class SocialBadgeEngineService {
       }
     }
 
-    await this.showcaseRepo.delete({ telegramUserId: userId });
-    const rows = unique.map((badgeId, index) =>
-      this.showcaseRepo.create({
-        telegramUserId: userId,
-        slot: index + 1,
-        badgeId: this.normalizeBadgeId(badgeId),
-      }),
-    );
-    if (rows.length > 0) {
-      await this.showcaseRepo.save(rows);
-    }
+    await this.showcaseRepo.manager.transaction(async (em) => {
+      await em.delete(UserSocialBadgeShowcase, { telegramUserId: userId });
+      const rows = unique.map((badgeId, index) =>
+        em.create(UserSocialBadgeShowcase, {
+          telegramUserId: userId,
+          slot: index + 1,
+          badgeId: this.normalizeBadgeId(badgeId),
+        }),
+      );
+      if (rows.length > 0) {
+        await em.save(rows);
+      }
+    });
     return unique.map((id) => this.normalizeBadgeId(id));
   }
 
