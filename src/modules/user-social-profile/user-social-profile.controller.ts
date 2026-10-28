@@ -51,7 +51,7 @@ export class UserSocialProfileController {
   }
 
   @Patch('me/badges/showcase')
-  @ApiOperation({ summary: 'Choose up to 3 earned badges for profile display' })
+  @ApiOperation({ summary: 'Choose up to 4 earned badges for profile display' })
   updateBadgeShowcase(
     @Req() req: AppUserAuthedRequest,
     @Body() body: { badge_ids?: string[] },

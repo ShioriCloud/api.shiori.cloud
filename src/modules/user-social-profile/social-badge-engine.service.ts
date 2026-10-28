@@ -23,6 +23,9 @@ import { SocialBadgeMetricsService } from './social-badge-metrics.service';
 
 export const SOCIAL_BADGE_NEW_MS = 14 * 24 * 60 * 60 * 1000;
 
+/** Earned badges shown on profile header / showcase strip. */
+export const PROFILE_BADGE_CHIP_LIMIT = 4;
+
 export type EarnedBadgeMeta = {
   earned_at: string;
   is_new?: boolean;
@@ -324,8 +327,10 @@ export class SocialBadgeEngineService {
     const unique = [...new Set(badgeIds.map((id) => String(id).trim()))].filter(
       Boolean,
     );
-    if (unique.length > 3) {
-      throw new BadRequestException('At most 3 showcase badges');
+    if (unique.length > PROFILE_BADGE_CHIP_LIMIT) {
+      throw new BadRequestException(
+        `At most ${PROFILE_BADGE_CHIP_LIMIT} showcase badges`,
+      );
     }
 
     const userId = String(telegramUserId);
@@ -405,11 +410,11 @@ export class SocialBadgeEngineService {
 
     const chips =
       fromShowcase.length > 0
-        ? fromShowcase.slice(0, 3)
+        ? fromShowcase.slice(0, PROFILE_BADGE_CHIP_LIMIT)
         : [...earned.keys()]
             .map((id) => pick(id))
             .filter((x): x is NonNullable<typeof x> => x != null)
-            .slice(0, 3);
+            .slice(0, PROFILE_BADGE_CHIP_LIMIT);
 
     return {
       chips,
