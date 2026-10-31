@@ -21,6 +21,9 @@ import {
   UserCustomListItem,
   UserNotification,
   UserPortalSession,
+  UserSocialFollow,
+  UserSocialBlock,
+  UserSocialMute,
 } from '../../entities';
 import type { AdminAuditAction } from '../../entities/admin-audit-event.entity';
 import {
@@ -198,6 +201,12 @@ export class TelegramUsersAdminService {
     private readonly sessionsRepo: Repository<UserPortalSession>,
     @InjectRepository(AdminAuditEvent)
     private readonly auditRepo: Repository<AdminAuditEvent>,
+    @InjectRepository(UserSocialFollow)
+    private readonly followRepo: Repository<UserSocialFollow>,
+    @InjectRepository(UserSocialBlock)
+    private readonly blockRepo: Repository<UserSocialBlock>,
+    @InjectRepository(UserSocialMute)
+    private readonly muteRepo: Repository<UserSocialMute>,
   ) {}
 
   private async recordAudit(input: {
@@ -1220,5 +1229,159 @@ export class TelegramUsersAdminService {
     );
 
     return `\uFEFF${header.join(',')}\n${rows.join('\n')}`;
+  }
+
+  private async assertUserExists(telegramUserId: string): Promise<string> {
+    const id = String(telegramUserId).trim();
+    if (!id) throw new BadRequestException('invalid user id');
+    const user = await this.usersRepo.findOne({
+      where: { telegramUserId: id },
+      select: { telegramUserId: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return id;
+  }
+
+  private displayNameOf(user: TelegramUser): string {
+    return (
+      user.socialDisplayName?.trim() ||
+      user.firstName?.trim() ||
+      user.username?.trim() ||
+      user.email?.trim() ||
+      'کاربر'
+    );
+  }
+
+  private async mapSocialPeerRows(
+    peerIds: string[],
+    createdAtById: Map<string, Date>,
+  ) {
+    if (peerIds.length === 0) return [];
+    const users = await this.usersRepo.find({
+      where: { telegramUserId: In(peerIds) },
+    });
+    const byId = new Map(users.map((u) => [String(u.telegramUserId), u]));
+    return peerIds.map((id) => {
+      const user = byId.get(id);
+      return {
+        telegram_user_id: id,
+        display_name: user ? this.displayNameOf(user) : 'کاربر',
+        username: user?.username ?? null,
+        photo_url: user?.photoUrl ?? null,
+        created_at: (createdAtById.get(id) ?? new Date(0)).toISOString(),
+      };
+    });
+  }
+
+  async getSocialSummary(telegramUserId: string) {
+    const id = await this.assertUserExists(telegramUserId);
+    const [
+      followers_count,
+      following_count,
+      blocks_out_count,
+      blocks_in_count,
+      mutes_out_count,
+    ] = await Promise.all([
+      this.followRepo.count({ where: { followingTelegramUserId: id } }),
+      this.followRepo.count({ where: { followerTelegramUserId: id } }),
+      this.blockRepo.count({ where: { blockerTelegramUserId: id } }),
+      this.blockRepo.count({ where: { blockedTelegramUserId: id } }),
+      this.muteRepo.count({ where: { muterTelegramUserId: id } }),
+    ]);
+    return {
+      followers_count,
+      following_count,
+      blocks_out_count,
+      blocks_in_count,
+      mutes_out_count,
+    };
+  }
+
+  async listSocialFollowers(
+    telegramUserId: string,
+    page = 1,
+    limit = 30,
+  ) {
+    const id = await this.assertUserExists(telegramUserId);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const [edges, total] = await this.followRepo.findAndCount({
+      where: { followingTelegramUserId: id },
+      order: { createdAt: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+    const peerIds = edges.map((e) => String(e.followerTelegramUserId));
+    const createdAtById = new Map(
+      edges.map((e) => [String(e.followerTelegramUserId), e.createdAt]),
+    );
+    const items = await this.mapSocialPeerRows(peerIds, createdAtById);
+    return { total, page: safePage, limit: safeLimit, items };
+  }
+
+  async listSocialFollowing(
+    telegramUserId: string,
+    page = 1,
+    limit = 30,
+  ) {
+    const id = await this.assertUserExists(telegramUserId);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const [edges, total] = await this.followRepo.findAndCount({
+      where: { followerTelegramUserId: id },
+      order: { createdAt: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+    const peerIds = edges.map((e) => String(e.followingTelegramUserId));
+    const createdAtById = new Map(
+      edges.map((e) => [String(e.followingTelegramUserId), e.createdAt]),
+    );
+    const items = await this.mapSocialPeerRows(peerIds, createdAtById);
+    return { total, page: safePage, limit: safeLimit, items };
+  }
+
+  async listSocialBlocksOut(
+    telegramUserId: string,
+    page = 1,
+    limit = 30,
+  ) {
+    const id = await this.assertUserExists(telegramUserId);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const [rows, total] = await this.blockRepo.findAndCount({
+      where: { blockerTelegramUserId: id },
+      order: { createdAt: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+    const peerIds = rows.map((r) => String(r.blockedTelegramUserId));
+    const createdAtById = new Map(
+      rows.map((r) => [String(r.blockedTelegramUserId), r.createdAt]),
+    );
+    const items = await this.mapSocialPeerRows(peerIds, createdAtById);
+    return { total, page: safePage, limit: safeLimit, items };
+  }
+
+  async listSocialMutesOut(
+    telegramUserId: string,
+    page = 1,
+    limit = 30,
+  ) {
+    const id = await this.assertUserExists(telegramUserId);
+    const safePage = Math.max(1, page);
+    const safeLimit = Math.min(50, Math.max(1, limit));
+    const [rows, total] = await this.muteRepo.findAndCount({
+      where: { muterTelegramUserId: id },
+      order: { createdAt: 'DESC' },
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
+    });
+    const peerIds = rows.map((r) => String(r.mutedTelegramUserId));
+    const createdAtById = new Map(
+      rows.map((r) => [String(r.mutedTelegramUserId), r.createdAt]),
+    );
+    const items = await this.mapSocialPeerRows(peerIds, createdAtById);
+    return { total, page: safePage, limit: safeLimit, items };
   }
 }

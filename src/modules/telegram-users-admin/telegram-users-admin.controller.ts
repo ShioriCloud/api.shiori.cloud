@@ -57,6 +57,68 @@ export class TelegramUsersAdminController {
     return this.adminService.listAuditEvents(query);
   }
 
+  @Get(':id/social-summary')
+  @ApiOperation({ summary: 'Social follow/block/mute counts for a user' })
+  socialSummary(@Param('id') id: string) {
+    return this.adminService.getSocialSummary(id);
+  }
+
+  @Get(':id/followers')
+  @ApiOperation({ summary: 'Paginated followers for admin user detail' })
+  socialFollowers(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listSocialFollowers(
+      id,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 30,
+    );
+  }
+
+  @Get(':id/following')
+  @ApiOperation({ summary: 'Paginated following for admin user detail' })
+  socialFollowing(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listSocialFollowing(
+      id,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 30,
+    );
+  }
+
+  @Get(':id/blocks')
+  @ApiOperation({ summary: 'Outgoing social blocks for admin user detail' })
+  socialBlocks(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listSocialBlocksOut(
+      id,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 30,
+    );
+  }
+
+  @Get(':id/mutes')
+  @ApiOperation({ summary: 'Outgoing social mutes for admin user detail' })
+  socialMutes(
+    @Param('id') id: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.adminService.listSocialMutesOut(
+      id,
+      page ? parseInt(page, 10) : 1,
+      limit ? parseInt(limit, 10) : 30,
+    );
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Aggregated telegram user detail for admin' })
   getOne(@Param('id') id: string) {
