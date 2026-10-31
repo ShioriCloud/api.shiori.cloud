@@ -10,7 +10,9 @@ export type SocialInboxKind =
   | 'social_follow'
   | 'comment_reply'
   | 'comment_like'
-  | 'following_comment';
+  | 'following_comment'
+  | 'feed_activity_like'
+  | 'feed_activity_note';
 
 type DeliverInput = {
   recipientTelegramUserId: string;
@@ -40,8 +42,10 @@ export class SocialNotificationDeliveryService {
       case 'social_follow':
         return user.notifySocialFollow !== false;
       case 'comment_reply':
+      case 'feed_activity_note':
         return user.notifyCommentReply !== false;
       case 'comment_like':
+      case 'feed_activity_like':
         return user.notifyCommentLike !== false;
       case 'following_comment':
         return user.notifyFollowingComment !== false;

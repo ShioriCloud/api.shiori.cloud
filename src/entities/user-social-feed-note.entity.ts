@@ -14,8 +14,12 @@ export class UserSocialFeedNote {
   @PrimaryColumn({ type: 'text', name: 'activity_key' })
   activityKey: string;
 
-  @Column({ type: 'text', name: 'body' })
+  @Column({ type: 'text' })
   body: string;
+
+  /** When true, only the author can see the note. Existing rows defaulted to private. */
+  @Column({ type: 'boolean', name: 'is_private', default: true })
+  isPrivate: boolean;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt: Date;

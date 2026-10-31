@@ -213,20 +213,24 @@ export class UserSocialProfileController {
   }
 
   @Put('feed/note')
-  @ApiOperation({ summary: 'Create or update a private note on a feed activity' })
+  @ApiOperation({
+    summary:
+      'Create or update a note on a feed activity (public by default; is_private for author-only)',
+  })
   upsertFeedNote(
     @Req() req: AppUserAuthedRequest,
-    @Body() body: { activity_key?: string; body?: string },
+    @Body() body: { activity_key?: string; body?: string; is_private?: boolean },
   ) {
     return this.socialProfile.upsertFeedNote(
       String(req.telegramUserId),
       String(body?.activity_key ?? ''),
       String(body?.body ?? ''),
+      body?.is_private === true,
     );
   }
 
   @Delete('feed/note')
-  @ApiOperation({ summary: 'Delete private note on a feed activity' })
+  @ApiOperation({ summary: 'Delete note on a feed activity' })
   deleteFeedNote(
     @Req() req: AppUserAuthedRequest,
     @Body() body: { activity_key?: string },

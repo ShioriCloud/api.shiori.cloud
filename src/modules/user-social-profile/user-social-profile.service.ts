@@ -182,11 +182,21 @@ export type SocialProfileFeedItem =
       updated_at: string;
     };
 
+export type SocialFeedPublicNote = {
+  telegram_user_id: string;
+  display_name: string;
+  photo_url: string | null;
+  body: string;
+  created_at: string;
+};
+
 export type SocialFeedEngagement = {
   activity_key: string;
   like_count: number;
   liked_by_me: boolean;
   my_note: string | null;
+  my_note_is_private: boolean;
+  public_notes: SocialFeedPublicNote[];
 };
 
 export type SocialProfileFeedItemWithEngagement = SocialProfileFeedItem & {
@@ -253,13 +263,112 @@ export class UserSocialProfileService {
     return `${item.type}:${item.actor.telegram_user_id}:${item.anime_id}`;
   }
 
+  private async resolveFeedActivityOwner(
+    activityKey: string,
+  ): Promise<string | null> {
+    const key = String(activityKey ?? '').trim();
+    if (!key) return null;
+    if (key.startsWith('c:')) {
+      const commentId = key.slice(2);
+      const comment = await this.commentsRepo.findOne({
+        where: { id: commentId },
+        select: { telegramUserId: true },
+      });
+      return comment ? String(comment.telegramUserId) : null;
+    }
+    if (key.startsWith('f:')) {
+      const actorId = key.split(':')[1];
+      return actorId ? String(actorId) : null;
+    }
+    if (key.startsWith('pl:')) {
+      const listId = key.slice(3).split(':')[0];
+      if (!listId) return null;
+      const list = await this.customListRepo.findOne({
+        where: { id: listId },
+        select: { telegramUserId: true },
+      });
+      return list ? String(list.telegramUserId) : null;
+    }
+    const parts = key.split(':');
+    if (parts.length >= 3 && parts[1]) return String(parts[1]);
+    return null;
+  }
+
+  private async engagementForViewer(
+    viewerId: string,
+    activityKey: string,
+  ): Promise<SocialFeedEngagement> {
+    const [count, likedRow, visibleNotes] = await Promise.all([
+      this.feedLikeRepo.count({ where: { activityKey } }),
+      this.feedLikeRepo.findOne({
+        where: { telegramUserId: viewerId, activityKey },
+        select: { activityKey: true },
+      }),
+      this.feedNoteRepo
+        .createQueryBuilder('n')
+        .where('n.activity_key = :activityKey', { activityKey })
+        .andWhere('(n.is_private = false OR n.telegram_user_id = :viewerId)', {
+          viewerId,
+        })
+        .orderBy('n.created_at', 'ASC')
+        .getMany(),
+    ]);
+    return this.mapNotesToEngagement(
+      viewerId,
+      activityKey,
+      count,
+      Boolean(likedRow),
+      visibleNotes,
+    );
+  }
+
+  private async mapNotesToEngagement(
+    viewerId: string,
+    activityKey: string,
+    likeCount: number,
+    likedByMe: boolean,
+    notes: UserSocialFeedNote[],
+  ): Promise<SocialFeedEngagement> {
+    const myNote = notes.find((n) => String(n.telegramUserId) === viewerId);
+    const publicNotes = notes.filter((n) => !n.isPrivate);
+    const authorIds = [
+      ...new Set(publicNotes.map((n) => String(n.telegramUserId))),
+    ];
+    const authors =
+      authorIds.length > 0
+        ? await this.usersRepo.find({
+            where: { telegramUserId: In(authorIds) },
+          })
+        : [];
+    const authorById = new Map(
+      authors.map((u) => [String(u.telegramUserId), u]),
+    );
+    return {
+      activity_key: activityKey,
+      like_count: likeCount,
+      liked_by_me: likedByMe,
+      my_note: myNote?.body ?? null,
+      my_note_is_private: myNote?.isPrivate ?? false,
+      public_notes: publicNotes.map((n) => {
+        const author = authorById.get(String(n.telegramUserId));
+        return {
+          telegram_user_id: String(n.telegramUserId),
+          display_name: author ? this.displayNameOf(author) : 'کاربر',
+          photo_url: author?.photoUrl ?? null,
+          body: n.body,
+          created_at: n.createdAt.toISOString(),
+        };
+      }),
+    };
+  }
+
   private async attachFeedEngagement(
     viewerId: string,
     items: SocialProfileFeedItem[],
   ): Promise<SocialProfileFeedItemWithEngagement[]> {
     if (items.length === 0) return [];
     const keys = items.map((item) => this.feedActivityKey(item));
-    const [likeRows, myLikes, myNotes] = await Promise.all([
+    const [likeRows, myLikes, visibleNotes] = await Promise.all([
       this.feedLikeRepo
         .createQueryBuilder('l')
         .select('l.activity_key', 'activity_key')
@@ -271,25 +380,65 @@ export class UserSocialProfileService {
         where: { telegramUserId: viewerId, activityKey: In(keys) },
         select: { activityKey: true },
       }),
-      this.feedNoteRepo.find({
-        where: { telegramUserId: viewerId, activityKey: In(keys) },
-        select: { activityKey: true, body: true },
-      }),
+      this.feedNoteRepo
+        .createQueryBuilder('n')
+        .where('n.activity_key IN (:...keys)', { keys })
+        .andWhere('(n.is_private = false OR n.telegram_user_id = :viewerId)', {
+          viewerId,
+        })
+        .orderBy('n.created_at', 'ASC')
+        .getMany(),
     ]);
     const countByKey = new Map(
       likeRows.map((r) => [r.activity_key, Number(r.cnt ?? 0)]),
     );
     const likedSet = new Set(myLikes.map((r) => r.activityKey));
-    const noteByKey = new Map(myNotes.map((r) => [r.activityKey, r.body]));
+    const notesByKey = new Map<string, UserSocialFeedNote[]>();
+    for (const note of visibleNotes) {
+      const list = notesByKey.get(note.activityKey) ?? [];
+      list.push(note);
+      notesByKey.set(note.activityKey, list);
+    }
+    const authorIds = [
+      ...new Set(
+        visibleNotes
+          .filter((n) => !n.isPrivate)
+          .map((n) => String(n.telegramUserId)),
+      ),
+    ];
+    const authors =
+      authorIds.length > 0
+        ? await this.usersRepo.find({
+            where: { telegramUserId: In(authorIds) },
+          })
+        : [];
+    const authorById = new Map(
+      authors.map((u) => [String(u.telegramUserId), u]),
+    );
+
     return items.map((item) => {
       const activity_key = this.feedActivityKey(item);
+      const notes = notesByKey.get(activity_key) ?? [];
+      const myNote = notes.find((n) => String(n.telegramUserId) === viewerId);
+      const publicNotes = notes.filter((n) => !n.isPrivate);
       return {
         ...item,
         engagement: {
           activity_key,
           like_count: countByKey.get(activity_key) ?? 0,
           liked_by_me: likedSet.has(activity_key),
-          my_note: noteByKey.get(activity_key) ?? null,
+          my_note: myNote?.body ?? null,
+          my_note_is_private: myNote?.isPrivate ?? false,
+          public_notes: publicNotes.map((n) => {
+            const author = authorById.get(String(n.telegramUserId));
+            return {
+              telegram_user_id: String(n.telegramUserId),
+              display_name: author ? this.displayNameOf(author) : 'کاربر',
+              photo_url: author?.photoUrl ?? null,
+              body: n.body,
+              created_at: n.createdAt.toISOString(),
+            };
+          }),
         },
       };
     });
@@ -317,42 +466,47 @@ export class UserSocialProfileService {
           activityType: activityType?.trim() || null,
         }),
       );
+      const ownerId = await this.resolveFeedActivityOwner(key);
+      if (ownerId && ownerId !== userId) {
+        const blocked = await this.moderation.arePeersBlocked(ownerId, userId);
+        if (!blocked) {
+          const liker = await this.usersRepo.findOne({
+            where: { telegramUserId: userId },
+          });
+          const name = liker ? this.displayNameOf(liker) : 'یک کاربر';
+          await this.socialNotifications.deliver({
+            recipientTelegramUserId: ownerId,
+            kind: 'feed_activity_like',
+            title: 'پسند روی فعالیتت',
+            message: `${name} فعالیتت را پسندید`,
+            href: `/u/${encodeURIComponent(userId)}`,
+          });
+        }
+      }
     }
-    const [count, likedRow, note] = await Promise.all([
-      this.feedLikeRepo.count({ where: { activityKey: key } }),
-      this.feedLikeRepo.findOne({
-        where: { telegramUserId: userId, activityKey: key },
-        select: { activityKey: true },
-      }),
-      this.feedNoteRepo.findOne({
-        where: { telegramUserId: userId, activityKey: key },
-        select: { body: true },
-      }),
-    ]);
-    return {
-      activity_key: key,
-      like_count: count,
-      liked_by_me: Boolean(likedRow),
-      my_note: note?.body ?? null,
-    };
+    return this.engagementForViewer(userId, key);
   }
 
   async upsertFeedNote(
     telegramUserId: string,
     activityKey: string,
     body: string,
+    isPrivate = false,
   ): Promise<SocialFeedEngagement> {
     this.assertSocialEnabled();
     const userId = String(telegramUserId);
     const key = String(activityKey ?? '').trim().slice(0, 240);
     const text = String(body ?? '').trim().slice(0, 280);
+    const privateNote = Boolean(isPrivate);
     if (!key) throw new BadRequestException('activity_key required');
     if (!text) throw new BadRequestException('note body required');
     const existing = await this.feedNoteRepo.findOne({
       where: { telegramUserId: userId, activityKey: key },
     });
+    const wasPrivate = existing?.isPrivate !== false;
     if (existing) {
       existing.body = text;
+      existing.isPrivate = privateNote;
       await this.feedNoteRepo.save(existing);
     } else {
       await this.feedNoteRepo.save(
@@ -360,22 +514,34 @@ export class UserSocialProfileService {
           telegramUserId: userId,
           activityKey: key,
           body: text,
+          isPrivate: privateNote,
         }),
       );
     }
-    const [count, likedRow] = await Promise.all([
-      this.feedLikeRepo.count({ where: { activityKey: key } }),
-      this.feedLikeRepo.findOne({
-        where: { telegramUserId: userId, activityKey: key },
-        select: { activityKey: true },
-      }),
-    ]);
-    return {
-      activity_key: key,
-      like_count: count,
-      liked_by_me: Boolean(likedRow),
-      my_note: text,
-    };
+    const shouldNotify =
+      !privateNote && (!existing || wasPrivate);
+    if (shouldNotify) {
+      const ownerId = await this.resolveFeedActivityOwner(key);
+      if (ownerId && ownerId !== userId) {
+        const blocked = await this.moderation.arePeersBlocked(ownerId, userId);
+        if (!blocked) {
+          const author = await this.usersRepo.findOne({
+            where: { telegramUserId: userId },
+          });
+          const name = author ? this.displayNameOf(author) : 'یک کاربر';
+          const preview =
+            text.length > 80 ? `${text.slice(0, 79)}…` : text;
+          await this.socialNotifications.deliver({
+            recipientTelegramUserId: ownerId,
+            kind: 'feed_activity_note',
+            title: 'یادداشت روی فعالیتت',
+            message: `${name}: ${preview}`,
+            href: `/u/${encodeURIComponent(userId)}`,
+          });
+        }
+      }
+    }
+    return this.engagementForViewer(userId, key);
   }
 
   async deleteFeedNote(
@@ -387,19 +553,7 @@ export class UserSocialProfileService {
     const key = String(activityKey ?? '').trim().slice(0, 240);
     if (!key) throw new BadRequestException('activity_key required');
     await this.feedNoteRepo.delete({ telegramUserId: userId, activityKey: key });
-    const [count, likedRow] = await Promise.all([
-      this.feedLikeRepo.count({ where: { activityKey: key } }),
-      this.feedLikeRepo.findOne({
-        where: { telegramUserId: userId, activityKey: key },
-        select: { activityKey: true },
-      }),
-    ]);
-    return {
-      activity_key: key,
-      like_count: count,
-      liked_by_me: Boolean(likedRow),
-      my_note: null,
-    };
+    return this.engagementForViewer(userId, key);
   }
 
   private commentPreview(body: string, maxLen = 140): string {
