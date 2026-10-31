@@ -76,6 +76,7 @@ export type SocialBadgePublicItemDto = {
   is_new?: boolean;
   rarity: string;
   image_url: string | null;
+  unlock_hint: string | null;
 };
 
 export type SocialBadgePublicResponse = {
@@ -292,6 +293,7 @@ export class SocialBadgeEngineService {
         is_new: earned.get(def.id)?.is_new,
         rarity: def.rarity,
         image_url: def.imageUrl ?? null,
+        unlock_hint: badgeUnlockHint(def),
       });
     }
 
