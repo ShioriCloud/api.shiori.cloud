@@ -184,12 +184,13 @@ export type SocialProfileFeedItem =
       updated_at: string;
     };
 
-export type SocialFeedPublicNote = {
+export type SocialFeedVisibleNote = {
   telegram_user_id: string;
   display_name: string;
   photo_url: string | null;
   body: string;
   created_at: string;
+  is_private: boolean;
 };
 
 export type SocialFeedEngagement = {
@@ -198,7 +199,10 @@ export type SocialFeedEngagement = {
   liked_by_me: boolean;
   my_note: string | null;
   my_note_is_private: boolean;
-  public_notes: SocialFeedPublicNote[];
+  /** Notes the viewer may see: all public, plus private if viewer is author or activity owner. */
+  notes: SocialFeedVisibleNote[];
+  /** @deprecated Prefer `notes`; kept for older clients as public-only subset. */
+  public_notes: SocialFeedVisibleNote[];
 };
 
 export type SocialProfileFeedItemWithEngagement = SocialProfileFeedItem & {
@@ -296,25 +300,37 @@ export class UserSocialProfileService {
     return null;
   }
 
+  private noteVisibleToViewer(
+    note: UserSocialFeedNote,
+    viewerId: string,
+    activityOwnerId: string | null,
+  ): boolean {
+    if (!note.isPrivate) return true;
+    const authorId = String(note.telegramUserId);
+    if (authorId === viewerId) return true;
+    if (activityOwnerId && activityOwnerId === viewerId) return true;
+    return false;
+  }
+
   private async engagementForViewer(
     viewerId: string,
     activityKey: string,
   ): Promise<SocialFeedEngagement> {
-    const [count, likedRow, visibleNotes] = await Promise.all([
+    const [count, likedRow, allNotes, ownerId] = await Promise.all([
       this.feedLikeRepo.count({ where: { activityKey } }),
       this.feedLikeRepo.findOne({
         where: { telegramUserId: viewerId, activityKey },
         select: { activityKey: true },
       }),
-      this.feedNoteRepo
-        .createQueryBuilder('n')
-        .where('n.activity_key = :activityKey', { activityKey })
-        .andWhere('(n.is_private = false OR n.telegram_user_id = :viewerId)', {
-          viewerId,
-        })
-        .orderBy('n.created_at', 'ASC')
-        .getMany(),
+      this.feedNoteRepo.find({
+        where: { activityKey },
+        order: { createdAt: 'ASC' },
+      }),
+      this.resolveFeedActivityOwner(activityKey),
     ]);
+    const visibleNotes = allNotes.filter((n) =>
+      this.noteVisibleToViewer(n, viewerId, ownerId),
+    );
     return this.mapNotesToEngagement(
       viewerId,
       activityKey,
@@ -332,9 +348,8 @@ export class UserSocialProfileService {
     notes: UserSocialFeedNote[],
   ): Promise<SocialFeedEngagement> {
     const myNote = notes.find((n) => String(n.telegramUserId) === viewerId);
-    const publicNotes = notes.filter((n) => !n.isPrivate);
     const authorIds = [
-      ...new Set(publicNotes.map((n) => String(n.telegramUserId))),
+      ...new Set(notes.map((n) => String(n.telegramUserId))),
     ];
     const authors =
       authorIds.length > 0
@@ -345,22 +360,25 @@ export class UserSocialProfileService {
     const authorById = new Map(
       authors.map((u) => [String(u.telegramUserId), u]),
     );
+    const mapped: SocialFeedVisibleNote[] = notes.map((n) => {
+      const author = authorById.get(String(n.telegramUserId));
+      return {
+        telegram_user_id: String(n.telegramUserId),
+        display_name: author ? this.displayNameOf(author) : 'کاربر',
+        photo_url: author?.photoUrl ?? null,
+        body: n.body,
+        created_at: n.createdAt.toISOString(),
+        is_private: n.isPrivate === true,
+      };
+    });
     return {
       activity_key: activityKey,
       like_count: likeCount,
       liked_by_me: likedByMe,
       my_note: myNote?.body ?? null,
       my_note_is_private: myNote?.isPrivate ?? false,
-      public_notes: publicNotes.map((n) => {
-        const author = authorById.get(String(n.telegramUserId));
-        return {
-          telegram_user_id: String(n.telegramUserId),
-          display_name: author ? this.displayNameOf(author) : 'کاربر',
-          photo_url: author?.photoUrl ?? null,
-          body: n.body,
-          created_at: n.createdAt.toISOString(),
-        };
-      }),
+      notes: mapped,
+      public_notes: mapped.filter((n) => !n.is_private),
     };
   }
 
@@ -370,7 +388,13 @@ export class UserSocialProfileService {
   ): Promise<SocialProfileFeedItemWithEngagement[]> {
     if (items.length === 0) return [];
     const keys = items.map((item) => this.feedActivityKey(item));
-    const [likeRows, myLikes, visibleNotes] = await Promise.all([
+    const ownerByKey = new Map(
+      items.map((item) => [
+        this.feedActivityKey(item),
+        String(item.actor.telegram_user_id),
+      ]),
+    );
+    const [likeRows, myLikes, allNotes] = await Promise.all([
       this.feedLikeRepo
         .createQueryBuilder('l')
         .select('l.activity_key', 'activity_key')
@@ -382,19 +406,22 @@ export class UserSocialProfileService {
         where: { telegramUserId: viewerId, activityKey: In(keys) },
         select: { activityKey: true },
       }),
-      this.feedNoteRepo
-        .createQueryBuilder('n')
-        .where('n.activity_key IN (:...keys)', { keys })
-        .andWhere('(n.is_private = false OR n.telegram_user_id = :viewerId)', {
-          viewerId,
-        })
-        .orderBy('n.created_at', 'ASC')
-        .getMany(),
+      this.feedNoteRepo.find({
+        where: { activityKey: In(keys) },
+        order: { createdAt: 'ASC' },
+      }),
     ]);
     const countByKey = new Map(
       likeRows.map((r) => [r.activity_key, Number(r.cnt ?? 0)]),
     );
     const likedSet = new Set(myLikes.map((r) => r.activityKey));
+    const visibleNotes = allNotes.filter((n) =>
+      this.noteVisibleToViewer(
+        n,
+        viewerId,
+        ownerByKey.get(n.activityKey) ?? null,
+      ),
+    );
     const notesByKey = new Map<string, UserSocialFeedNote[]>();
     for (const note of visibleNotes) {
       const list = notesByKey.get(note.activityKey) ?? [];
@@ -402,11 +429,7 @@ export class UserSocialProfileService {
       notesByKey.set(note.activityKey, list);
     }
     const authorIds = [
-      ...new Set(
-        visibleNotes
-          .filter((n) => !n.isPrivate)
-          .map((n) => String(n.telegramUserId)),
-      ),
+      ...new Set(visibleNotes.map((n) => String(n.telegramUserId))),
     ];
     const authors =
       authorIds.length > 0
@@ -422,7 +445,17 @@ export class UserSocialProfileService {
       const activity_key = this.feedActivityKey(item);
       const notes = notesByKey.get(activity_key) ?? [];
       const myNote = notes.find((n) => String(n.telegramUserId) === viewerId);
-      const publicNotes = notes.filter((n) => !n.isPrivate);
+      const mapped: SocialFeedVisibleNote[] = notes.map((n) => {
+        const author = authorById.get(String(n.telegramUserId));
+        return {
+          telegram_user_id: String(n.telegramUserId),
+          display_name: author ? this.displayNameOf(author) : 'کاربر',
+          photo_url: author?.photoUrl ?? null,
+          body: n.body,
+          created_at: n.createdAt.toISOString(),
+          is_private: n.isPrivate === true,
+        };
+      });
       return {
         ...item,
         engagement: {
@@ -431,16 +464,8 @@ export class UserSocialProfileService {
           liked_by_me: likedSet.has(activity_key),
           my_note: myNote?.body ?? null,
           my_note_is_private: myNote?.isPrivate ?? false,
-          public_notes: publicNotes.map((n) => {
-            const author = authorById.get(String(n.telegramUserId));
-            return {
-              telegram_user_id: String(n.telegramUserId),
-              display_name: author ? this.displayNameOf(author) : 'کاربر',
-              photo_url: author?.photoUrl ?? null,
-              body: n.body,
-              created_at: n.createdAt.toISOString(),
-            };
-          }),
+          notes: mapped,
+          public_notes: mapped.filter((n) => !n.is_private),
         },
       };
     });
@@ -520,8 +545,8 @@ export class UserSocialProfileService {
         }),
       );
     }
-    const shouldNotify =
-      !privateNote && (!existing || wasPrivate);
+    // Notify activity owner on first note, or when a private note becomes public.
+    const shouldNotify = !existing || (wasPrivate && !privateNote);
     if (shouldNotify) {
       const ownerId = await this.resolveFeedActivityOwner(key);
       if (ownerId && ownerId !== userId) {
@@ -536,7 +561,9 @@ export class UserSocialProfileService {
           await this.socialNotifications.deliver({
             recipientTelegramUserId: ownerId,
             kind: 'feed_activity_note',
-            title: 'یادداشت روی فعالیتت',
+            title: privateNote
+              ? 'یادداشت خصوصی روی فعالیتت'
+              : 'یادداشت روی فعالیتت',
             message: `${name}: ${preview}`,
             href: `/u/${encodeURIComponent(userId)}`,
           });
