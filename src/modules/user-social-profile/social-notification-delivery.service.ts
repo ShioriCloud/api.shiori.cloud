@@ -42,11 +42,13 @@ export class SocialNotificationDeliveryService {
       case 'social_follow':
         return user.notifySocialFollow !== false;
       case 'comment_reply':
-      case 'feed_activity_note':
         return user.notifyCommentReply !== false;
       case 'comment_like':
-      case 'feed_activity_like':
         return user.notifyCommentLike !== false;
+      case 'feed_activity_note':
+        return user.notifyFeedActivityNote !== false;
+      case 'feed_activity_like':
+        return user.notifyFeedActivityLike !== false;
       case 'following_comment':
         return user.notifyFollowingComment !== false;
       default:

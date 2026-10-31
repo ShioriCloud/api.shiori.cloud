@@ -77,6 +77,14 @@ export class TelegramUser {
   @Column({ type: 'boolean', name: 'notify_following_comment', default: true })
   notifyFollowingComment: boolean;
 
+  /** In-app inbox when someone likes your social feed activity. */
+  @Column({ type: 'boolean', name: 'notify_feed_activity_like', default: true })
+  notifyFeedActivityLike: boolean;
+
+  /** In-app inbox when someone leaves a public note on your feed activity. */
+  @Column({ type: 'boolean', name: 'notify_feed_activity_note', default: true })
+  notifyFeedActivityNote: boolean;
+
   /** When true, @username is hidden on social profile surfaces. */
   @Column({ type: 'boolean', name: 'hide_telegram_username', default: false })
   hideTelegramUsername: boolean;

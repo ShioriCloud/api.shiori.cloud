@@ -16,6 +16,12 @@ ALTER TABLE telegram_users
 ALTER TABLE telegram_users
   ADD COLUMN IF NOT EXISTS notify_following_comment boolean NOT NULL DEFAULT true;
 
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS notify_feed_activity_like boolean NOT NULL DEFAULT true;
+
+ALTER TABLE telegram_users
+  ADD COLUMN IF NOT EXISTS notify_feed_activity_note boolean NOT NULL DEFAULT true;
+
 ALTER TABLE anime_comments
   ADD COLUMN IF NOT EXISTS reply_to_comment_id uuid NULL
   REFERENCES anime_comments (id) ON DELETE SET NULL;
