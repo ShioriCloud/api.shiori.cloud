@@ -15,6 +15,8 @@ import {
   UserEpisodeDownloadReceipt,
   DownloadTokenLedger,
   UserSocialBlock,
+  UserSocialFeedLike,
+  UserSocialFeedNote,
   UserSocialFollow,
   UserSocialMute,
 } from '../../entities';
@@ -45,6 +47,8 @@ import { UserSocialProfileService } from './user-social-profile.service';
       DownloadTokenLedger,
       UserSocialBlock,
       UserSocialMute,
+      UserSocialFeedLike,
+      UserSocialFeedNote,
       AnimeComment,
       UserCustomList,
       UserCustomListItem,

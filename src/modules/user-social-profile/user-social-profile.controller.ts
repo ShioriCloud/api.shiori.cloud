@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -195,6 +196,44 @@ export class UserSocialProfileController {
       telegramUserId,
       p,
       l,
+    );
+  }
+
+  @Post('feed/like')
+  @ApiOperation({ summary: 'Toggle like on a feed activity' })
+  toggleFeedLike(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: { activity_key?: string; activity_type?: string },
+  ) {
+    return this.socialProfile.toggleFeedLike(
+      String(req.telegramUserId),
+      String(body?.activity_key ?? ''),
+      body?.activity_type,
+    );
+  }
+
+  @Put('feed/note')
+  @ApiOperation({ summary: 'Create or update a private note on a feed activity' })
+  upsertFeedNote(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: { activity_key?: string; body?: string },
+  ) {
+    return this.socialProfile.upsertFeedNote(
+      String(req.telegramUserId),
+      String(body?.activity_key ?? ''),
+      String(body?.body ?? ''),
+    );
+  }
+
+  @Delete('feed/note')
+  @ApiOperation({ summary: 'Delete private note on a feed activity' })
+  deleteFeedNote(
+    @Req() req: AppUserAuthedRequest,
+    @Body() body: { activity_key?: string },
+  ) {
+    return this.socialProfile.deleteFeedNote(
+      String(req.telegramUserId),
+      String(body?.activity_key ?? ''),
     );
   }
 

@@ -17,6 +17,8 @@ export { UserSocialBadgeShowcase } from './user-social-badge-showcase.entity';
 export { UserEpisodeDownloadReceipt } from './user-episode-download-receipt.entity';
 export { UserSocialBlock } from './user-social-block.entity';
 export { UserSocialMute } from './user-social-mute.entity';
+export { UserSocialFeedLike } from './user-social-feed-like.entity';
+export { UserSocialFeedNote } from './user-social-feed-note.entity';
 export {
   AnimeComment,
   type AnimeCommentModerationStatus,

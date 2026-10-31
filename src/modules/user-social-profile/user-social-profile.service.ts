@@ -14,6 +14,8 @@ import {
   UserAnimeListEntry,
   UserCustomList,
   UserCustomListItem,
+  UserSocialFeedLike,
+  UserSocialFeedNote,
   UserSocialFollow,
 } from '../../entities';
 import type { DownloadTokenWalletMode } from '../download-tokens/download-token-wallet.util';
@@ -180,10 +182,21 @@ export type SocialProfileFeedItem =
       updated_at: string;
     };
 
+export type SocialFeedEngagement = {
+  activity_key: string;
+  like_count: number;
+  liked_by_me: boolean;
+  my_note: string | null;
+};
+
+export type SocialProfileFeedItemWithEngagement = SocialProfileFeedItem & {
+  engagement: SocialFeedEngagement;
+};
+
 export type SocialProfileFeedResponse = {
   enabled: boolean;
   mode: DownloadTokenWalletMode;
-  items: SocialProfileFeedItem[];
+  items: SocialProfileFeedItemWithEngagement[];
   total: number;
   page: number;
   limit: number;
@@ -223,7 +236,171 @@ export class UserSocialProfileService {
     private readonly translatorRepo: Repository<AnimeTranslator>,
     @InjectRepository(AnimeTranslatorLink)
     private readonly translatorLinkRepo: Repository<AnimeTranslatorLink>,
+    @InjectRepository(UserSocialFeedLike)
+    private readonly feedLikeRepo: Repository<UserSocialFeedLike>,
+    @InjectRepository(UserSocialFeedNote)
+    private readonly feedNoteRepo: Repository<UserSocialFeedNote>,
   ) {}
+
+  feedActivityKey(item: SocialProfileFeedItem): string {
+    if (item.type === 'anime_comment') return `c:${item.comment_id}`;
+    if (item.type === 'user_follow') {
+      return `f:${item.actor.telegram_user_id}:${item.target.telegram_user_id}`;
+    }
+    if (item.type === 'public_list_add') {
+      return `pl:${item.list_id}:${item.anime_id}`;
+    }
+    return `${item.type}:${item.actor.telegram_user_id}:${item.anime_id}`;
+  }
+
+  private async attachFeedEngagement(
+    viewerId: string,
+    items: SocialProfileFeedItem[],
+  ): Promise<SocialProfileFeedItemWithEngagement[]> {
+    if (items.length === 0) return [];
+    const keys = items.map((item) => this.feedActivityKey(item));
+    const [likeRows, myLikes, myNotes] = await Promise.all([
+      this.feedLikeRepo
+        .createQueryBuilder('l')
+        .select('l.activity_key', 'activity_key')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('l.activity_key IN (:...keys)', { keys })
+        .groupBy('l.activity_key')
+        .getRawMany<{ activity_key: string; cnt: string }>(),
+      this.feedLikeRepo.find({
+        where: { telegramUserId: viewerId, activityKey: In(keys) },
+        select: { activityKey: true },
+      }),
+      this.feedNoteRepo.find({
+        where: { telegramUserId: viewerId, activityKey: In(keys) },
+        select: { activityKey: true, body: true },
+      }),
+    ]);
+    const countByKey = new Map(
+      likeRows.map((r) => [r.activity_key, Number(r.cnt ?? 0)]),
+    );
+    const likedSet = new Set(myLikes.map((r) => r.activityKey));
+    const noteByKey = new Map(myNotes.map((r) => [r.activityKey, r.body]));
+    return items.map((item) => {
+      const activity_key = this.feedActivityKey(item);
+      return {
+        ...item,
+        engagement: {
+          activity_key,
+          like_count: countByKey.get(activity_key) ?? 0,
+          liked_by_me: likedSet.has(activity_key),
+          my_note: noteByKey.get(activity_key) ?? null,
+        },
+      };
+    });
+  }
+
+  async toggleFeedLike(
+    telegramUserId: string,
+    activityKey: string,
+    activityType?: string,
+  ): Promise<SocialFeedEngagement> {
+    this.assertSocialEnabled();
+    const userId = String(telegramUserId);
+    const key = String(activityKey ?? '').trim().slice(0, 240);
+    if (!key) throw new BadRequestException('activity_key required');
+    const existing = await this.feedLikeRepo.findOne({
+      where: { telegramUserId: userId, activityKey: key },
+    });
+    if (existing) {
+      await this.feedLikeRepo.delete({ telegramUserId: userId, activityKey: key });
+    } else {
+      await this.feedLikeRepo.save(
+        this.feedLikeRepo.create({
+          telegramUserId: userId,
+          activityKey: key,
+          activityType: activityType?.trim() || null,
+        }),
+      );
+    }
+    const [count, likedRow, note] = await Promise.all([
+      this.feedLikeRepo.count({ where: { activityKey: key } }),
+      this.feedLikeRepo.findOne({
+        where: { telegramUserId: userId, activityKey: key },
+        select: { activityKey: true },
+      }),
+      this.feedNoteRepo.findOne({
+        where: { telegramUserId: userId, activityKey: key },
+        select: { body: true },
+      }),
+    ]);
+    return {
+      activity_key: key,
+      like_count: count,
+      liked_by_me: Boolean(likedRow),
+      my_note: note?.body ?? null,
+    };
+  }
+
+  async upsertFeedNote(
+    telegramUserId: string,
+    activityKey: string,
+    body: string,
+  ): Promise<SocialFeedEngagement> {
+    this.assertSocialEnabled();
+    const userId = String(telegramUserId);
+    const key = String(activityKey ?? '').trim().slice(0, 240);
+    const text = String(body ?? '').trim().slice(0, 280);
+    if (!key) throw new BadRequestException('activity_key required');
+    if (!text) throw new BadRequestException('note body required');
+    const existing = await this.feedNoteRepo.findOne({
+      where: { telegramUserId: userId, activityKey: key },
+    });
+    if (existing) {
+      existing.body = text;
+      await this.feedNoteRepo.save(existing);
+    } else {
+      await this.feedNoteRepo.save(
+        this.feedNoteRepo.create({
+          telegramUserId: userId,
+          activityKey: key,
+          body: text,
+        }),
+      );
+    }
+    const [count, likedRow] = await Promise.all([
+      this.feedLikeRepo.count({ where: { activityKey: key } }),
+      this.feedLikeRepo.findOne({
+        where: { telegramUserId: userId, activityKey: key },
+        select: { activityKey: true },
+      }),
+    ]);
+    return {
+      activity_key: key,
+      like_count: count,
+      liked_by_me: Boolean(likedRow),
+      my_note: text,
+    };
+  }
+
+  async deleteFeedNote(
+    telegramUserId: string,
+    activityKey: string,
+  ): Promise<SocialFeedEngagement> {
+    this.assertSocialEnabled();
+    const userId = String(telegramUserId);
+    const key = String(activityKey ?? '').trim().slice(0, 240);
+    if (!key) throw new BadRequestException('activity_key required');
+    await this.feedNoteRepo.delete({ telegramUserId: userId, activityKey: key });
+    const [count, likedRow] = await Promise.all([
+      this.feedLikeRepo.count({ where: { activityKey: key } }),
+      this.feedLikeRepo.findOne({
+        where: { telegramUserId: userId, activityKey: key },
+        select: { activityKey: true },
+      }),
+    ]);
+    return {
+      activity_key: key,
+      like_count: count,
+      liked_by_me: Boolean(likedRow),
+      my_note: null,
+    };
+  }
 
   private commentPreview(body: string, maxLen = 140): string {
     const flat = body.replace(/\s+/g, ' ').trim();
@@ -991,13 +1168,14 @@ export class UserSocialProfileService {
 
     staged.sort((a, b) => b.sortTs - a.sortTs);
     const skip = (safePage - 1) * safeLimit;
-    const items: SocialProfileFeedItem[] = staged
+    const bareItems: SocialProfileFeedItem[] = staged
       .slice(skip, skip + safeLimit)
       .map((row) => {
         const { sortTs, ...item } = row;
         void sortTs;
         return item;
       });
+    const items = await this.attachFeedEngagement(viewerId, bareItems);
 
     return {
       enabled: true,
