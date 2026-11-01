@@ -19,6 +19,7 @@ import {
 import {
   buildEpisodeCaptionLine,
   buildMiniAppEpisodesUrl,
+  channelDraftEpisodeLinkUrls,
   captionEntitiesToHtml,
   getMaxPackedEpisodeEnd,
   isCaptionWithinPhotoBudget,
@@ -728,6 +729,11 @@ export class ChannelDraftsService {
       );
     }
 
+    const miniAppEpisodesUrl = buildMiniAppEpisodesUrl(
+      this.miniAppBotUsername(),
+      anime.slug?.trim() || anime.id,
+    );
+
     const episodeLines: string[] = [];
     for (const ep of catalogEps) {
       const n = Number(ep.episodeNumber);
@@ -735,11 +741,17 @@ export class ChannelDraftsService {
       if (n <= startAfter) continue;
       const link = String(ep.downloadLink ?? '').trim();
       if (!link) continue;
+      const urls = channelDraftEpisodeLinkUrls({
+        episodeNumber: n,
+        botVideoUrl: link,
+        botSubtitleUrl: subByEp.get(n) ?? null,
+        miniAppEpisodesUrl,
+      });
       episodeLines.push(
         buildEpisodeCaptionLine({
           episodeNumber: n,
-          videoUrl: link,
-          subtitleUrl: subByEp.get(n) ?? null,
+          videoUrl: urls.videoUrl,
+          subtitleUrl: urls.subtitleUrl,
           videoFileType: ep.videoFileType,
           isNew: n === focus,
         }),
@@ -747,11 +759,17 @@ export class ChannelDraftsService {
     }
 
     if (!episodeLines.length) {
+      const urls = channelDraftEpisodeLinkUrls({
+        episodeNumber: focus,
+        botVideoUrl: videoUrl,
+        botSubtitleUrl: subByEp.get(focus) ?? null,
+        miniAppEpisodesUrl,
+      });
       episodeLines.push(
         buildEpisodeCaptionLine({
           episodeNumber,
-          videoUrl,
-          subtitleUrl: subByEp.get(focus) ?? null,
+          videoUrl: urls.videoUrl,
+          subtitleUrl: urls.subtitleUrl,
           videoFileType: episode.videoFileType,
           isNew: true,
         }),

@@ -652,3 +652,26 @@ export const buildMiniAppEpisodesUrl = (
   const id = String(catalogAnimeId).trim();
   return `https://t.me/${bot}?startapp=${encodeURIComponent(`anime_${id}_episodes`)}`;
 };
+
+/** Episodes 1–3 keep bot file links; from 4 onward caption links open the mini-app episodes tab. */
+export const CHANNEL_DRAFT_MINI_APP_LINK_FROM_EPISODE = 4;
+
+export const channelDraftEpisodeLinkUrls = (opts: {
+  episodeNumber: number;
+  botVideoUrl: string;
+  botSubtitleUrl?: string | null;
+  miniAppEpisodesUrl: string;
+}): { videoUrl: string; subtitleUrl?: string | null } => {
+  const n = Number(opts.episodeNumber);
+  if (!Number.isFinite(n) || n < CHANNEL_DRAFT_MINI_APP_LINK_FROM_EPISODE) {
+    return {
+      videoUrl: opts.botVideoUrl,
+      subtitleUrl: opts.botSubtitleUrl,
+    };
+  }
+  const mini = String(opts.miniAppEpisodesUrl ?? '').trim();
+  return {
+    videoUrl: mini || opts.botVideoUrl,
+    subtitleUrl: mini || opts.botSubtitleUrl,
+  };
+};

@@ -1,10 +1,43 @@
 import {
+  buildMiniAppEpisodesUrl,
+  channelDraftEpisodeLinkUrls,
+  CHANNEL_DRAFT_MINI_APP_LINK_FROM_EPISODE,
   getMaxPackedEpisodeEnd,
   isCaptionWithinPhotoBudget,
   replaceEpisodeLinesInCaption,
   TELEGRAM_PHOTO_CAPTION_MAX,
   telegramHtmlCaptionPlainLength,
 } from './channel-caption.util';
+
+describe('channelDraftEpisodeLinkUrls', () => {
+  const mini = buildMiniAppEpisodesUrl('ShioriMiniBot', 'my-anime');
+  const botVideo = 'https://t.me/TheShioriBot?start=file_abc';
+  const botSub = 'https://t.me/TheShioriBot?start=file_sub';
+
+  it('keeps bot links for episodes below the mini-app threshold', () => {
+    for (let n = 1; n < CHANNEL_DRAFT_MINI_APP_LINK_FROM_EPISODE; n++) {
+      expect(
+        channelDraftEpisodeLinkUrls({
+          episodeNumber: n,
+          botVideoUrl: botVideo,
+          botSubtitleUrl: botSub,
+          miniAppEpisodesUrl: mini,
+        }),
+      ).toEqual({ videoUrl: botVideo, subtitleUrl: botSub });
+    }
+  });
+
+  it('uses mini-app episodes link for video and subtitle from threshold onward', () => {
+    expect(
+      channelDraftEpisodeLinkUrls({
+        episodeNumber: CHANNEL_DRAFT_MINI_APP_LINK_FROM_EPISODE,
+        botVideoUrl: botVideo,
+        botSubtitleUrl: botSub,
+        miniAppEpisodesUrl: mini,
+      }),
+    ).toEqual({ videoUrl: mini, subtitleUrl: mini });
+  });
+});
 
 describe('getMaxPackedEpisodeEnd', () => {
   it('returns 0 when no pack line is present', () => {
