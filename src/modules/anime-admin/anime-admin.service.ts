@@ -295,6 +295,15 @@ export class AnimeAdminService {
     if (editorId) anime.lastEditedById = editorId;
   }
 
+  /** Bump admin-list sort key for partial episode/subtitle saves (same fields as markAdminEdited). */
+  private async touchAnimeLastEditedAt(animeId: string) {
+    const now = new Date();
+    await this.animeRepo.update(
+      { id: animeId },
+      { updatedAt: now, lastEditedAt: now },
+    );
+  }
+
   private applyAnimeFields(anime: Anime, body: Payload) {
     const assign = <K extends keyof Anime>(
       key: K,
@@ -1155,6 +1164,7 @@ export class AnimeAdminService {
     });
     const saved = await this.episodeRepo.save(episode);
     await this.touchAnimeLastEpisodeAt(animeId, saved.createdAt ?? new Date());
+    await this.touchAnimeLastEditedAt(animeId);
 
     const episodeNumber = saved.episodeNumber ?? 0;
     if (!opts?.skipAutoNotify && episodeNumber > 0) {
@@ -1276,6 +1286,7 @@ export class AnimeAdminService {
 
     if (created.length > 0) {
       await this.touchAnimeLastEpisodeAt(animeId, new Date());
+      await this.touchAnimeLastEditedAt(animeId);
     }
 
     return {
@@ -1313,6 +1324,7 @@ export class AnimeAdminService {
     if (!hadDownloadLink && hasDownloadLink) {
       await this.touchAnimeLastEpisodeAt(saved.animeId, new Date());
     }
+    await this.touchAnimeLastEditedAt(saved.animeId);
     return {
       id: saved.id,
       episode_number: saved.episodeNumber ?? 0,
@@ -1328,6 +1340,7 @@ export class AnimeAdminService {
     const animeId = episode.animeId;
     await this.episodeRepo.remove(episode);
     await this.recomputeAnimeLastEpisodeAt(animeId);
+    await this.touchAnimeLastEditedAt(animeId);
   }
 
   /** Bump season-rail sort key without touching last_edited_at. */
@@ -1901,6 +1914,7 @@ export class AnimeAdminService {
           null,
       }),
     );
+    await this.touchAnimeLastEditedAt(animeId);
     return {
       id: saved.id,
       episode_number: saved.episodeNumber,
@@ -1932,6 +1946,7 @@ export class AnimeAdminService {
     );
     if (link !== undefined) sub.subtitleLink = link;
     const saved = await this.subtitleRepo.save(sub);
+    await this.touchAnimeLastEditedAt(saved.animeId);
     return {
       id: saved.id,
       episode_number: saved.episodeNumber,
@@ -1943,7 +1958,9 @@ export class AnimeAdminService {
   async deleteSubtitle(id: string) {
     const sub = await this.subtitleRepo.findOne({ where: { id } });
     if (!sub) throw new NotFoundException('Subtitle not found');
+    const animeId = sub.animeId;
     await this.subtitleRepo.remove(sub);
+    await this.touchAnimeLastEditedAt(animeId);
   }
 
   async listSubtitlePacks(animeIdOrSlug: string) {
@@ -1973,6 +1990,7 @@ export class AnimeAdminService {
           null,
       }),
     );
+    await this.touchAnimeLastEditedAt(animeId);
     return {
       id: saved.id,
       title: saved.title,
@@ -1992,6 +2010,7 @@ export class AnimeAdminService {
     );
     if (link !== undefined) pack.subtitleLink = link;
     const saved = await this.subtitlePackRepo.save(pack);
+    await this.touchAnimeLastEditedAt(saved.animeId);
     return {
       id: saved.id,
       title: saved.title,
@@ -2002,7 +2021,9 @@ export class AnimeAdminService {
   async deleteSubtitlePack(id: string) {
     const pack = await this.subtitlePackRepo.findOne({ where: { id } });
     if (!pack) throw new NotFoundException('Subtitle pack not found');
+    const animeId = pack.animeId;
     await this.subtitlePackRepo.remove(pack);
+    await this.touchAnimeLastEditedAt(animeId);
   }
 
   async listTranslatorLinks(animeIdOrSlug: string) {
