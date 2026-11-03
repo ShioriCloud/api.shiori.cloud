@@ -103,6 +103,8 @@ export type SocialProfileMeResponse = {
       title: string;
       image: string;
       role: string | null;
+      start_date: string | null;
+      year: number | null;
     }>;
   } | null;
   relationship?: {
@@ -724,6 +726,34 @@ export class UserSocialProfileService {
       .createQueryBuilder('t')
       .where('LOWER(t.slug) = :handle', { handle })
       .getOne();
+  }
+
+  private animeReleaseSortKey(anime?: Anime | null): number {
+    if (!anime) return 0;
+    if (anime.startDate) {
+      const t = Date.parse(anime.startDate);
+      if (!Number.isNaN(t)) return t;
+    }
+    if (anime.lastEpisodeAt) {
+      return anime.lastEpisodeAt.getTime();
+    }
+    if (anime.year != null && anime.year > 0) {
+      return anime.year * 10000 + 601;
+    }
+    if (anime.createdAt) {
+      return anime.createdAt.getTime();
+    }
+    return 0;
+  }
+
+  private sortTranslatorLinksByRelease(
+    links: AnimeTranslatorLink[],
+  ): AnimeTranslatorLink[] {
+    return [...links].sort(
+      (a, b) =>
+        this.animeReleaseSortKey(b.anime) - this.animeReleaseSortKey(a.anime) ||
+        a.animeId.localeCompare(b.animeId),
+    );
   }
 
   private mode(): DownloadTokenWalletMode {
@@ -1656,11 +1686,12 @@ export class UserSocialProfileService {
 
     let translatorBlock: SocialProfileMeResponse['translator'] = null;
     if (linkedTranslator) {
-      const links = await this.translatorLinkRepo.find({
-        where: { translatorId: linkedTranslator.id },
-        relations: { anime: true },
-        order: { id: 'ASC' },
-      });
+      const links = this.sortTranslatorLinksByRelease(
+        await this.translatorLinkRepo.find({
+          where: { translatorId: linkedTranslator.id },
+          relations: { anime: true },
+        }),
+      );
       translatorBlock = {
         id: linkedTranslator.id,
         slug: linkedTranslator.slug,
@@ -1675,6 +1706,8 @@ export class UserSocialProfileService {
           title: link.anime?.title ?? '—',
           image: link.anime?.coverImage || link.anime?.featuredImage || '',
           role: link.role,
+          start_date: link.anime?.startDate ?? null,
+          year: link.anime?.year ?? null,
         })),
       };
     }
