@@ -126,6 +126,8 @@ export type SocialProfileUserListItem = {
   role_badges: Array<{ id: string; title: string }>;
   /** Whether the authenticated viewer follows this user (list endpoints). */
   is_following?: boolean;
+  /** Whether this user follows the authenticated viewer (list endpoints). */
+  follows_you?: boolean;
 };
 
 export type SocialProfileUserListResponse = {
@@ -1448,6 +1450,7 @@ export class UserSocialProfileService {
     const items = await this.loadProfileListUsers(filteredIds);
 
     let followingSet = new Set<string>();
+    let followsYouSet = new Set<string>();
     if (filteredIds.length > 0) {
       const followingRows = await this.followRepo.find({
         where: {
@@ -1459,6 +1462,16 @@ export class UserSocialProfileService {
       followingSet = new Set(
         followingRows.map((r) => String(r.followingTelegramUserId)),
       );
+      const followsViewerRows = await this.followRepo.find({
+        where: {
+          followerTelegramUserId: In(filteredIds),
+          followingTelegramUserId: viewerId,
+        },
+        select: { followerTelegramUserId: true },
+      });
+      followsYouSet = new Set(
+        followsViewerRows.map((r) => String(r.followerTelegramUserId)),
+      );
     }
 
     return {
@@ -1467,6 +1480,7 @@ export class UserSocialProfileService {
       items: items.map((item) => ({
         ...item,
         is_following: followingSet.has(item.telegram_user_id),
+        follows_you: followsYouSet.has(item.telegram_user_id),
       })),
       total: items.length < userIds.length ? items.length : total,
       page: safePage,
