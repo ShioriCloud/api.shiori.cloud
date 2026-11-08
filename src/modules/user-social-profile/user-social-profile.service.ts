@@ -105,6 +105,8 @@ export type SocialProfileMeResponse = {
       role: string | null;
       start_date: string | null;
       year: number | null;
+      /** AniList averageScore, 0–100. */
+      anilist_score: number | null;
     }>;
   } | null;
   relationship?: {
@@ -1714,15 +1716,21 @@ export class UserSocialProfileService {
         experience: linkedTranslator.experience,
         is_active: linkedTranslator.isActive !== false,
         anime_count: links.length,
-        anime: links.map((link) => ({
-          anime_id: link.animeId,
-          slug: link.anime?.slug ?? null,
-          title: link.anime?.title ?? '—',
-          image: link.anime?.coverImage || link.anime?.featuredImage || '',
-          role: link.role,
-          start_date: link.anime?.startDate ?? null,
-          year: link.anime?.year ?? null,
-        })),
+        anime: links.map((link) => {
+          const rawScore = link.anime?.averageScore;
+          const parsed =
+            rawScore == null || rawScore === '' ? NaN : Number(rawScore);
+          return {
+            anime_id: link.animeId,
+            slug: link.anime?.slug ?? null,
+            title: link.anime?.title ?? '—',
+            image: link.anime?.coverImage || link.anime?.featuredImage || '',
+            role: link.role,
+            start_date: link.anime?.startDate ?? null,
+            year: link.anime?.year ?? null,
+            anilist_score: Number.isFinite(parsed) ? parsed : null,
+          };
+        }),
       };
     }
 
