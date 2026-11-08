@@ -419,6 +419,12 @@ export class NotificationsAdminService {
       throw new BadRequestException('title and message are required');
     }
 
+    const hrefFromDto = dto.href?.trim();
+    const defaultHref = dto.animeId
+      ? `/anime/${encodeURIComponent(dto.animeId)}`
+      : null;
+    const resolvedHref = hrefFromDto || defaultHref;
+
     const audience = dto.audience || 'all';
     let recipientIds: string[];
 
@@ -482,7 +488,7 @@ export class NotificationsAdminService {
           kind: 'broadcast',
           title,
           message,
-          href: dto.href ?? null,
+          href: resolvedHref,
           animeId: dto.animeId ?? null,
           episodeNumber: null,
           campaignId: savedCampaign.id,

@@ -342,7 +342,7 @@ export class AnimeCommentsService {
             recipientTelegramUserId: rootAuthorId,
             kind: 'comment_reply',
             title: 'پاسخ به نظرت',
-            message: `${authorName} به نظرت پاسخ داد`,
+            message: `کاربر ${authorName} به نظرت پاسخ داد`,
             href,
             animeId: anime.id,
           });
@@ -368,7 +368,7 @@ export class AnimeCommentsService {
               recipientTelegramUserId: targetAuthorId,
               kind: 'comment_reply',
               title: 'پاسخ به تو',
-              message: `${authorName} در پاسخ به نظرت نوشت`,
+              message: `کاربر ${authorName} در پاسخ به نظرت نوشت`,
               href,
               animeId: anime.id,
             });
@@ -413,7 +413,7 @@ export class AnimeCommentsService {
           recipientTelegramUserId: followerId,
           kind: 'following_comment',
           title: 'نظر از دنبال‌شده',
-          message: `${authorName} روی «${animeTitle}» نظر گذاشت`,
+          message: `کاربر ${authorName} روی «${animeTitle}» نظر گذاشت`,
           href,
           animeId: anime.id,
         });
@@ -517,7 +517,7 @@ export class AnimeCommentsService {
               recipientTelegramUserId: authorId,
               kind: 'comment_like',
               title: 'پسند روی نظرت',
-              message: `${name} نظرت را پسندید`,
+              message: `کاربر ${name} نظرت را پسندید`,
               href,
               animeId: comment.animeId,
             });

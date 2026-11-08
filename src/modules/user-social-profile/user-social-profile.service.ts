@@ -509,7 +509,7 @@ export class UserSocialProfileService {
             recipientTelegramUserId: ownerId,
             kind: 'feed_activity_like',
             title: 'پسند روی فعالیتت',
-            message: `${name} فعالیتت را پسندید`,
+            message: `کاربر ${name} فعالیتت را پسندید`,
             href: `/u/${encodeURIComponent(userId)}`,
           });
         }
@@ -568,7 +568,7 @@ export class UserSocialProfileService {
             title: privateNote
               ? 'یادداشت خصوصی روی فعالیتت'
               : 'یادداشت روی فعالیتت',
-            message: `${name}: ${preview}`,
+            message: `کاربر ${name}: ${preview}`,
             href: `/u/${encodeURIComponent(userId)}`,
           });
         }
@@ -879,7 +879,7 @@ export class UserSocialProfileService {
         recipientTelegramUserId: targetId,
         kind: 'social_follow',
         title: 'دنبال‌کننده جدید',
-        message: `${followerName} دنبالت کرد`,
+        message: `کاربر ${followerName} دنبالت کرد`,
         href: `/u/${encodeURIComponent(viewerId)}`,
       });
     }
