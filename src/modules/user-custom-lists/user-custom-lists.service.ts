@@ -247,12 +247,16 @@ export class UserCustomListsService {
   async listPublicForUser(
     viewerTelegramUserId: string,
     targetTelegramUserId: string,
-  ): Promise<{ enabled: boolean; lists: PublicUserCustomListSummary[] }> {
+  ): Promise<{
+    enabled: boolean;
+    lists: PublicUserCustomListSummary[];
+    visibility: 'public' | 'private' | 'none';
+  }> {
     const viewerId = String(viewerTelegramUserId).trim();
     const targetId = String(targetTelegramUserId).trim();
     const enabled = this.isSocialEnabledFor(viewerId);
     if (!enabled) {
-      return { enabled: false, lists: [] };
+      return { enabled: false, lists: [], visibility: 'none' };
     }
 
     const target = await this.usersRepo.findOne({
@@ -268,15 +272,24 @@ export class UserCustomListsService {
       order: { updatedAt: 'DESC' },
     });
 
+    const lists = rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      icon: isListIcon(row.icon) ? row.icon : 'heart',
+      item_count: row.items?.length ?? 0,
+      updated_at: row.updatedAt.toISOString(),
+    }));
+    if (lists.length > 0) {
+      return { enabled: true, lists, visibility: 'public' as const };
+    }
+
+    const privateCount = await this.listRepo.count({
+      where: { telegramUserId: targetId, isPublic: false },
+    });
     return {
       enabled: true,
-      lists: rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        icon: isListIcon(row.icon) ? row.icon : 'heart',
-        item_count: row.items?.length ?? 0,
-        updated_at: row.updatedAt.toISOString(),
-      })),
+      lists,
+      visibility: privateCount > 0 ? 'private' : 'none',
     };
   }
 
