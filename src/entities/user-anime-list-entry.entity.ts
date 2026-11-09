@@ -46,6 +46,14 @@ export class UserAnimeListEntry {
   @Column({ type: 'timestamptz', name: 'list_status_at', nullable: true })
   listStatusAt: Date | null;
 
+  /** Calendar day the watch activity started, YYYY-MM-DD. */
+  @Column({ type: 'varchar', length: 10, name: 'started_on', nullable: true })
+  startedOn: string | null;
+
+  /** Calendar day the watch activity finished, YYYY-MM-DD. */
+  @Column({ type: 'varchar', length: 10, name: 'finished_on', nullable: true })
+  finishedOn: string | null;
+
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { UserAnimeListEntry } from '../../entities';
@@ -6,6 +6,27 @@ import {
   ReorderUserAnimeFavoritesDto,
   UpsertUserAnimeListDto,
 } from './user-anime-list.dto';
+
+const dateOnly = (value: string | null | undefined): string | null => {
+  const raw = value?.trim() ?? '';
+  return /^\d{4}-\d{2}-\d{2}/.test(raw) ? raw.slice(0, 10) : null;
+};
+
+const assertDateOnly = (value: string | null): string | null => {
+  if (value == null) return null;
+  const day = dateOnly(value);
+  if (!day) throw new BadRequestException('invalid date');
+  const [year, month, date] = day.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, date));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== date
+  ) {
+    throw new BadRequestException('invalid date');
+  }
+  return day;
+};
 
 @Injectable()
 export class UserAnimeListService {
@@ -34,6 +55,8 @@ export class UserAnimeListService {
         favorite_rank: row.favoriteRank,
         list_status: row.listStatus,
         list_status_at: row.listStatusAt?.toISOString() ?? null,
+        started_on: dateOnly(row.startedOn),
+        finished_on: dateOnly(row.finishedOn),
         updated_at: row.updatedAt.toISOString(),
       })),
     };
@@ -75,6 +98,15 @@ export class UserAnimeListService {
       listStatusTouched &&
       String(nextListStatus ?? '') !== String(row?.listStatus ?? '');
 
+    const startedOn =
+      body.started_on !== undefined
+        ? assertDateOnly(body.started_on)
+        : (row?.startedOn ?? null);
+    const finishedOn =
+      body.finished_on !== undefined
+        ? assertDateOnly(body.finished_on)
+        : (row?.finishedOn ?? null);
+
     if (!row) {
       row = this.listRepo.create({
         telegramUserId,
@@ -87,6 +119,8 @@ export class UserAnimeListService {
           listStatusChanged || (listStatusTouched && nextListStatus)
             ? new Date()
             : null,
+        startedOn,
+        finishedOn,
       });
     } else {
       row.episodesWatched = episodesWatched;
@@ -96,6 +130,8 @@ export class UserAnimeListService {
         row.listStatus = nextListStatus;
         if (listStatusChanged) row.listStatusAt = new Date();
       }
+      if (body.started_on !== undefined) row.startedOn = startedOn;
+      if (body.finished_on !== undefined) row.finishedOn = finishedOn;
     }
 
     if (isFavorite && row.favoriteRank == null) {

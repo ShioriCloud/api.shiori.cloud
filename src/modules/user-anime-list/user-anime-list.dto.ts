@@ -9,6 +9,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   Max,
   Min,
   ValidateIf,
@@ -58,6 +59,18 @@ export class UpsertUserAnimeListDto {
   @IsString()
   @IsIn([...USER_ANIME_LIST_STATUSES])
   list_status?: UserAnimeListStatus | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  started_on?: string | null;
+
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
+  @IsString()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  finished_on?: string | null;
 }
 
 export class ReorderUserAnimeFavoritesDto {

@@ -746,3 +746,7 @@ ALTER TABLE user_notifications
   ADD COLUMN IF NOT EXISTS activity_key text,
   ADD COLUMN IF NOT EXISTS comment_id uuid;
 
+ALTER TABLE user_anime_list
+  ADD COLUMN IF NOT EXISTS started_on varchar(10),
+  ADD COLUMN IF NOT EXISTS finished_on varchar(10);
+
