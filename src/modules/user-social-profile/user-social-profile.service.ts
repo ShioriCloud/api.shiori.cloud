@@ -184,9 +184,11 @@ export type SocialProfileFeedItem =
       updated_at: string;
     }
   | {
-      type: 'user_follow';
+      type: 'playlist_created';
       actor: SocialProfileUserListItem;
-      target: SocialProfileUserListItem;
+      list_id: string;
+      list_name: string;
+      list_icon: string;
       updated_at: string;
     };
 
@@ -266,9 +268,7 @@ export class UserSocialProfileService {
 
   feedActivityKey(item: SocialProfileFeedItem): string {
     if (item.type === 'anime_comment') return `c:${item.comment_id}`;
-    if (item.type === 'user_follow') {
-      return `f:${item.actor.telegram_user_id}:${item.target.telegram_user_id}`;
-    }
+    if (item.type === 'playlist_created') return `plc:${item.list_id}`;
     if (item.type === 'public_list_add') {
       return `pl:${item.list_id}:${item.anime_id}`;
     }
@@ -291,6 +291,15 @@ export class UserSocialProfileService {
     if (key.startsWith('f:')) {
       const actorId = key.split(':')[1];
       return actorId ? String(actorId) : null;
+    }
+    if (key.startsWith('plc:')) {
+      const listId = key.slice(4);
+      if (!listId) return null;
+      const list = await this.customListRepo.findOne({
+        where: { id: listId },
+        select: { telegramUserId: true },
+      });
+      return list ? String(list.telegramUserId) : null;
     }
     if (key.startsWith('pl:')) {
       const listId = key.slice(3).split(':')[0];
@@ -1148,16 +1157,6 @@ export class UserSocialProfileService {
       select: { followingTelegramUserId: true },
     });
     const followingIds = followingRows.map((r) => r.followingTelegramUserId);
-    if (followingIds.length === 0) {
-      return {
-        enabled: true,
-        mode,
-        items: [],
-        total: 0,
-        page: safePage,
-        limit: safeLimit,
-      };
-    }
 
     const [blocked, muted] = await Promise.all([
       this.moderation.blockedPeerIds(viewerId),
@@ -1166,53 +1165,48 @@ export class UserSocialProfileService {
     const followingFiltered = followingIds.filter(
       (id) => !blocked.has(String(id)) && !muted.has(String(id)),
     );
-    if (followingFiltered.length === 0) {
-      return {
-        enabled: true,
-        mode,
-        items: [],
-        total: 0,
-        page: safePage,
-        limit: safeLimit,
-      };
-    }
 
-    const followingUsers = await this.usersRepo.find({
-      where: { telegramUserId: In(followingFiltered) },
-      select: { telegramUserId: true, hideWatchActivity: true },
-    });
-    const visibleIds = followingUsers
-      .filter((u) => u.hideWatchActivity !== true)
-      .map((u) => String(u.telegramUserId));
-    if (visibleIds.length === 0) {
-      return {
-        enabled: true,
-        mode,
-        items: [],
-        total: 0,
-        page: safePage,
-        limit: safeLimit,
-      };
-    }
+    // Viewer always sees their own anime activity; followed users respect hide_watch_activity.
+    const feedActorIds = [
+      ...new Set([viewerId, ...followingFiltered.map((id) => String(id))]),
+    ];
+
+    const followingUsers =
+      followingFiltered.length > 0
+        ? await this.usersRepo.find({
+            where: { telegramUserId: In(followingFiltered) },
+            select: { telegramUserId: true, hideWatchActivity: true },
+          })
+        : [];
+    const visibleIds = [
+      viewerId,
+      ...followingUsers
+        .filter((u) => u.hideWatchActivity !== true)
+        .map((u) => String(u.telegramUserId)),
+    ];
 
     const mergeNeed = safePage * safeLimit;
     const sourceCap = Math.min(600, mergeNeed + safeLimit * 2);
 
-    const listWhere = {
-      ids: visibleIds,
-    };
-    const listTotal = await this.listRepo
-      .createQueryBuilder('list')
-      .where('list.telegram_user_id IN (:...ids)', listWhere)
-      .getCount();
-    const listRows = await this.listRepo
-      .createQueryBuilder('list')
-      .where('list.telegram_user_id IN (:...ids)', listWhere)
-      .orderBy('list.updated_at', 'DESC')
-      .take(sourceCap)
-      .getMany();
+    const listWhere = { ids: visibleIds };
+    const listTotal =
+      visibleIds.length > 0
+        ? await this.listRepo
+            .createQueryBuilder('list')
+            .where('list.telegram_user_id IN (:...ids)', listWhere)
+            .getCount()
+        : 0;
+    const listRows =
+      visibleIds.length > 0
+        ? await this.listRepo
+            .createQueryBuilder('list')
+            .where('list.telegram_user_id IN (:...ids)', listWhere)
+            .orderBy('list.updated_at', 'DESC')
+            .take(sourceCap)
+            .getMany()
+        : [];
 
-    const commentWhere = { ids: followingFiltered };
+    const commentWhere = { ids: feedActorIds };
     const commentTotal = await this.commentsRepo
       .createQueryBuilder('c')
       .where('c.telegram_user_id IN (:...ids)', commentWhere)
@@ -1228,7 +1222,7 @@ export class UserSocialProfileService {
       .take(sourceCap)
       .getMany();
 
-    const publicListWhere = { ids: followingFiltered };
+    const publicListWhere = { ids: feedActorIds };
     const publicListTotal = await this.customListItemRepo
       .createQueryBuilder('item')
       .innerJoin(UserCustomList, 'clist', 'clist.id = item.list_id')
@@ -1259,26 +1253,27 @@ export class UserSocialProfileService {
         owner_id: string;
       }>();
 
-    const followWhere = { ids: followingFiltered };
-    const followTotal = await this.followRepo
-      .createQueryBuilder('f')
-      .where('f.follower_telegram_user_id IN (:...ids)', followWhere)
+    const playlistCreatedTotal = await this.customListRepo
+      .createQueryBuilder('clist')
+      .where('clist.telegram_user_id IN (:...ids)', publicListWhere)
+      .andWhere('clist.is_public = true')
       .getCount();
-    const followRows = await this.followRepo
-      .createQueryBuilder('f')
-      .where('f.follower_telegram_user_id IN (:...ids)', followWhere)
-      .orderBy('f.created_at', 'DESC')
+    const playlistCreatedRows = await this.customListRepo
+      .createQueryBuilder('clist')
+      .where('clist.telegram_user_id IN (:...ids)', publicListWhere)
+      .andWhere('clist.is_public = true')
+      .orderBy('COALESCE(clist.published_at, clist.created_at)', 'DESC')
       .take(sourceCap)
       .getMany();
 
-    const total = listTotal + commentTotal + publicListTotal + followTotal;
+    const total =
+      listTotal + commentTotal + publicListTotal + playlistCreatedTotal;
 
     type Staged = SocialProfileFeedItem & { sortTs: number };
     const staged: Staged[] = [];
 
     const actorIdSet = new Set<string>();
     const animeIdSet = new Set<string>();
-    const targetIdSet = new Set<string>();
 
     for (const row of listRows) {
       actorIdSet.add(String(row.telegramUserId));
@@ -1292,20 +1287,11 @@ export class UserSocialProfileService {
       actorIdSet.add(String(row.owner_id));
       animeIdSet.add(row.anime_id);
     }
-    for (const row of followRows) {
-      actorIdSet.add(String(row.followerTelegramUserId));
-      targetIdSet.add(String(row.followingTelegramUserId));
+    for (const row of playlistCreatedRows) {
+      actorIdSet.add(String(row.telegramUserId));
     }
 
-    const blockedForTargets = await this.moderation.blockedPeerIds(viewerId);
-    const filteredFollowRows = followRows.filter(
-      (row) =>
-        !blockedForTargets.has(String(row.followingTelegramUserId)) &&
-        !muted.has(String(row.followingTelegramUserId)),
-    );
-
-    const actorIds = [...actorIdSet, ...targetIdSet];
-    const actors = await this.loadProfileListUsers(actorIds);
+    const actors = await this.loadProfileListUsers([...actorIdSet]);
     const actorById = new Map(actors.map((a) => [a.telegram_user_id, a]));
 
     const animeIds = [...animeIdSet];
@@ -1377,16 +1363,18 @@ export class UserSocialProfileService {
       });
     }
 
-    for (const row of filteredFollowRows) {
-      const actor = actorById.get(String(row.followerTelegramUserId));
-      const target = actorById.get(String(row.followingTelegramUserId));
-      if (!actor || !target) continue;
+    for (const row of playlistCreatedRows) {
+      const actor = actorById.get(String(row.telegramUserId));
+      if (!actor) continue;
+      const eventAt = row.publishedAt ?? row.createdAt;
       staged.push({
-        type: 'user_follow',
+        type: 'playlist_created',
         actor,
-        target,
-        updated_at: row.createdAt.toISOString(),
-        sortTs: row.createdAt.getTime(),
+        list_id: row.id,
+        list_name: row.name,
+        list_icon: row.icon || 'heart',
+        updated_at: eventAt.toISOString(),
+        sortTs: eventAt.getTime(),
       });
     }
 

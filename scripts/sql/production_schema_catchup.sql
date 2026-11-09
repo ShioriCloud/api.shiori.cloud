@@ -750,3 +750,15 @@ ALTER TABLE user_anime_list
   ADD COLUMN IF NOT EXISTS started_on varchar(10),
   ADD COLUMN IF NOT EXISTS finished_on varchar(10);
 
+ALTER TABLE user_custom_lists
+  ADD COLUMN IF NOT EXISTS published_at timestamptz;
+
+UPDATE user_custom_lists
+SET published_at = created_at
+WHERE is_public = true
+  AND published_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_user_custom_lists_published
+  ON user_custom_lists (telegram_user_id, published_at DESC)
+  WHERE is_public = true AND published_at IS NOT NULL;
+

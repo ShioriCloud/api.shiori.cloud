@@ -119,12 +119,14 @@ export class UserCustomListsService {
       );
     }
 
+    const isPublic = body.is_public === true;
     const list = this.listRepo.create({
       ...(body.id ? { id: body.id } : {}),
       telegramUserId,
       name,
       icon: body.icon ?? 'heart',
-      isPublic: body.is_public === true,
+      isPublic,
+      publishedAt: isPublic ? new Date() : null,
     });
     await this.listRepo.save(list);
     list.items = [];
@@ -148,7 +150,13 @@ export class UserCustomListsService {
       list.icon = body.icon;
     }
     if (body.is_public !== undefined) {
-      list.isPublic = body.is_public;
+      const nextPublic = body.is_public === true;
+      if (nextPublic && !list.isPublic) {
+        list.publishedAt = new Date();
+      } else if (!nextPublic) {
+        list.publishedAt = null;
+      }
+      list.isPublic = nextPublic;
     }
     list.updatedAt = new Date();
     await this.listRepo.save(list);

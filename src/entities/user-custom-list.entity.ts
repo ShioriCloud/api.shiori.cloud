@@ -40,6 +40,10 @@ export class UserCustomList {
   @Column({ type: 'boolean', name: 'is_public', default: false })
   isPublic: boolean;
 
+  /** Set when the list first becomes public; cleared if privatized. Used for feed ranking. */
+  @Column({ type: 'timestamptz', name: 'published_at', nullable: true })
+  publishedAt: Date | null;
+
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
