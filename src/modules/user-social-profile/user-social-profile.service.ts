@@ -510,7 +510,7 @@ export class UserSocialProfileService {
           await this.socialNotifications.deliver({
             recipientTelegramUserId: ownerId,
             kind: 'feed_activity_like',
-            title: 'پسند روی فعالیتت',
+            title: 'فعالیتت رو پسندیدن',
             message: `کاربر ${name} فعالیتت را پسندید`,
             href: `/u/${encodeURIComponent(userId)}`,
             actorTelegramUserId: userId,
