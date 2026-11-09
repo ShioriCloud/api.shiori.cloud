@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import {
   Anime,
+  AnimeComment,
+  AnimeCommentLike,
   TelegramUser,
   UserAnimeAiringReminder,
   UserNotification,
@@ -18,6 +20,8 @@ import { AnimeNotificationsService } from './anime-notifications.service';
       TelegramUser,
       UserAnimeAiringReminder,
       Anime,
+      AnimeComment,
+      AnimeCommentLike,
     ]),
   ],
   controllers: [AnimeNotificationsController],

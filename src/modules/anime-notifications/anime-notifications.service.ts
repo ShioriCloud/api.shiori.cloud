@@ -8,6 +8,8 @@ import { In, Repository } from 'typeorm';
 import { isUuid } from '../../common/uuid.util';
 import {
   Anime,
+  AnimeComment,
+  AnimeCommentLike,
   TelegramUser,
   UserAnimeAiringReminder,
   UserNotification,
@@ -31,6 +33,10 @@ export class AnimeNotificationsService {
     private readonly animeRepo: Repository<Anime>,
     @InjectRepository(UserSocialFeedLike)
     private readonly feedLikesRepo: Repository<UserSocialFeedLike>,
+    @InjectRepository(AnimeComment)
+    private readonly commentsRepo: Repository<AnimeComment>,
+    @InjectRepository(AnimeCommentLike)
+    private readonly commentLikesRepo: Repository<AnimeCommentLike>,
   ) {}
 
   async list(telegramUserId: string, limit = 50, before?: string) {
@@ -83,39 +89,41 @@ export class AnimeNotificationsService {
       for (const actor of actors) actorById.set(String(actor.telegramUserId), actor);
     }
 
+    const linkedComments = await this.resolveCommentCards(rows);
     const activityKeys = [
       ...new Set(
         rows
-          .map((row) => row.activityKey?.trim())
-          .filter((key): key is string => Boolean(key)),
+          .map((row) => {
+            if (linkedComments.has(row.id)) return '';
+            return row.activityKey?.trim() || '';
+          })
+          .filter((key) => Boolean(key)),
       ),
     ];
-    const likedKeys = new Set<string>();
-    const likeCountByKey = new Map<string, number>();
-    if (activityKeys.length > 0) {
-      const [mine, counts] = await Promise.all([
-        this.feedLikesRepo.find({
-          where: { telegramUserId, activityKey: In(activityKeys) },
-        }),
-        this.feedLikesRepo
-          .createQueryBuilder('l')
-          .select('l.activity_key', 'activity_key')
-          .addSelect('COUNT(*)', 'count')
-          .where('l.activity_key IN (:...activityKeys)', { activityKeys })
-          .groupBy('l.activity_key')
-          .getRawMany<{ activity_key: string; count: string }>(),
-      ]);
-      for (const row of mine) likedKeys.add(row.activityKey);
-      for (const row of counts) {
-        likeCountByKey.set(row.activity_key, Number(row.count) || 0);
-      }
-    }
+    const commentIds = [
+      ...new Set(
+        [...linkedComments.values()].map((link) => link.commentId),
+      ),
+    ];
+    const [feedLikes, commentLikes] = await Promise.all([
+      this.loadFeedLikes(telegramUserId, activityKeys),
+      this.loadCommentLikes(telegramUserId, commentIds),
+    ]);
+    const likedKeys = feedLikes.liked;
+    const likeCountByKey = feedLikes.counts;
+    const likedCommentIds = commentLikes.liked;
+    const commentLikeCount = commentLikes.counts;
 
     return {
       items: rows.map((row) => {
         const actorId = this.actorIdOf(row);
         const actor = actorId ? actorById.get(actorId) : undefined;
-        const activityKey = row.activityKey?.trim() || null;
+        const linked = linkedComments.get(row.id);
+        const commentId = linked?.commentId ?? null;
+        const activityKey =
+          row.activityKey?.trim() || (commentId ? `c:${commentId}` : null);
+        const contentBody =
+          row.contentBody?.trim() || linked?.body?.trim() || null;
         return {
           id: row.id,
           kind: row.kind,
@@ -132,10 +140,19 @@ export class AnimeNotificationsService {
           actor_telegram_user_id: actorId,
           actor_photo_url: actor?.photoUrl ?? null,
           actor_display_name: actor ? this.displayNameOf(actor) : null,
-          content_body: row.contentBody,
+          content_body: contentBody,
           activity_key: activityKey,
-          liked_by_me: activityKey ? likedKeys.has(activityKey) : false,
-          like_count: activityKey ? (likeCountByKey.get(activityKey) ?? 0) : 0,
+          comment_id: commentId,
+          liked_by_me: commentId
+            ? likedCommentIds.has(commentId)
+            : activityKey
+              ? likedKeys.has(activityKey)
+              : false,
+          like_count: commentId
+            ? (commentLikeCount.get(commentId) ?? 0)
+            : activityKey
+              ? (likeCountByKey.get(activityKey) ?? 0)
+              : 0,
         };
       }),
       has_more: hasMore,
@@ -169,6 +186,181 @@ export class AnimeNotificationsService {
     if (social) return social;
     const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
     return full || 'کاربر';
+  }
+
+  private commentIdOf(row: UserNotification): string | null {
+    if (isUuid(row.commentId)) return row.commentId;
+    const match = /^c:([0-9a-f-]{36})$/i.exec(row.activityKey?.trim() ?? '');
+    return match && isUuid(match[1]) ? match[1] : null;
+  }
+
+  private isCommentKind(kind: string): boolean {
+    return (
+      kind === 'comment_reply' ||
+      kind === 'following_comment' ||
+      kind === 'comment_like'
+    );
+  }
+
+  /** Attach the comment id and body, including older rows that never stored them. */
+  private async resolveCommentCards(
+    rows: UserNotification[],
+  ): Promise<Map<string, { commentId: string; body: string | null }>> {
+    const out = new Map<string, { commentId: string; body: string | null }>();
+    const knownIds = [
+      ...new Set(
+        rows
+          .map((row) => this.commentIdOf(row))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const byId = new Map<string, AnimeComment>();
+    if (knownIds.length > 0) {
+      const found = await this.commentsRepo.find({ where: { id: In(knownIds) } });
+      for (const comment of found) byId.set(comment.id, comment);
+    }
+    for (const row of rows) {
+      const commentId = this.commentIdOf(row);
+      if (!commentId) continue;
+      out.set(row.id, {
+        commentId,
+        body: row.contentBody?.trim() || byId.get(commentId)?.body?.trim() || null,
+      });
+    }
+
+    const legacy = rows.filter(
+      (row) => !out.has(row.id) && this.isCommentKind(row.kind) && row.animeId,
+    );
+    if (legacy.length === 0) return out;
+
+    const animeIds = [...new Set(legacy.map((row) => row.animeId as string))];
+    const times = legacy.map((row) => row.createdAt.getTime());
+    const min = new Date(Math.min(...times) - 5 * 60 * 1000);
+    const max = new Date(Math.max(...times) + 5 * 60 * 1000);
+    const comments = await this.commentsRepo
+      .createQueryBuilder('c')
+      .where('c.anime_id IN (:...animeIds)', { animeIds })
+      .andWhere('c.is_deleted = false')
+      .andWhere(
+        '(c.created_at BETWEEN :min AND :max OR (c.moderated_at IS NOT NULL AND c.moderated_at BETWEEN :min AND :max))',
+        { min, max },
+      )
+      .getMany();
+
+    const anchorIds = [
+      ...new Set(
+        comments.flatMap((comment) =>
+          [comment.parentId, comment.replyToCommentId].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
+      ),
+    ];
+    const anchorAuthor = new Map<string, string>();
+    if (anchorIds.length > 0) {
+      const anchors = await this.commentsRepo.find({
+        where: { id: In(anchorIds) },
+      });
+      for (const anchor of anchors) {
+        anchorAuthor.set(anchor.id, String(anchor.telegramUserId));
+      }
+    }
+
+    const distance = (comment: AnimeComment, target: number) => {
+      const deltas = [Math.abs(comment.createdAt.getTime() - target)];
+      if (comment.moderatedAt) {
+        deltas.push(Math.abs(comment.moderatedAt.getTime() - target));
+      }
+      return Math.min(...deltas);
+    };
+
+    for (const row of legacy) {
+      const recipient = String(row.telegramUserId);
+      const actor = row.actorTelegramUserId
+        ? String(row.actorTelegramUserId)
+        : null;
+      const target = row.createdAt.getTime();
+      const pool = comments.filter(
+        (comment) =>
+          comment.animeId === row.animeId && distance(comment, target) <= 5 * 60 * 1000,
+      );
+      let candidates = pool;
+      if (row.kind === 'comment_reply') {
+        candidates = pool.filter((comment) => {
+          if (actor && String(comment.telegramUserId) !== actor) return false;
+          const parentAuthor = comment.parentId
+            ? anchorAuthor.get(comment.parentId)
+            : undefined;
+          const replyAuthor = comment.replyToCommentId
+            ? anchorAuthor.get(comment.replyToCommentId)
+            : undefined;
+          return parentAuthor === recipient || replyAuthor === recipient;
+        });
+      } else if (row.kind === 'following_comment') {
+        candidates = pool.filter((comment) => {
+          if (comment.parentId) return false;
+          if (String(comment.telegramUserId) === recipient) return false;
+          return !actor || String(comment.telegramUserId) === actor;
+        });
+      } else {
+        candidates = pool.filter(
+          (comment) => String(comment.telegramUserId) === recipient,
+        );
+      }
+      candidates.sort(
+        (a, b) => distance(a, target) - distance(b, target),
+      );
+      const pick = candidates[0];
+      if (!pick) continue;
+      out.set(row.id, {
+        commentId: pick.id,
+        body: pick.body?.trim() || null,
+      });
+    }
+
+    return out;
+  }
+
+  private async loadFeedLikes(telegramUserId: string, activityKeys: string[]) {
+    const liked = new Set<string>();
+    const counts = new Map<string, number>();
+    if (activityKeys.length === 0) return { liked, counts };
+    const [mine, rows] = await Promise.all([
+      this.feedLikesRepo.find({
+        where: { telegramUserId, activityKey: In(activityKeys) },
+      }),
+      this.feedLikesRepo
+        .createQueryBuilder('l')
+        .select('l.activity_key', 'activity_key')
+        .addSelect('COUNT(*)', 'count')
+        .where('l.activity_key IN (:...activityKeys)', { activityKeys })
+        .groupBy('l.activity_key')
+        .getRawMany<{ activity_key: string; count: string }>(),
+    ]);
+    for (const row of mine) liked.add(row.activityKey);
+    for (const row of rows) counts.set(row.activity_key, Number(row.count) || 0);
+    return { liked, counts };
+  }
+
+  private async loadCommentLikes(telegramUserId: string, commentIds: string[]) {
+    const liked = new Set<string>();
+    const counts = new Map<string, number>();
+    if (commentIds.length === 0) return { liked, counts };
+    const [mine, rows] = await Promise.all([
+      this.commentLikesRepo.find({
+        where: { telegramUserId, commentId: In(commentIds) },
+      }),
+      this.commentLikesRepo
+        .createQueryBuilder('l')
+        .select('l.comment_id', 'comment_id')
+        .addSelect('COUNT(*)', 'count')
+        .where('l.comment_id IN (:...commentIds)', { commentIds })
+        .groupBy('l.comment_id')
+        .getRawMany<{ comment_id: string; count: string }>(),
+    ]);
+    for (const row of mine) liked.add(row.commentId);
+    for (const row of rows) counts.set(row.comment_id, Number(row.count) || 0);
+    return { liked, counts };
   }
 
   async unreadCount(telegramUserId: string) {
