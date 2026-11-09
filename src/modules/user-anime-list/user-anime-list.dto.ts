@@ -54,6 +54,7 @@ export class UpsertUserAnimeListDto {
   is_favorite?: boolean;
 
   @IsOptional()
+  @ValidateIf((_, value) => value !== null && value !== undefined)
   @IsString()
   @IsIn([...USER_ANIME_LIST_STATUSES])
   list_status?: UserAnimeListStatus | null;
