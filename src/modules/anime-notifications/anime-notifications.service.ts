@@ -11,6 +11,7 @@ import {
   TelegramUser,
   UserAnimeAiringReminder,
   UserNotification,
+  UserSocialFeedLike,
 } from '../../entities';
 import {
   SyncAiringRemindersDto,
@@ -28,6 +29,8 @@ export class AnimeNotificationsService {
     private readonly remindersRepo: Repository<UserAnimeAiringReminder>,
     @InjectRepository(Anime)
     private readonly animeRepo: Repository<Anime>,
+    @InjectRepository(UserSocialFeedLike)
+    private readonly feedLikesRepo: Repository<UserSocialFeedLike>,
   ) {}
 
   async list(telegramUserId: string, limit = 50, before?: string) {
@@ -65,26 +68,107 @@ export class AnimeNotificationsService {
       }
     }
 
+    const actorIds = [
+      ...new Set(
+        rows
+          .map((row) => this.actorIdOf(row))
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const actorById = new Map<string, TelegramUser>();
+    if (actorIds.length > 0) {
+      const actors = await this.usersRepo.find({
+        where: { telegramUserId: In(actorIds) },
+      });
+      for (const actor of actors) actorById.set(String(actor.telegramUserId), actor);
+    }
+
+    const activityKeys = [
+      ...new Set(
+        rows
+          .map((row) => row.activityKey?.trim())
+          .filter((key): key is string => Boolean(key)),
+      ),
+    ];
+    const likedKeys = new Set<string>();
+    const likeCountByKey = new Map<string, number>();
+    if (activityKeys.length > 0) {
+      const [mine, counts] = await Promise.all([
+        this.feedLikesRepo.find({
+          where: { telegramUserId, activityKey: In(activityKeys) },
+        }),
+        this.feedLikesRepo
+          .createQueryBuilder('l')
+          .select('l.activity_key', 'activity_key')
+          .addSelect('COUNT(*)', 'count')
+          .where('l.activity_key IN (:...activityKeys)', { activityKeys })
+          .groupBy('l.activity_key')
+          .getRawMany<{ activity_key: string; count: string }>(),
+      ]);
+      for (const row of mine) likedKeys.add(row.activityKey);
+      for (const row of counts) {
+        likeCountByKey.set(row.activity_key, Number(row.count) || 0);
+      }
+    }
+
     return {
-      items: rows.map((row) => ({
-        id: row.id,
-        kind: row.kind,
-        title: row.title,
-        message: row.message,
-        href: row.href,
-        anime_id: row.animeId,
-        anime_cover_image: row.animeId
-          ? (coverByAnimeId.get(row.animeId) ?? null)
-          : null,
-        episode_number: row.episodeNumber,
-        is_read: row.isRead,
-        created_at: row.createdAt.toISOString(),
-      })),
+      items: rows.map((row) => {
+        const actorId = this.actorIdOf(row);
+        const actor = actorId ? actorById.get(actorId) : undefined;
+        const activityKey = row.activityKey?.trim() || null;
+        return {
+          id: row.id,
+          kind: row.kind,
+          title: row.title,
+          message: row.message,
+          href: row.href,
+          anime_id: row.animeId,
+          anime_cover_image: row.animeId
+            ? (coverByAnimeId.get(row.animeId) ?? null)
+            : null,
+          episode_number: row.episodeNumber,
+          is_read: row.isRead,
+          created_at: row.createdAt.toISOString(),
+          actor_telegram_user_id: actorId,
+          actor_photo_url: actor?.photoUrl ?? null,
+          actor_display_name: actor ? this.displayNameOf(actor) : null,
+          content_body: row.contentBody,
+          activity_key: activityKey,
+          liked_by_me: activityKey ? likedKeys.has(activityKey) : false,
+          like_count: activityKey ? (likeCountByKey.get(activityKey) ?? 0) : 0,
+        };
+      }),
       has_more: hasMore,
       next_before: hasMore
         ? rows[rows.length - 1].createdAt.toISOString()
         : null,
     };
+  }
+
+  private actorIdOf(row: UserNotification): string | null {
+    if (row.actorTelegramUserId) return String(row.actorTelegramUserId);
+    const href = row.href?.trim() ?? '';
+    const match = href.match(/^\/u\/([^/?#]+)/);
+    if (!match) return null;
+    if (
+      row.kind === 'social_follow' ||
+      row.kind === 'feed_activity_like' ||
+      row.kind === 'feed_activity_note'
+    ) {
+      try {
+        return decodeURIComponent(match[1]);
+      } catch {
+        return match[1];
+      }
+    }
+    return null;
+  }
+
+  private displayNameOf(user: TelegramUser): string {
+    const social = user.socialDisplayName?.trim();
+    if (social) return social;
+    const full = [user.firstName, user.lastName].filter(Boolean).join(' ').trim();
+    return full || 'کاربر';
   }
 
   async unreadCount(telegramUserId: string) {

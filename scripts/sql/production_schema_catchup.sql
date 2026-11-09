@@ -740,3 +740,9 @@ CREATE TABLE IF NOT EXISTS user_social_feed_notes (
 ALTER TABLE user_social_feed_notes
   ADD COLUMN IF NOT EXISTS is_private boolean NOT NULL DEFAULT true;
 
+ALTER TABLE user_notifications
+  ADD COLUMN IF NOT EXISTS actor_telegram_user_id bigint,
+  ADD COLUMN IF NOT EXISTS content_body text,
+  ADD COLUMN IF NOT EXISTS activity_key text,
+  ADD COLUMN IF NOT EXISTS comment_id uuid;
+

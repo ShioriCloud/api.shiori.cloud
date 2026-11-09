@@ -53,6 +53,21 @@ export class UserNotification {
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
+  /** User who caused a social notification (follower, liker, commenter). */
+  @Column({ type: 'bigint', name: 'actor_telegram_user_id', nullable: true })
+  actorTelegramUserId: string | null;
+
+  /** Comment or note text shown on the inbox card. */
+  @Column({ type: 'text', name: 'content_body', nullable: true })
+  contentBody: string | null;
+
+  /** Feed activity key so the inbox can like without opening the feed. */
+  @Column({ type: 'text', name: 'activity_key', nullable: true })
+  activityKey: string | null;
+
+  @Column({ type: 'uuid', name: 'comment_id', nullable: true })
+  commentId: string | null;
+
   @ManyToOne(() => NotificationCampaign, {
     onDelete: 'SET NULL',
     nullable: true,

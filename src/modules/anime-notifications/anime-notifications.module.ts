@@ -5,6 +5,7 @@ import {
   TelegramUser,
   UserAnimeAiringReminder,
   UserNotification,
+  UserSocialFeedLike,
 } from '../../entities';
 import { AnimeNotificationsController } from './anime-notifications.controller';
 import { AnimeNotificationsService } from './anime-notifications.service';
@@ -13,6 +14,7 @@ import { AnimeNotificationsService } from './anime-notifications.service';
   imports: [
     TypeOrmModule.forFeature([
       UserNotification,
+      UserSocialFeedLike,
       TelegramUser,
       UserAnimeAiringReminder,
       Anime,

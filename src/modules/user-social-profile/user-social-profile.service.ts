@@ -513,6 +513,8 @@ export class UserSocialProfileService {
             title: 'پسند روی فعالیتت',
             message: `کاربر ${name} فعالیتت را پسندید`,
             href: `/u/${encodeURIComponent(userId)}`,
+            actorTelegramUserId: userId,
+            activityKey: key,
           });
         }
       }
@@ -572,6 +574,9 @@ export class UserSocialProfileService {
               : 'یادداشت روی فعالیتت',
             message: `کاربر ${name}: ${preview}`,
             href: `/u/${encodeURIComponent(userId)}`,
+            actorTelegramUserId: userId,
+            contentBody: text,
+            activityKey: key,
           });
         }
       }
@@ -883,6 +888,8 @@ export class UserSocialProfileService {
         title: 'دنبال‌کننده جدید',
         message: `کاربر ${followerName} دنبالت کرد`,
         href: `/u/${encodeURIComponent(viewerId)}`,
+        actorTelegramUserId: viewerId,
+        activityKey: `f:${viewerId}:${targetId}`,
       });
     }
     return { ok: true, is_following: true };

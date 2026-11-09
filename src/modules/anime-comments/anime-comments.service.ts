@@ -326,8 +326,9 @@ export class AnimeCommentsService {
     rootId: string | null;
     replyToId: string | null;
   }): Promise<void> {
-    const { anime, authorId, authorName, rootId, replyToId } = input;
+    const { comment, anime, authorId, authorName, rootId, replyToId } = input;
     const href = `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`;
+    const activityKey = `c:${comment.id}`;
 
     if (rootId) {
       const root = await this.commentsRepo.findOne({ where: { id: rootId } });
@@ -345,6 +346,10 @@ export class AnimeCommentsService {
             message: `کاربر ${authorName} به نظرت پاسخ داد`,
             href,
             animeId: anime.id,
+            actorTelegramUserId: authorId,
+            contentBody: comment.body,
+            activityKey,
+            commentId: comment.id,
           });
         }
       }
@@ -371,6 +376,10 @@ export class AnimeCommentsService {
               message: `کاربر ${authorName} در پاسخ به نظرت نوشت`,
               href,
               animeId: anime.id,
+              actorTelegramUserId: authorId,
+              contentBody: comment.body,
+              activityKey,
+              commentId: comment.id,
             });
           }
         }
@@ -378,7 +387,12 @@ export class AnimeCommentsService {
       return;
     }
 
-    void this.notifyFollowersOfRootComment(authorId, anime, authorName).catch(
+    void this.notifyFollowersOfRootComment(
+      authorId,
+      anime,
+      authorName,
+      comment,
+    ).catch(
       (err) => {
         this.logger.warn(
           `follower comment notify failed: ${
@@ -393,6 +407,7 @@ export class AnimeCommentsService {
     authorId: string,
     anime: Anime,
     authorName: string,
+    comment: AnimeComment,
   ): Promise<void> {
     const edges = await this.followRepo.find({
       where: { followingTelegramUserId: authorId },
@@ -416,6 +431,10 @@ export class AnimeCommentsService {
           message: `کاربر ${authorName} روی «${animeTitle}» نظر گذاشت`,
           href,
           animeId: anime.id,
+          actorTelegramUserId: authorId,
+          contentBody: comment.body,
+          activityKey: `c:${comment.id}`,
+          commentId: comment.id,
         });
       }),
     );
@@ -520,6 +539,10 @@ export class AnimeCommentsService {
               message: `کاربر ${name} نظرت را پسندید`,
               href,
               animeId: comment.animeId,
+              actorTelegramUserId: viewerId,
+              contentBody: comment.body,
+              activityKey: `c:${comment.id}`,
+              commentId: comment.id,
             });
           }
         }

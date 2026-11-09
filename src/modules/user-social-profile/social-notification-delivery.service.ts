@@ -21,6 +21,10 @@ type DeliverInput = {
   message: string;
   href: string;
   animeId?: string | null;
+  actorTelegramUserId?: string | null;
+  contentBody?: string | null;
+  activityKey?: string | null;
+  commentId?: string | null;
 };
 
 @Injectable()
@@ -85,6 +89,10 @@ export class SocialNotificationDeliveryService {
         episodeNumber: null,
         campaignId: null,
         isRead: false,
+        actorTelegramUserId: input.actorTelegramUserId ?? null,
+        contentBody: input.contentBody?.trim() ? input.contentBody.trim().slice(0, 500) : null,
+        activityKey: input.activityKey?.trim() || null,
+        commentId: input.commentId ?? null,
       }),
     );
 
