@@ -150,7 +150,7 @@ export type SocialProfileFeedAnimeRef = {
 
 export type SocialProfileFeedItem =
   | {
-      type: 'watch_progress' | 'rating' | 'list_add';
+      type: 'watch_progress' | 'rating' | 'list_add' | 'watch_status';
       actor: SocialProfileUserListItem;
       anime_id: string;
       slug: string | null;
@@ -159,6 +159,8 @@ export type SocialProfileFeedItem =
       episodes_watched: number;
       episodes_total: number | null;
       user_rating: number | null;
+      /** Present for watch_status; optional on other list-derived types. */
+      list_status?: string | null;
       updated_at: string;
     }
   | {
@@ -272,7 +274,8 @@ export class UserSocialProfileService {
     if (item.type === 'public_list_add') {
       return `pl:${item.list_id}:${item.anime_id}`;
     }
-    return `${item.type}:${item.actor.telegram_user_id}:${item.anime_id}`;
+    // Stable across watch_progress / watch_status / rating / list_add reclassification.
+    return `ual:${item.actor.telegram_user_id}:${item.anime_id}`;
   }
 
   private async resolveFeedActivityOwner(
@@ -309,6 +312,10 @@ export class UserSocialProfileService {
         select: { telegramUserId: true },
       });
       return list ? String(list.telegramUserId) : null;
+    }
+    if (key.startsWith('ual:')) {
+      const actorId = key.slice(4).split(':')[0];
+      return actorId ? String(actorId) : null;
     }
     const parts = key.split(':');
     if (parts.length >= 3 && parts[1]) return String(parts[1]);
@@ -613,7 +620,17 @@ export class UserSocialProfileService {
 
   private classifyFeedType(
     row: UserAnimeListEntry,
-  ): 'watch_progress' | 'rating' | 'list_add' {
+  ): 'watch_progress' | 'rating' | 'list_add' | 'watch_status' {
+    const status = String(row.listStatus ?? '').trim();
+    const statusCardStatuses = new Set([
+      'completed',
+      'planning',
+      'paused',
+      'dropped',
+      'rewatching',
+    ]);
+    if (statusCardStatuses.has(status)) return 'watch_status';
+
     const eps = row.episodesWatched ?? 0;
     const ratingRaw =
       row.userRating != null && row.userRating !== ''
@@ -623,6 +640,12 @@ export class UserSocialProfileService {
     if (eps > 0) return 'watch_progress';
     if (hasRating) return 'rating';
     return 'list_add';
+  }
+
+  private listFeedEventAt(row: UserAnimeListEntry): Date {
+    const updated = row.updatedAt?.getTime?.() ?? 0;
+    const statusAt = row.listStatusAt?.getTime?.() ?? 0;
+    return new Date(Math.max(updated, statusAt));
   }
 
   async getMyBadgeCatalog(
@@ -1201,7 +1224,10 @@ export class UserSocialProfileService {
         ? await this.listRepo
             .createQueryBuilder('list')
             .where('list.telegram_user_id IN (:...ids)', listWhere)
-            .orderBy('list.updated_at', 'DESC')
+            .orderBy(
+              'GREATEST(list.updated_at, COALESCE(list.list_status_at, list.updated_at))',
+              'DESC',
+            )
             .take(sourceCap)
             .getMany()
         : [];
@@ -1320,16 +1346,20 @@ export class UserSocialProfileService {
         row.userRating != null && row.userRating !== ''
           ? Number(row.userRating)
           : null;
+      const type = this.classifyFeedType(row);
+      const eventAt = this.listFeedEventAt(row);
+      const listStatus = String(row.listStatus ?? '').trim() || null;
       staged.push({
-        type: this.classifyFeedType(row),
+        type,
         actor,
         ...card,
         episodes_watched: row.episodesWatched ?? 0,
         episodes_total: animeById.get(row.animeId)?.episodesCount ?? null,
         user_rating:
           ratingRaw != null && Number.isFinite(ratingRaw) ? ratingRaw : null,
-        updated_at: row.updatedAt.toISOString(),
-        sortTs: row.updatedAt.getTime(),
+        ...(listStatus ? { list_status: listStatus } : {}),
+        updated_at: eventAt.toISOString(),
+        sortTs: eventAt.getTime(),
       });
     }
 
