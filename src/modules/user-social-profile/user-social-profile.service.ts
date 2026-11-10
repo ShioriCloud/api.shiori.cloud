@@ -523,11 +523,12 @@ export class UserSocialProfileService {
             where: { telegramUserId: userId },
           });
           const name = liker ? this.displayNameOf(liker) : 'یک کاربر';
+          const line = `کاربر ${name} فعالیتت رو لایک کرد`
           await this.socialNotifications.deliver({
             recipientTelegramUserId: ownerId,
             kind: 'feed_activity_like',
-            title: 'فعالیتت رو پسندیدن',
-            message: `کاربر ${name} فعالیتت را پسندید`,
+            title: line,
+            message: line,
             href: `/u/${encodeURIComponent(userId)}`,
             actorTelegramUserId: userId,
             activityKey: key,

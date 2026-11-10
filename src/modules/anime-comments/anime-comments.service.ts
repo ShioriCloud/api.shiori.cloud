@@ -532,11 +532,12 @@ export class AnimeCommentsService {
             const href = anime
               ? `/anime/${encodeURIComponent(anime.slug || anime.id)}?tab=comments`
               : '/notifications';
+            const line = `کاربر ${name} نظرت رو لایک کرد`
             await this.socialNotifications.deliver({
               recipientTelegramUserId: authorId,
               kind: 'comment_like',
-              title: 'پسند روی نظرت',
-              message: `کاربر ${name} نظرت را پسندید`,
+              title: line,
+              message: line,
               href,
               animeId: comment.animeId,
               actorTelegramUserId: viewerId,

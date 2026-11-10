@@ -101,7 +101,11 @@ export class SocialNotificationDeliveryService {
     const chatId = Number(recipientId);
     if (!Number.isFinite(chatId) || chatId <= 0) return;
 
-    const text = `${input.title}\n${input.message}`;
+    const text = [input.title, input.message]
+      .map((part) => String(part ?? '').trim())
+      .filter(Boolean)
+      .filter((part, index, all) => all.indexOf(part) === index)
+      .join('\n');
     const webAppUrl = this.resolveWebAppUrl(input.href);
 
     const result = await this.telegramBot.sendEpisodeNotifications({
