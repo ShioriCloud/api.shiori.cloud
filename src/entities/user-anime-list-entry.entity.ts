@@ -57,6 +57,10 @@ export class UserAnimeListEntry {
   @Column({ type: 'timestamptz', name: 'created_at', default: () => 'now()' })
   createdAt: Date;
 
+  /**
+   * Last watch-progress touch (episodes_watched change).
+   * Favorite / rating / status-only edits must not bump this — profile history sorts by it.
+   */
   @Column({ type: 'timestamptz', name: 'updated_at', default: () => 'now()' })
   updatedAt: Date;
 

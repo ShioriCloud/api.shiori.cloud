@@ -68,10 +68,13 @@ export class UserAnimeListService {
       where: { telegramUserId, animeId },
     });
 
+    const previousEpisodes = row?.episodesWatched ?? 0;
+    const previousUpdatedAt = row?.updatedAt ?? null;
+
     const episodesWatched =
       body.episodes_watched !== undefined
         ? Math.max(0, Math.floor(body.episodes_watched))
-        : (row?.episodesWatched ?? 0);
+        : previousEpisodes;
 
     const userRating =
       body.user_rating === undefined
@@ -107,6 +110,9 @@ export class UserAnimeListService {
         ? assertDateOnly(body.finished_on)
         : (row?.finishedOn ?? null);
 
+    // Watch history / feed order use updated_at — only bump when episodes change.
+    const episodesChanged = episodesWatched !== previousEpisodes;
+
     if (!row) {
       row = this.listRepo.create({
         telegramUserId,
@@ -121,6 +127,7 @@ export class UserAnimeListService {
             : null,
         startedOn,
         finishedOn,
+        updatedAt: new Date(),
       });
     } else {
       row.episodesWatched = episodesWatched;
@@ -132,6 +139,9 @@ export class UserAnimeListService {
       }
       if (body.started_on !== undefined) row.startedOn = startedOn;
       if (body.finished_on !== undefined) row.finishedOn = finishedOn;
+      row.updatedAt = episodesChanged
+        ? new Date()
+        : (previousUpdatedAt ?? row.updatedAt);
     }
 
     if (isFavorite && row.favoriteRank == null) {
@@ -186,10 +196,15 @@ export class UserAnimeListService {
     for (let i = 0; i < ids.length; i++) {
       const row = rowByAnime.get(ids[i]);
       if (!row) continue;
-      row.favoriteRank = i;
+      // Update only rank — avoid save() side-effects on updated_at / watch order.
+      await this.listRepo
+        .createQueryBuilder()
+        .update(UserAnimeListEntry)
+        .set({ favoriteRank: i })
+        .where('id = :id', { id: row.id })
+        .execute();
     }
 
-    await this.listRepo.save(rows);
     return { ok: true as const };
   }
 

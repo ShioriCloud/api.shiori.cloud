@@ -762,3 +762,25 @@ CREATE INDEX IF NOT EXISTS idx_user_custom_lists_published
   ON user_custom_lists (telegram_user_id, published_at DESC)
   WHERE is_public = true AND published_at IS NOT NULL;
 
+-- Watch history sorts by user_anime_list.updated_at. Preserve it unless episodes_watched changes
+-- (favorite / rating / status-only edits must not jump the anime to the top of history).
+CREATE OR REPLACE FUNCTION public.user_anime_list_touch_updated_at()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.episodes_watched IS NOT DISTINCT FROM OLD.episodes_watched THEN
+    NEW.updated_at := OLD.updated_at;
+  ELSE
+    NEW.updated_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_user_anime_list_touch_updated_at ON user_anime_list;
+CREATE TRIGGER trg_user_anime_list_touch_updated_at
+  BEFORE UPDATE ON user_anime_list
+  FOR EACH ROW
+  EXECUTE FUNCTION public.user_anime_list_touch_updated_at();
+
