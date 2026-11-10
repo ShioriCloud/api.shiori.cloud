@@ -278,6 +278,50 @@ export class UserSocialProfileService {
     return `ual:${item.actor.telegram_user_id}:${item.anime_id}`;
   }
 
+  /** Legacy list keys before ual: migration (likes/notes may still live here). */
+  private listActivityKeyAliases(actorId: string, animeId: string): string[] {
+    const uid = String(actorId);
+    const aid = String(animeId);
+    return [
+      `ual:${uid}:${aid}`,
+      `watch_progress:${uid}:${aid}`,
+      `watch_status:${uid}:${aid}`,
+      `rating:${uid}:${aid}`,
+      `list_add:${uid}:${aid}`,
+    ];
+  }
+
+  private parseListActivityKey(
+    activityKey: string,
+  ): { actorId: string; animeId: string } | null {
+    const key = String(activityKey ?? '').trim();
+    if (key.startsWith('ual:')) {
+      const rest = key.slice(4);
+      const i = rest.indexOf(':');
+      if (i <= 0) return null;
+      const actorId = rest.slice(0, i);
+      const animeId = rest.slice(i + 1);
+      return actorId && animeId ? { actorId, animeId } : null;
+    }
+    const legacy =
+      /^(watch_progress|watch_status|rating|list_add):([^:]+):(.+)$/.exec(key);
+    if (!legacy) return null;
+    return { actorId: legacy[2], animeId: legacy[3] };
+  }
+
+  private canonicalActivityKey(activityKey: string): string {
+    const parsed = this.parseListActivityKey(activityKey);
+    if (!parsed) return String(activityKey ?? '').trim();
+    return `ual:${parsed.actorId}:${parsed.animeId}`;
+  }
+
+  private activityKeyAliases(activityKey: string): string[] {
+    const key = String(activityKey ?? '').trim();
+    const parsed = this.parseListActivityKey(key);
+    if (!parsed) return key ? [key] : [];
+    return this.listActivityKeyAliases(parsed.actorId, parsed.animeId);
+  }
+
   private async resolveFeedActivityOwner(
     activityKey: string,
   ): Promise<string | null> {
@@ -313,10 +357,8 @@ export class UserSocialProfileService {
       });
       return list ? String(list.telegramUserId) : null;
     }
-    if (key.startsWith('ual:')) {
-      const actorId = key.slice(4).split(':')[0];
-      return actorId ? String(actorId) : null;
-    }
+    const listParsed = this.parseListActivityKey(key);
+    if (listParsed) return String(listParsed.actorId);
     const parts = key.split(':');
     if (parts.length >= 3 && parts[1]) return String(parts[1]);
     return null;
@@ -338,27 +380,44 @@ export class UserSocialProfileService {
     viewerId: string,
     activityKey: string,
   ): Promise<SocialFeedEngagement> {
-    const [count, likedRow, allNotes, ownerId] = await Promise.all([
-      this.feedLikeRepo.count({ where: { activityKey } }),
-      this.feedLikeRepo.findOne({
-        where: { telegramUserId: viewerId, activityKey },
+    const canonical = this.canonicalActivityKey(activityKey);
+    const aliases = this.activityKeyAliases(canonical);
+    const [likeRows, likedRows, allNotes, ownerId] = await Promise.all([
+      this.feedLikeRepo.find({
+        where: { activityKey: In(aliases) },
+        select: { telegramUserId: true, activityKey: true },
+      }),
+      this.feedLikeRepo.find({
+        where: { telegramUserId: viewerId, activityKey: In(aliases) },
         select: { activityKey: true },
       }),
       this.feedNoteRepo.find({
-        where: { activityKey },
+        where: { activityKey: In(aliases) },
         order: { createdAt: 'ASC' },
       }),
-      this.resolveFeedActivityOwner(activityKey),
+      this.resolveFeedActivityOwner(canonical),
     ]);
+    const likerIds = new Set(likeRows.map((r) => String(r.telegramUserId)));
     const visibleNotes = allNotes.filter((n) =>
       this.noteVisibleToViewer(n, viewerId, ownerId),
     );
+    // Dedupe notes by author (legacy + ual: may both exist).
+    const notesByAuthor = new Map<string, (typeof visibleNotes)[number]>();
+    for (const note of visibleNotes) {
+      const author = String(note.telegramUserId);
+      const prev = notesByAuthor.get(author);
+      if (!prev || note.createdAt > prev.createdAt) {
+        notesByAuthor.set(author, note);
+      }
+    }
     return this.mapNotesToEngagement(
       viewerId,
-      activityKey,
-      count,
-      Boolean(likedRow),
-      visibleNotes,
+      canonical,
+      likerIds.size,
+      likedRows.length > 0,
+      [...notesByAuthor.values()].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      ),
     );
   }
 
@@ -409,49 +468,68 @@ export class UserSocialProfileService {
     items: SocialProfileFeedItem[],
   ): Promise<SocialProfileFeedItemWithEngagement[]> {
     if (items.length === 0) return [];
-    const keys = items.map((item) => this.feedActivityKey(item));
-    const ownerByKey = new Map(
+    const aliasToCanonical = new Map<string, string>();
+    const allKeys: string[] = [];
+    for (const item of items) {
+      const canonical = this.feedActivityKey(item);
+      for (const alias of this.activityKeyAliases(canonical)) {
+        aliasToCanonical.set(alias, canonical);
+        allKeys.push(alias);
+      }
+    }
+    const uniqueKeys = [...new Set(allKeys)];
+    const ownerByCanonical = new Map(
       items.map((item) => [
         this.feedActivityKey(item),
         String(item.actor.telegram_user_id),
       ]),
     );
     const [likeRows, myLikes, allNotes] = await Promise.all([
-      this.feedLikeRepo
-        .createQueryBuilder('l')
-        .select('l.activity_key', 'activity_key')
-        .addSelect('COUNT(*)', 'cnt')
-        .where('l.activity_key IN (:...keys)', { keys })
-        .groupBy('l.activity_key')
-        .getRawMany<{ activity_key: string; cnt: string }>(),
       this.feedLikeRepo.find({
-        where: { telegramUserId: viewerId, activityKey: In(keys) },
+        where: { activityKey: In(uniqueKeys) },
+        select: { activityKey: true, telegramUserId: true },
+      }),
+      this.feedLikeRepo.find({
+        where: { telegramUserId: viewerId, activityKey: In(uniqueKeys) },
         select: { activityKey: true },
       }),
       this.feedNoteRepo.find({
-        where: { activityKey: In(keys) },
+        where: { activityKey: In(uniqueKeys) },
         order: { createdAt: 'ASC' },
       }),
     ]);
-    const countByKey = new Map(
-      likeRows.map((r) => [r.activity_key, Number(r.cnt ?? 0)]),
-    );
-    const likedSet = new Set(myLikes.map((r) => r.activityKey));
-    const visibleNotes = allNotes.filter((n) =>
-      this.noteVisibleToViewer(
-        n,
-        viewerId,
-        ownerByKey.get(n.activityKey) ?? null,
+
+    const likersByCanonical = new Map<string, Set<string>>();
+    for (const row of likeRows) {
+      const canonical =
+        aliasToCanonical.get(row.activityKey) ?? row.activityKey;
+      const set = likersByCanonical.get(canonical) ?? new Set<string>();
+      set.add(String(row.telegramUserId));
+      likersByCanonical.set(canonical, set);
+    }
+    const likedCanonical = new Set(
+      myLikes.map(
+        (row) => aliasToCanonical.get(row.activityKey) ?? row.activityKey,
       ),
     );
-    const notesByKey = new Map<string, UserSocialFeedNote[]>();
-    for (const note of visibleNotes) {
-      const list = notesByKey.get(note.activityKey) ?? [];
+
+    const notesByCanonical = new Map<string, UserSocialFeedNote[]>();
+    for (const note of allNotes) {
+      const canonical =
+        aliasToCanonical.get(note.activityKey) ?? note.activityKey;
+      const ownerId = ownerByCanonical.get(canonical) ?? null;
+      if (!this.noteVisibleToViewer(note, viewerId, ownerId)) continue;
+      const list = notesByCanonical.get(canonical) ?? [];
       list.push(note);
-      notesByKey.set(note.activityKey, list);
+      notesByCanonical.set(canonical, list);
     }
+
     const authorIds = [
-      ...new Set(visibleNotes.map((n) => String(n.telegramUserId))),
+      ...new Set(
+        [...notesByCanonical.values()].flatMap((notes) =>
+          notes.map((n) => String(n.telegramUserId)),
+        ),
+      ),
     ];
     const authors =
       authorIds.length > 0
@@ -465,7 +543,18 @@ export class UserSocialProfileService {
 
     return items.map((item) => {
       const activity_key = this.feedActivityKey(item);
-      const notes = notesByKey.get(activity_key) ?? [];
+      const rawNotes = notesByCanonical.get(activity_key) ?? [];
+      const notesByAuthor = new Map<string, UserSocialFeedNote>();
+      for (const note of rawNotes) {
+        const author = String(note.telegramUserId);
+        const prev = notesByAuthor.get(author);
+        if (!prev || note.createdAt > prev.createdAt) {
+          notesByAuthor.set(author, note);
+        }
+      }
+      const notes = [...notesByAuthor.values()].sort(
+        (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+      );
       const myNote = notes.find((n) => String(n.telegramUserId) === viewerId);
       const mapped: SocialFeedVisibleNote[] = notes.map((n) => {
         const author = authorById.get(String(n.telegramUserId));
@@ -482,8 +571,8 @@ export class UserSocialProfileService {
         ...item,
         engagement: {
           activity_key,
-          like_count: countByKey.get(activity_key) ?? 0,
-          liked_by_me: likedSet.has(activity_key),
+          like_count: likersByCanonical.get(activity_key)?.size ?? 0,
+          liked_by_me: likedCanonical.has(activity_key),
           my_note: myNote?.body ?? null,
           my_note_is_private: myNote?.isPrivate ?? false,
           notes: mapped,
@@ -500,13 +589,18 @@ export class UserSocialProfileService {
   ): Promise<SocialFeedEngagement> {
     this.assertSocialEnabled();
     const userId = String(telegramUserId);
-    const key = String(activityKey ?? '').trim().slice(0, 240);
-    if (!key) throw new BadRequestException('activity_key required');
-    const existing = await this.feedLikeRepo.findOne({
-      where: { telegramUserId: userId, activityKey: key },
+    const rawKey = String(activityKey ?? '').trim().slice(0, 240);
+    if (!rawKey) throw new BadRequestException('activity_key required');
+    const key = this.canonicalActivityKey(rawKey);
+    const aliases = this.activityKeyAliases(key);
+    const existing = await this.feedLikeRepo.find({
+      where: { telegramUserId: userId, activityKey: In(aliases) },
     });
-    if (existing) {
-      await this.feedLikeRepo.delete({ telegramUserId: userId, activityKey: key });
+    if (existing.length > 0) {
+      await this.feedLikeRepo.delete({
+        telegramUserId: userId,
+        activityKey: In(aliases),
+      });
     } else {
       await this.feedLikeRepo.save(
         this.feedLikeRepo.create({
@@ -523,7 +617,7 @@ export class UserSocialProfileService {
             where: { telegramUserId: userId },
           });
           const name = liker ? this.displayNameOf(liker) : 'یک کاربر';
-          const line = `کاربر ${name} فعالیتت رو لایک کرد`
+          const line = `کاربر ${name} فعالیتت رو لایک کرد`;
           await this.socialNotifications.deliver({
             recipientTelegramUserId: ownerId,
             kind: 'feed_activity_like',
@@ -547,19 +641,31 @@ export class UserSocialProfileService {
   ): Promise<SocialFeedEngagement> {
     this.assertSocialEnabled();
     const userId = String(telegramUserId);
-    const key = String(activityKey ?? '').trim().slice(0, 240);
+    const rawKey = String(activityKey ?? '').trim().slice(0, 240);
+    const key = this.canonicalActivityKey(rawKey);
+    const aliases = this.activityKeyAliases(key);
     const text = String(body ?? '').trim().slice(0, 280);
     const privateNote = Boolean(isPrivate);
     if (!key) throw new BadRequestException('activity_key required');
     if (!text) throw new BadRequestException('note body required');
-    const existing = await this.feedNoteRepo.findOne({
-      where: { telegramUserId: userId, activityKey: key },
-    });
+    const existing =
+      (await this.feedNoteRepo.findOne({
+        where: { telegramUserId: userId, activityKey: key },
+      })) ??
+      (await this.feedNoteRepo.findOne({
+        where: { telegramUserId: userId, activityKey: In(aliases) },
+      }));
     const wasPrivate = existing?.isPrivate !== false;
     if (existing) {
       existing.body = text;
       existing.isPrivate = privateNote;
+      existing.activityKey = key;
       await this.feedNoteRepo.save(existing);
+      // Drop duplicate notes left on legacy aliases for this author.
+      await this.feedNoteRepo.delete({
+        telegramUserId: userId,
+        activityKey: In(aliases.filter((alias) => alias !== key)),
+      });
     } else {
       await this.feedNoteRepo.save(
         this.feedNoteRepo.create({
@@ -607,9 +713,14 @@ export class UserSocialProfileService {
   ): Promise<SocialFeedEngagement> {
     this.assertSocialEnabled();
     const userId = String(telegramUserId);
-    const key = String(activityKey ?? '').trim().slice(0, 240);
-    if (!key) throw new BadRequestException('activity_key required');
-    await this.feedNoteRepo.delete({ telegramUserId: userId, activityKey: key });
+    const rawKey = String(activityKey ?? '').trim().slice(0, 240);
+    if (!rawKey) throw new BadRequestException('activity_key required');
+    const key = this.canonicalActivityKey(rawKey);
+    const aliases = this.activityKeyAliases(key);
+    await this.feedNoteRepo.delete({
+      telegramUserId: userId,
+      activityKey: In(aliases),
+    });
     return this.engagementForViewer(userId, key);
   }
 
@@ -623,8 +734,8 @@ export class UserSocialProfileService {
     row: UserAnimeListEntry,
   ): 'watch_progress' | 'rating' | 'list_add' | 'watch_status' {
     const status = String(row.listStatus ?? '').trim();
+    // Milestone / intent statuses — not continuous episode progress.
     const statusCardStatuses = new Set([
-      'watching',
       'completed',
       'planning',
       'paused',
@@ -639,15 +750,29 @@ export class UserSocialProfileService {
         ? Number(row.userRating)
         : null;
     const hasRating = ratingRaw != null && Number.isFinite(ratingRaw);
+    // watching (or null status) with episodes → progress card «قسمت X از Y».
     if (eps > 0) return 'watch_progress';
+    if (status === 'watching') return 'watch_status';
     if (hasRating) return 'rating';
     return 'list_add';
   }
 
   private listFeedEventAt(row: UserAnimeListEntry): Date {
+    const status = String(row.listStatus ?? '').trim();
+    const statusCardStatuses = new Set([
+      'completed',
+      'planning',
+      'paused',
+      'dropped',
+      'rewatching',
+    ]);
     const updated = row.updatedAt?.getTime?.() ?? 0;
-    const statusAt = row.listStatusAt?.getTime?.() ?? 0;
-    return new Date(Math.max(updated, statusAt));
+    // Progress cards should follow episode touches; status cards may use list_status_at.
+    if (statusCardStatuses.has(status) || (status === 'watching' && (row.episodesWatched ?? 0) <= 0)) {
+      const statusAt = row.listStatusAt?.getTime?.() ?? 0;
+      return new Date(Math.max(updated, statusAt));
+    }
+    return new Date(updated);
   }
 
   async getMyBadgeCatalog(
