@@ -623,6 +623,7 @@ export class UserSocialProfileService {
   ): 'watch_progress' | 'rating' | 'list_add' | 'watch_status' {
     const status = String(row.listStatus ?? '').trim();
     const statusCardStatuses = new Set([
+      'watching',
       'completed',
       'planning',
       'paused',
